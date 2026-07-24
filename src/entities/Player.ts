@@ -64,6 +64,11 @@ export class Player {
   private walkPhase = 0
   private katana: THREE.Object3D | null = null
   private slide: THREE.Object3D | null = null
+  private legL: THREE.Object3D | null = null
+  private legR: THREE.Object3D | null = null
+  private armR: THREE.Object3D | null = null
+  private moving = false
+  private lean = 0
 
   // M1911 탄약/장전
   magSize = CONFIG.gun.magSize
@@ -76,6 +81,9 @@ export class Player {
     this.group = buildGunblade()
     this.katana = this.group.getObjectByName('katana') ?? null
     this.slide = this.group.getObjectByName('pistolSlide') ?? null
+    this.legL = this.group.getObjectByName('legL') ?? null
+    this.legR = this.group.getObjectByName('legR') ?? null
+    this.armR = this.group.getObjectByName('armR') ?? null
     this.stats = {
       maxHp: CONFIG.player.maxHp,
       moveSpeed: CONFIG.player.speed,
@@ -151,16 +159,19 @@ export class Player {
     if (this.dashTimer > 0) {
       this.dashTimer -= dt
       this.pos.addScaledVector(this.dashDir, CONFIG.player.dashSpeed * dt)
+      this.moving = true
+      this.walkPhase += dt * 24 // 대시 중 빠른 다리 회전
     } else {
       // 이동
       const mv = input.moveVector()
       let mag = Math.hypot(mv.x, mv.z)
+      this.moving = mag > 0
       if (mag > 0) {
         const nx = mv.x / mag
         const nz = mv.z / mag
         this.pos.x += nx * this.stats.moveSpeed * dt
         this.pos.z += nz * this.stats.moveSpeed * dt
-        this.walkPhase += dt * 12
+        this.walkPhase += dt * 13 // 걷기 다리 회전
       }
       // 대시 시작
       if (input.down('ShiftLeft') && this.dashReady && (mv.x !== 0 || mv.z !== 0)) {
@@ -240,22 +251,47 @@ export class Player {
   }
 
   private swingAnim = 0
+  private readonly SWING_DUR = 0.25
   private syncMesh(dt: number) {
     this.group.position.set(this.pos.x, 0, this.pos.z)
     this.group.rotation.y = this.angle
-    // 걷기 바운스
-    this.group.position.y = Math.abs(Math.sin(this.walkPhase)) * 0.06
-    // 검 스윙 애니메이션
+
+    // ── 대시 시 전방 기울임 (order YXZ) ──
+    const leanTarget = this.isDashing ? -0.3 : 0
+    this.lean += (leanTarget - this.lean) * Math.min(1, dt * 14)
+    this.group.rotation.x = this.lean
+
+    // ── 걷기/뛰기: 다리 스윙 + 몸통 바운스 ──
+    const swing = Math.sin(this.walkPhase)
+    const amp = this.isDashing ? 0.95 : 0.5
+    if (this.moving) {
+      if (this.legL) this.legL.rotation.x = swing * amp
+      if (this.legR) this.legR.rotation.x = -swing * amp
+      this.group.position.y = Math.abs(Math.sin(this.walkPhase)) * (this.isDashing ? 0.09 : 0.05)
+    } else {
+      // 멈추면 다리를 서서히 기본 자세로
+      if (this.legL) this.legL.rotation.x *= 1 - Math.min(1, dt * 12)
+      if (this.legR) this.legR.rotation.x *= 1 - Math.min(1, dt * 12)
+      this.group.position.y *= 1 - Math.min(1, dt * 12)
+    }
+
+    // ── 검 휘두르기: 오른팔(어깨) 아크 스윙 ──
     if (this.swingAnim > 0) {
       this.swingAnim -= dt
-      if (this.katana) {
-        const t = Math.max(0, this.swingAnim / 0.25)
-        this.katana.rotation.set(-0.5 - (1 - t) * 1.6, 0.2 - (1 - t) * 1.4, 0)
+      if (this.armR) {
+        const t = 1 - Math.max(0, this.swingAnim) / this.SWING_DUR // 0→1
+        // 오른쪽 위에서 앞쪽 왼편으로 쓸어내리는 횡베기
+        const raise = Math.sin(t * Math.PI) // 0→1→0 (중간에 살짝 들림)
+        this.armR.rotation.set(-0.4 - raise * 0.9, 0.6 - t * 1.9, -raise * 0.4)
       }
-    } else if (this.katana) {
-      this.katana.rotation.set(-0.5, 0.2, 0)
+    } else if (this.armR) {
+      // 기본 자세로 복귀
+      this.armR.rotation.x += (0 - this.armR.rotation.x) * Math.min(1, dt * 14)
+      this.armR.rotation.y += (0 - this.armR.rotation.y) * Math.min(1, dt * 14)
+      this.armR.rotation.z += (0 - this.armR.rotation.z) * Math.min(1, dt * 14)
     }
-    // 권총 슬라이드 블로우백 (발사 시 뒤로 튐) + 장전 시 흔들림
+
+    // 권총 슬라이드 블로우백 (발사 시 뒤로 튐)
     if (this.slide) {
       if (this.slideKick > 0) this.slideKick -= dt
       const kick = Math.max(0, this.slideKick) / 0.06
