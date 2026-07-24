@@ -55,11 +55,13 @@ export const CONFIG = {
 
   gun: {
     damage: 12,
-    cooldown: 0.16, // 연사 간격
+    cooldown: 0.15, // 발사 간격 (M1911 세미오토)
     bulletSpeed: 42,
     bulletLife: 1.1,
     spread: 0.03,
     pierce: 0,
+    magSize: 7, // M1911 탄창 (7발)
+    reloadTime: 1.15, // 장전 시간(초)
   },
 
   sword: {

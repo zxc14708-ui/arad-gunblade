@@ -17,6 +17,32 @@ export class AudioManager {
   private step = 0
   private lastHit = 0
 
+  // 음량 (0..1). 설정창 슬라이더와 연동, localStorage에 저장.
+  private static readonly MUSIC_BASE = 0.38
+  private static readonly SFX_BASE = 0.6
+  masterVol = 0.85
+  musicVol = 0.7
+  sfxVol = 0.85
+
+  constructor() {
+    try {
+      const s = JSON.parse(localStorage.getItem('arad_audio') || '{}')
+      if (typeof s.master === 'number') this.masterVol = s.master
+      if (typeof s.music === 'number') this.musicVol = s.music
+      if (typeof s.sfx === 'number') this.sfxVol = s.sfx
+    } catch {
+      /* 무시 */
+    }
+  }
+
+  private save() {
+    try {
+      localStorage.setItem('arad_audio', JSON.stringify({ master: this.masterVol, music: this.musicVol, sfx: this.sfxVol }))
+    } catch {
+      /* 무시 */
+    }
+  }
+
   // ── 초기화 (첫 사용자 제스처에서 호출) ──
   init() {
     if (this.ctx) return
@@ -25,15 +51,15 @@ export class AudioManager {
     this.ctx = new Ctx()
 
     this.master = this.ctx.createGain()
-    this.master.gain.value = this.muted ? 0 : 0.85
+    this.master.gain.value = this.masterVol
     this.master.connect(this.ctx.destination)
 
     this.musicGain = this.ctx.createGain()
-    this.musicGain.gain.value = 0.3
+    this.musicGain.gain.value = this.musicVol * AudioManager.MUSIC_BASE
     this.musicGain.connect(this.master)
 
     this.sfxGain = this.ctx.createGain()
-    this.sfxGain.gain.value = 0.55
+    this.sfxGain.gain.value = this.sfxVol * AudioManager.SFX_BASE
     this.sfxGain.connect(this.master)
 
     // 재사용 노이즈 버퍼 (1초 화이트노이즈)
@@ -49,7 +75,23 @@ export class AudioManager {
 
   setMuted(m: boolean) {
     this.muted = m
-    if (this.ctx) this.master.gain.value = m ? 0 : 0.85
+    if (this.ctx) this.master.gain.value = m ? 0 : this.masterVol
+  }
+
+  setMasterVolume(v: number) {
+    this.masterVol = Math.max(0, Math.min(1, v))
+    if (this.ctx && !this.muted) this.master.gain.value = this.masterVol
+    this.save()
+  }
+  setMusicVolume(v: number) {
+    this.musicVol = Math.max(0, Math.min(1, v))
+    if (this.ctx) this.musicGain.gain.value = this.musicVol * AudioManager.MUSIC_BASE
+    this.save()
+  }
+  setSfxVolume(v: number) {
+    this.sfxVol = Math.max(0, Math.min(1, v))
+    if (this.ctx) this.sfxGain.gain.value = this.sfxVol * AudioManager.SFX_BASE
+    this.save()
   }
 
   private now() {
@@ -106,8 +148,26 @@ export class AudioManager {
 
   // ── 효과음 ──
   gunshot() {
-    this.noise(0.09, { type: 'lowpass', freq: 1800, slideTo: 400, gain: 0.35, q: 1 })
-    this.tone(220, 0.07, { type: 'square', gain: 0.12, slideTo: 80 })
+    // M1911 .45 — 묵직한 발사음
+    this.noise(0.11, { type: 'lowpass', freq: 2200, slideTo: 300, gain: 0.4, q: 1 })
+    this.tone(180, 0.08, { type: 'square', gain: 0.16, slideTo: 60 })
+    this.noise(0.03, { type: 'highpass', freq: 4000, gain: 0.18 }) // 총구 크랙
+  }
+
+  /** 재장전: 탄창 분리 → 삽입 → 슬라이드 (딸깍-철컥) */
+  reload() {
+    this.noise(0.04, { type: 'highpass', freq: 3000, gain: 0.18, delay: 0 }) // 탄창 분리 클릭
+    this.noise(0.05, { type: 'bandpass', freq: 1200, gain: 0.2, delay: 0.35, q: 3 }) // 탄창 삽입
+    this.tone(140, 0.05, { type: 'square', gain: 0.12, delay: 0.35 })
+    this.noise(0.06, { type: 'highpass', freq: 2500, gain: 0.25, delay: 0.85 }) // 슬라이드 철컥
+    this.tone(200, 0.04, { type: 'square', gain: 0.14, delay: 0.9, slideTo: 400 })
+  }
+
+  /** 탄창이 비어 방아쇠를 당겼을 때의 빈 클릭 */
+  emptyClick() {
+    const t = this.now()
+    if (t - this.lastHit < 0.05) return
+    this.noise(0.02, { type: 'highpass', freq: 5000, gain: 0.12 })
   }
 
   slash() {

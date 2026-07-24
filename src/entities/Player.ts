@@ -63,10 +63,19 @@ export class Player {
   private hitFlash = 0
   private walkPhase = 0
   private katana: THREE.Object3D | null = null
+  private slide: THREE.Object3D | null = null
+
+  // M1911 탄약/장전
+  magSize = CONFIG.gun.magSize
+  ammo = CONFIG.gun.magSize
+  reloading = false
+  private reloadTimer = 0
+  private slideKick = 0
 
   constructor() {
     this.group = buildGunblade()
     this.katana = this.group.getObjectByName('katana') ?? null
+    this.slide = this.group.getObjectByName('pistolSlide') ?? null
     this.stats = {
       maxHp: CONFIG.player.maxHp,
       moveSpeed: CONFIG.player.speed,
@@ -98,6 +107,16 @@ export class Player {
   get dashCooldownRatio() {
     return 1 - Math.max(0, this.dashCdTimer) / CONFIG.player.dashCooldown
   }
+  /** 장전 진행도 0..1 */
+  get reloadRatio() {
+    return this.reloading ? 1 - this.reloadTimer / CONFIG.gun.reloadTime : 1
+  }
+  private startReload() {
+    if (this.reloading || this.ammo >= this.magSize) return false
+    this.reloading = true
+    this.reloadTimer = CONFIG.gun.reloadTime
+    return true
+  }
 
   private rollCrit(): boolean {
     return Math.random() < this.stats.critChance
@@ -111,9 +130,10 @@ export class Player {
     input: Input,
     aimGround: THREE.Vector3,
     arenaRadius: number,
-  ): { bullets: BulletSpec[]; slash: SlashSpec | null } {
+  ): { bullets: BulletSpec[]; slash: SlashSpec | null; startedReload: boolean } {
     const bullets: BulletSpec[] = []
     let slash: SlashSpec | null = null
+    let startedReload = false
 
     // 조준: 마우스 지면 좌표 방향
     const dx = aimGround.x - this.pos.x
@@ -158,23 +178,41 @@ export class Player {
       this.pos.z = (this.pos.z / r) * limit
     }
 
-    // 총 발사 (좌클릭 홀드로 연사)
-    if (input.mouseDown && this.gunTimer <= 0) {
-      this.gunTimer = this.stats.gunCooldown
-      const shots = this.stats.multishot
-      const baseDir = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
-      for (let i = 0; i < shots; i++) {
-        const spreadIdx = shots > 1 ? (i - (shots - 1) / 2) * 0.12 : 0
-        const dir = baseDir.clone()
-        const jitter = (Math.random() - 0.5) * CONFIG.gun.spread + spreadIdx
-        dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), jitter)
-        const crit = this.rollCrit()
-        bullets.push({
-          pos: new THREE.Vector3(this.pos.x, 1.2, this.pos.z).addScaledVector(dir, 0.8),
-          dir,
-          damage: this.stats.gunDamage * (crit ? this.stats.critMult : 1),
-          crit,
-        })
+    // M1911 장전 처리
+    if (this.reloading) {
+      this.reloadTimer -= dt
+      if (this.reloadTimer <= 0) {
+        this.reloading = false
+        this.ammo = this.magSize
+      }
+    } else if (input.down('KeyR')) {
+      // 수동 장전 (R)
+      startedReload = this.startReload()
+    }
+
+    // 총 발사 (좌클릭 홀드로 연사 — 탄창 소진 시 자동 장전)
+    if (input.mouseDown && this.gunTimer <= 0 && !this.reloading) {
+      if (this.ammo > 0) {
+        this.gunTimer = this.stats.gunCooldown
+        this.ammo--
+        this.slideKick = 0.06
+        const shots = this.stats.multishot
+        const baseDir = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
+        for (let i = 0; i < shots; i++) {
+          const spreadIdx = shots > 1 ? (i - (shots - 1) / 2) * 0.12 : 0
+          const dir = baseDir.clone()
+          const jitter = (Math.random() - 0.5) * CONFIG.gun.spread + spreadIdx
+          dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), jitter)
+          const crit = this.rollCrit()
+          bullets.push({
+            pos: new THREE.Vector3(this.pos.x, 1.2, this.pos.z).addScaledVector(dir, 0.8),
+            dir,
+            damage: this.stats.gunDamage * (crit ? this.stats.critMult : 1),
+            crit,
+          })
+        }
+        // 마지막 탄 발사 후 자동 장전
+        if (this.ammo === 0) startedReload = this.startReload()
       }
     }
 
@@ -198,7 +236,7 @@ export class Player {
     }
 
     this.syncMesh(dt)
-    return { bullets, slash }
+    return { bullets, slash, startedReload }
   }
 
   private swingAnim = 0
@@ -216,6 +254,12 @@ export class Player {
       }
     } else if (this.katana) {
       this.katana.rotation.set(-0.5, 0.2, 0)
+    }
+    // 권총 슬라이드 블로우백 (발사 시 뒤로 튐) + 장전 시 흔들림
+    if (this.slide) {
+      if (this.slideKick > 0) this.slideKick -= dt
+      const kick = Math.max(0, this.slideKick) / 0.06
+      this.slide.position.z = -kick * 0.12
     }
     // 피격 플래시
     const flash = this.hitFlash > 0

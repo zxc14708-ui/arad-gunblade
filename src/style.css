@@ -131,8 +131,8 @@ canvas {
   opacity: 0.7;
 }
 
-/* 음소거 버튼 */
-.mute-btn {
+/* 설정 버튼 */
+.icon-btn {
   position: absolute;
   top: 14px;
   right: 16px;
@@ -146,14 +146,170 @@ canvas {
   border-radius: 50%;
   background: var(--panel);
   color: #fff;
-  transition: transform 0.1s, border-color 0.1s;
+  transition: transform 0.15s, border-color 0.1s;
 }
-.mute-btn:hover {
-  transform: scale(1.08);
+.icon-btn:hover {
+  transform: scale(1.08) rotate(40deg);
   border-color: var(--gold);
 }
-.mute-btn.muted {
-  opacity: 0.55;
+
+/* 탄약 표시 */
+.hud-ammo {
+  position: absolute;
+  right: 20px;
+  bottom: 92px;
+  text-align: right;
+}
+.ammo-pips {
+  display: flex;
+  gap: 3px;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+.ammo-pips i {
+  width: 6px;
+  height: 15px;
+  border-radius: 2px;
+  background: #4a3520;
+  display: inline-block;
+  transition: background 0.1s;
+}
+.ammo-pips i.on {
+  background: var(--gold);
+  box-shadow: 0 0 5px rgba(232, 201, 121, 0.7);
+}
+.ammo-text {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--gold);
+  text-shadow: 0 2px 3px #000;
+}
+.ammo-label {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+.ammo-label kbd {
+  background: #23283a;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--gold);
+}
+.hud-ammo.reloading .ammo-text {
+  color: #ff9a5a;
+  animation: reloadPulse 0.5s ease-in-out infinite;
+}
+@keyframes reloadPulse {
+  50% { opacity: 0.4; }
+}
+
+/* 설정 패널 */
+.settings-panel {
+  width: 460px;
+  max-width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  padding: 26px 28px;
+  pointer-events: auto;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+.settings-title {
+  font-size: 28px;
+  color: var(--gold);
+  text-align: center;
+  letter-spacing: 3px;
+  margin-bottom: 18px;
+}
+.settings-sec {
+  font-size: 15px;
+  color: var(--gold);
+  letter-spacing: 1px;
+  margin: 18px 0 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+.traits-count {
+  font-size: 12px;
+  color: #999;
+  letter-spacing: 0;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.slider-row label {
+  width: 56px;
+  font-size: 14px;
+  color: #ddd;
+}
+.slider-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+.slval {
+  width: 42px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--gold);
+}
+.traits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.trait-empty {
+  font-size: 13px;
+  color: #888;
+  text-align: center;
+  padding: 16px 0;
+}
+.trait {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid #888;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.trait.common { border-left-color: #ccc; }
+.trait.rare { border-left-color: #6aa0ff; }
+.trait.epic { border-left-color: #c878ff; }
+.trait .ticon {
+  font-size: 24px;
+}
+.trait .tmain {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.trait .tname {
+  font-size: 15px;
+  font-weight: bold;
+  color: #fff;
+}
+.trait .tdesc {
+  font-size: 12px;
+  color: #b8b0a0;
+}
+.trait .tlv {
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--gold);
+  white-space: nowrap;
+}
+.btn.small {
+  margin-top: 22px;
+  width: 100%;
+  padding: 12px;
+  font-size: 17px;
 }
 
 /* 보스 체력바 */

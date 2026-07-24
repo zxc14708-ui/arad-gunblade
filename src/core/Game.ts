@@ -8,7 +8,7 @@ import { Projectiles } from '../systems/Projectiles'
 import { Orbs } from '../systems/Orbs'
 import { Effects } from '../systems/Effects'
 import { Spawner } from '../systems/Spawner'
-import { rollChoices } from '../systems/Upgrades'
+import { rollChoices, Upgrade } from '../systems/Upgrades'
 import { AudioManager } from '../systems/Audio'
 import { HUD } from '../ui/HUD'
 
@@ -35,6 +35,9 @@ export class Game {
   private score = 0
   private boss: Enemy | null = null
   private wasDashing = false
+  private settingsOpen = false
+  /** 획득한 특성 목록 (id → 업그레이드 + 획득 횟수=레벨) */
+  private acquired = new Map<string, { upgrade: Upgrade; count: number }>()
 
   private clock = new THREE.Clock()
   private aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -93,10 +96,23 @@ export class Game {
 
     this.hud.onStart(() => this.startGame())
     this.hud.onRestart(() => this.startGame())
-    this.hud.onToggleMute((muted) => {
+    this.hud.onOpenSettings(() => this.toggleSettings())
+    this.hud.onCloseSettings(() => this.closeSettings())
+    this.hud.onVolume((kind, v) => {
       this.audio.init()
-      this.audio.resume()
-      this.audio.setMuted(muted)
+      if (kind === 'master') this.audio.setMasterVolume(v)
+      else if (kind === 'music') this.audio.setMusicVolume(v)
+      else this.audio.setSfxVolume(v)
+    })
+
+    // Tab: 설정창 열기/닫기 (기본 포커스 이동 방지)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Tab') {
+        e.preventDefault()
+        this.toggleSettings()
+      } else if (e.code === 'Escape' && this.settingsOpen) {
+        this.closeSettings()
+      }
     })
 
     window.addEventListener('resize', this.onResize)
@@ -122,6 +138,9 @@ export class Game {
     this.hud.showBoss(false)
     this.kills = 0
     this.score = 0
+    this.acquired.clear()
+    this.settingsOpen = false
+    this.hud.closeSettings()
 
     if (this.player) this.scene.remove(this.player.group)
     this.player = new Player()
@@ -140,6 +159,29 @@ export class Game {
     this.state = 'playing'
   }
 
+  private toggleSettings() {
+    // 게임 진행 중(또는 이미 열림)일 때만 토글
+    if (!this.player || (this.state !== 'playing' && !this.settingsOpen)) return
+    if (this.settingsOpen) {
+      this.closeSettings()
+    } else {
+      this.settingsOpen = true
+      this.audio.init()
+      this.audio.resume()
+      this.hud.openSettings(
+        [...this.acquired.values()],
+        { master: this.audio.masterVol, music: this.audio.musicVol, sfx: this.audio.sfxVol },
+      )
+    }
+  }
+
+  private closeSettings() {
+    if (!this.settingsOpen) return
+    this.settingsOpen = false
+    this.hud.closeSettings()
+    this.clock.getDelta() // 정지 동안 누적된 dt 폐기
+  }
+
   private updateAim() {
     this.raycaster.setFromCamera(this.input.ndc as THREE.Vector2, this.camera)
     const hit = this.raycaster.ray.intersectPlane(this.aimPlane, this.aimGround)
@@ -151,7 +193,7 @@ export class Game {
     requestAnimationFrame(this.loop)
     const dt = Math.min(this.clock.getDelta(), 0.05)
 
-    if (this.state === 'playing') this.step(dt)
+    if (this.state === 'playing' && !this.settingsOpen) this.step(dt)
 
     // 카메라 추적
     if (this.player) {
@@ -175,11 +217,12 @@ export class Game {
     this.updateAim()
 
     // 플레이어
-    const { bullets, slash } = this.player.update(dt, this.input, this.aimGround, this.dungeon.radius)
+    const { bullets, slash, startedReload } = this.player.update(dt, this.input, this.aimGround, this.dungeon.radius)
     for (const b of bullets) {
       this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
     }
     if (bullets.length > 0) this.audio.gunshot()
+    if (startedReload) this.audio.reload()
     if (slash) {
       this.audio.slash()
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
@@ -222,6 +265,7 @@ export class Game {
     // HUD
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setDash(this.player.dashCooldownRatio, this.player.dashReady)
+    this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading, this.player.reloadRatio)
     this.hud.setStats(this.player.level, this.spawner.wave, this.kills, this.score)
 
     // 사망
@@ -396,6 +440,10 @@ export class Game {
     this.hud.showLevelUp(choices, (u) => {
       this.audio.pick()
       u.apply(this.player)
+      // 획득 특성 기록 (같은 특성 재획득 시 레벨 증가)
+      const cur = this.acquired.get(u.id)
+      if (cur) cur.count++
+      else this.acquired.set(u.id, { upgrade: u, count: 1 })
       this.hud.setHp(this.player.hp, this.player.stats.maxHp)
       this.hud.setXp(this.player.xp, this.player.xpToNext)
       // 한 번에 여러 레벨이 쌓였으면 연속으로 선택창을 다시 연다

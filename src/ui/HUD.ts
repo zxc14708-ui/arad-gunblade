@@ -19,6 +19,13 @@ export class HUD {
   private startOv!: HTMLDivElement
   private levelOv!: HTMLDivElement
   private overOv!: HTMLDivElement
+  private settingsOv!: HTMLDivElement
+  private ammoText!: HTMLElement
+  private ammoPips!: HTMLElement
+  private ammoBox!: HTMLElement
+  private lastAmmo = -1
+  private lastMag = -1
+  private volCb: ((kind: 'master' | 'music' | 'sfx', v: number) => void) | null = null
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div')
@@ -41,6 +48,10 @@ export class HUD {
     this.startOv = this.q('#startOv')
     this.levelOv = this.q('#levelOv')
     this.overOv = this.q('#overOv')
+    this.settingsOv = this.q('#settingsOv')
+    this.ammoText = this.q('#ammoText')
+    this.ammoPips = this.q('#ammoPips')
+    this.ammoBox = this.q('#ammoBox')
   }
 
   private q<T extends HTMLElement>(sel: string): T {
@@ -58,7 +69,7 @@ export class HUD {
         </div>
       </div>
 
-      <button class="mute-btn" id="muteBtn" title="소리 켜기/끄기">🔊</button>
+      <button class="icon-btn" id="settingsBtn" title="설정 (Tab)">⚙️</button>
 
       <div id="bossBar">
         <div class="name">◆ 마계의 지배자 ◆</div>
@@ -68,6 +79,12 @@ export class HUD {
       <div class="hud-bars">
         <div class="bar" id="hpBar"><div class="fill" id="hpFill" style="width:100%"></div><div class="label" id="hpLabel">100 / 100</div></div>
         <div class="bar" id="xpBar"><div class="fill" id="xpFill" style="width:0%"></div></div>
+      </div>
+
+      <div class="hud-ammo" id="ammoBox">
+        <div class="ammo-pips" id="ammoPips"></div>
+        <div class="ammo-text" id="ammoText">7 / 7</div>
+        <div class="ammo-label">M1911 · <kbd>R</kbd> 장전</div>
       </div>
 
       <div class="hud-dash">
@@ -82,12 +99,26 @@ export class HUD {
         <div class="subtitle">던전앤파이터 팬 게임 · 총검사</div>
         <div class="helptext">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp; <kbd>마우스</kbd> 조준<br/>
-          <kbd>좌클릭</kbd> 리볼버 연사 &nbsp;·&nbsp; <kbd>우클릭</kbd> / <kbd>Space</kbd> 카타나 베기<br/>
-          <kbd>Shift</kbd> 대시 회피 (무적)<br/><br/>
+          <kbd>좌클릭</kbd> M1911 사격 (7발) &nbsp;·&nbsp; <kbd>R</kbd> 장전<br/>
+          <kbd>우클릭</kbd> / <kbd>Space</kbd> 카타나 베기 &nbsp;·&nbsp; <kbd>Shift</kbd> 대시 (무적)<br/>
+          <kbd>Tab</kbd> 설정 · 획득 특성 보기<br/><br/>
           밀려오는 마족을 처치하고, 레벨업마다 능력을 강화하라.<br/>
           5웨이브마다 <b style="color:#e0554f">보스</b>가 등장한다.
         </div>
         <button class="btn" id="startBtn">게임 시작</button>
+      </div>
+
+      <div class="overlay" id="settingsOv">
+        <div class="settings-panel">
+          <div class="settings-title">⚙ 설정</div>
+          <div class="settings-sec">🔊 음량</div>
+          <div class="slider-row"><label>전체</label><input type="range" id="volMaster" min="0" max="100" value="85"/><span class="slval" id="volMasterV">85%</span></div>
+          <div class="slider-row"><label>배경음</label><input type="range" id="volMusic" min="0" max="100" value="70"/><span class="slval" id="volMusicV">70%</span></div>
+          <div class="slider-row"><label>효과음</label><input type="range" id="volSfx" min="0" max="100" value="85"/><span class="slval" id="volSfxV">85%</span></div>
+          <div class="settings-sec">✨ 획득 특성 <span class="traits-count" id="traitsCount"></span></div>
+          <div class="traits" id="traits"></div>
+          <button class="btn small" id="settingsClose">닫기 (Tab)</button>
+        </div>
       </div>
 
       <div class="overlay" id="levelOv">
@@ -119,15 +150,78 @@ export class HUD {
     }
   }
 
-  onToggleMute(cb: (muted: boolean) => void) {
-    const btn = this.q('#muteBtn') as HTMLButtonElement
-    let muted = false
-    btn.onclick = () => {
-      muted = !muted
-      btn.textContent = muted ? '🔇' : '🔊'
-      btn.classList.toggle('muted', muted)
-      cb(muted)
+  onOpenSettings(cb: () => void) {
+    ;(this.q('#settingsBtn') as HTMLButtonElement).onclick = cb
+  }
+  onCloseSettings(cb: () => void) {
+    ;(this.q('#settingsClose') as HTMLButtonElement).onclick = cb
+  }
+
+  onVolume(cb: (kind: 'master' | 'music' | 'sfx', v: number) => void) {
+    this.volCb = cb
+    const wire = (id: string, valId: string, kind: 'master' | 'music' | 'sfx') => {
+      const el = this.q(id) as HTMLInputElement
+      const val = this.q(valId)
+      el.oninput = () => {
+        val.textContent = el.value + '%'
+        cb(kind, Number(el.value) / 100)
+      }
     }
+    wire('#volMaster', '#volMasterV', 'master')
+    wire('#volMusic', '#volMusicV', 'music')
+    wire('#volSfx', '#volSfxV', 'sfx')
+  }
+
+  openSettings(traits: { upgrade: Upgrade; count: number }[], vol: { master: number; music: number; sfx: number }) {
+    // 슬라이더를 현재 음량에 맞춤
+    const set = (id: string, valId: string, v: number) => {
+      ;(this.q(id) as HTMLInputElement).value = String(Math.round(v * 100))
+      this.q(valId).textContent = Math.round(v * 100) + '%'
+    }
+    set('#volMaster', '#volMasterV', vol.master)
+    set('#volMusic', '#volMusicV', vol.music)
+    set('#volSfx', '#volSfxV', vol.sfx)
+
+    // 획득 특성 목록
+    const box = this.q('#traits')
+    const count = this.q('#traitsCount')
+    box.innerHTML = ''
+    if (traits.length === 0) {
+      box.innerHTML = '<div class="trait-empty">아직 획득한 특성이 없습니다. 레벨업으로 특성을 얻으세요.</div>'
+      count.textContent = ''
+    } else {
+      count.textContent = `(${traits.length}종)`
+      // 레벨 높은 순 정렬
+      const sorted = [...traits].sort((a, b) => b.count - a.count)
+      for (const t of sorted) {
+        const el = document.createElement('div')
+        el.className = `trait ${t.upgrade.rarity}`
+        el.innerHTML = `
+          <span class="ticon">${t.upgrade.icon}</span>
+          <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
+          <span class="tlv">Lv.${t.count}</span>`
+        box.appendChild(el)
+      }
+    }
+    this.settingsOv.classList.add('show')
+  }
+
+  closeSettings() {
+    this.settingsOv.classList.remove('show')
+  }
+
+  /** 탄약 표시 갱신 */
+  setAmmo(ammo: number, mag: number, reloading: boolean, ratio: number) {
+    if (ammo !== this.lastAmmo || mag !== this.lastMag) {
+      this.lastAmmo = ammo
+      this.lastMag = mag
+      // 탄알 핍 재구성
+      let pips = ''
+      for (let i = 0; i < mag; i++) pips += `<i class="${i < ammo ? 'on' : 'off'}"></i>`
+      this.ammoPips.innerHTML = pips
+    }
+    this.ammoBox.classList.toggle('reloading', reloading)
+    this.ammoText.textContent = reloading ? `장전 중… ${Math.round(ratio * 100)}%` : `${ammo} / ${mag}`
   }
 
   setStats(level: number, wave: number, kills: number, score: number) {
