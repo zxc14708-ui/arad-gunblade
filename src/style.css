@@ -1,0 +1,360 @@
+:root {
+  --gold: #e8c979;
+  --red: #e0554f;
+  --blue: #6ad0ff;
+  --panel: rgba(14, 16, 24, 0.86);
+  --border: rgba(232, 201, 121, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #05060a;
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  color: #eee;
+}
+
+canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ===== 상단 HUD ===== */
+.hud-top {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-row {
+  display: flex;
+  gap: 18px;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 4px #000;
+}
+.stat-row b {
+  color: var(--gold);
+}
+
+/* ===== 좌하단 체력/경험치 ===== */
+.hud-bars {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  width: 300px;
+  max-width: 40vw;
+}
+.bar {
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 8px;
+}
+.bar .fill {
+  height: 100%;
+  transition: width 0.15s ease-out;
+}
+.bar .label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  text-shadow: 0 1px 2px #000;
+}
+#hpFill {
+  background: linear-gradient(90deg, #b02a2a, #e0554f);
+}
+#xpFill {
+  background: linear-gradient(90deg, #2a7fb0, #6ad0ff);
+  height: 12px;
+}
+#xpBar {
+  height: 12px;
+}
+
+/* 대시 게이지 */
+.hud-dash {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  text-align: center;
+}
+.dash-ring {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  position: relative;
+  background: conic-gradient(var(--blue) var(--p, 0%), rgba(255, 255, 255, 0.08) 0%);
+}
+.dash-ring.ready {
+  border-color: var(--blue);
+  box-shadow: 0 0 14px rgba(106, 208, 255, 0.6);
+}
+.dash-label {
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
+/* 보스 체력바 */
+#bossBar {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  max-width: 600px;
+  display: none;
+}
+#bossBar .bar {
+  height: 16px;
+}
+#bossBar .name {
+  text-align: center;
+  color: var(--red);
+  font-weight: bold;
+  text-shadow: 0 0 8px #e0554f;
+  margin-bottom: 4px;
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+#bossFill {
+  background: linear-gradient(90deg, #7a1010, #e0554f);
+}
+
+/* 웨이브 배너 */
+#banner {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 42px;
+  font-weight: bold;
+  color: var(--gold);
+  text-shadow: 0 0 20px #000, 0 4px 8px #000;
+  opacity: 0;
+  text-align: center;
+  letter-spacing: 3px;
+}
+@keyframes bannerPop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
+}
+#banner.show {
+  animation: bannerPop 2s ease-out forwards;
+}
+
+/* 데미지 숫자 */
+.floater {
+  position: fixed;
+  left: 0;
+  top: 0;
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 2px 3px #000;
+  pointer-events: none;
+  z-index: 20;
+}
+.floater.crit {
+  font-size: 24px;
+  color: var(--gold);
+  text-shadow: 0 0 8px #e8c979, 0 2px 3px #000;
+}
+
+/* ===== 오버레이 (시작/레벨업/게임오버) ===== */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 5, 10, 0.82);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 30;
+  backdrop-filter: blur(3px);
+}
+.overlay.show {
+  display: flex;
+}
+.title {
+  font-size: 54px;
+  font-weight: bold;
+  color: var(--gold);
+  text-shadow: 0 0 24px rgba(232, 201, 121, 0.5), 0 4px 10px #000;
+  letter-spacing: 4px;
+}
+.subtitle {
+  font-size: 18px;
+  color: #bbb;
+  margin-top: 6px;
+  letter-spacing: 2px;
+}
+.helptext {
+  margin-top: 26px;
+  font-size: 14px;
+  line-height: 2;
+  color: #cfc7b5;
+  text-align: center;
+  max-width: 480px;
+}
+.helptext kbd {
+  background: #23283a;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: var(--gold);
+  font-family: inherit;
+}
+.btn {
+  margin-top: 28px;
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 14px 42px;
+  font-size: 20px;
+  font-weight: bold;
+  color: #1a1206;
+  background: linear-gradient(180deg, #f0d68a, #d4af52);
+  border: none;
+  border-radius: 8px;
+  letter-spacing: 2px;
+  box-shadow: 0 6px 0 #8a6d28, 0 8px 16px rgba(0, 0, 0, 0.5);
+  transition: transform 0.08s;
+}
+.btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #8a6d28;
+}
+
+/* 레벨업 카드 */
+.levelup-head {
+  font-size: 34px;
+  color: var(--gold);
+  text-shadow: 0 0 16px #000;
+  margin-bottom: 8px;
+  letter-spacing: 3px;
+}
+.levelup-sub {
+  color: #bbb;
+  margin-bottom: 28px;
+}
+.cards {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.card {
+  width: 200px;
+  min-height: 210px;
+  background: var(--panel);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 16px;
+  cursor: pointer;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+.card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+}
+.card .cicon {
+  font-size: 46px;
+}
+.card .cname {
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+}
+.card .cdesc {
+  font-size: 14px;
+  color: #cfc7b5;
+  line-height: 1.5;
+}
+.card .crar {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: auto;
+  opacity: 0.8;
+}
+.card.common { border-color: rgba(200, 200, 200, 0.4); }
+.card.common:hover { border-color: #ccc; }
+.card.common .crar { color: #ccc; }
+.card.rare { border-color: rgba(106, 160, 255, 0.6); }
+.card.rare:hover { border-color: #6aa0ff; box-shadow: 0 12px 28px rgba(106,160,255,0.3); }
+.card.rare .crar { color: #6aa0ff; }
+.card.epic { border-color: rgba(200, 120, 255, 0.7); }
+.card.epic:hover { border-color: #c878ff; box-shadow: 0 12px 28px rgba(200,120,255,0.35); }
+.card.epic .crar { color: #c878ff; }
+
+.gameover-stats {
+  margin-top: 18px;
+  font-size: 18px;
+  color: #ddd;
+  line-height: 1.9;
+  text-align: center;
+}
+.gameover-stats b {
+  color: var(--gold);
+}
+
+.credit {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #556;
+  letter-spacing: 1px;
+}
+
+@media (max-width: 640px) {
+  .title { font-size: 38px; }
+  .card { width: 150px; min-height: 180px; }
+  .hud-bars { width: 200px; }
+}
