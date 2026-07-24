@@ -9,6 +9,7 @@ import { Orbs } from '../systems/Orbs'
 import { Effects } from '../systems/Effects'
 import { Spawner } from '../systems/Spawner'
 import { rollChoices } from '../systems/Upgrades'
+import { AudioManager } from '../systems/Audio'
 import { HUD } from '../ui/HUD'
 
 type State = 'start' | 'playing' | 'levelup' | 'gameover'
@@ -27,11 +28,13 @@ export class Game {
   private orbs: Orbs
   private effects: Effects
   private spawner: Spawner
+  private audio = new AudioManager()
 
   private state: State = 'start'
   private kills = 0
   private score = 0
   private boss: Enemy | null = null
+  private wasDashing = false
 
   private clock = new THREE.Clock()
   private aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -90,6 +93,11 @@ export class Game {
 
     this.hud.onStart(() => this.startGame())
     this.hud.onRestart(() => this.startGame())
+    this.hud.onToggleMute((muted) => {
+      this.audio.init()
+      this.audio.resume()
+      this.audio.setMuted(muted)
+    })
 
     window.addEventListener('resize', this.onResize)
     this.clock.start()
@@ -122,6 +130,13 @@ export class Game {
     this.hud.setStats(1, 0, 0, 0)
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setXp(0, this.player.xpToNext)
+
+    // 오디오 (사용자 클릭 제스처이므로 여기서 시작 가능)
+    this.audio.init()
+    this.audio.resume()
+    this.audio.startMusic()
+
+    this.wasDashing = false
     this.state = 'playing'
   }
 
@@ -164,10 +179,16 @@ export class Game {
     for (const b of bullets) {
       this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
     }
+    if (bullets.length > 0) this.audio.gunshot()
     if (slash) {
+      this.audio.slash()
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
       this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
     }
+
+    // 대시 시작 감지 → 회피 사운드
+    if (this.player.isDashing && !this.wasDashing) this.audio.dash()
+    this.wasDashing = this.player.isDashing
 
     // 스포너 (새로 스폰된 적을 씬에 추가)
     const newWave = this.spawner.update(dt, this.enemies, this.dungeon)
@@ -209,6 +230,7 @@ export class Game {
 
   private onWaveStart(wave: number) {
     if (this.spawner.isBossWave()) {
+      this.audio.bossWarn()
       this.hud.banner_(`웨이브 ${wave}\n⚠ 보스 출현 ⚠`)
       // 이번 웨이브에 스폰될 보스를 추적 (스폰 직후 참조)
       setTimeout(() => {
@@ -216,6 +238,7 @@ export class Game {
         if (this.boss) this.hud.showBoss(true)
       }, 400)
     } else {
+      this.audio.waveStart()
       this.hud.banner_(`웨이브 ${wave}`)
     }
   }
@@ -244,6 +267,7 @@ export class Game {
       if (d < e.radius + CONFIG.player.radius && e.contactTimer <= 0) {
         if (this.player.takeDamage(e.damage)) {
           e.contactTimer = CONFIG.enemy.contactCooldown
+          this.audio.hurt()
           this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
         }
       }
@@ -277,6 +301,7 @@ export class Game {
         if (dx * dx + dz * dz < (e.radius + 0.2) * (e.radius + 0.2)) {
           e.takeDamage(b.damage)
           b.hitSet.add(e.id)
+          this.audio.hit()
           this.applyLifesteal(b.damage)
           this.effects.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), COLORS.hit, 5, 5)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), b.damage, b.crit)
@@ -298,6 +323,7 @@ export class Game {
       const dz = this.player.pos.z - b.pos.z
       if (dx * dx + dz * dz < 0.9 * 0.9) {
         if (this.player.takeDamage(b.damage)) {
+          this.audio.hurt()
           this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
         }
         this.projectiles.removeEnemyBullet(i)
@@ -326,6 +352,7 @@ export class Game {
       if (diff <= arc / 2 + 0.15) {
         e.takeDamage(damage)
         e.knockback(pos.x, pos.z, knockback)
+        this.audio.hit()
         this.applyLifesteal(damage)
         this.effects.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), COLORS.slash, 8, 7)
         this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), damage, crit)
@@ -349,7 +376,10 @@ export class Game {
       this.boss = null
       this.hud.showBoss(false)
       this.hud.banner_('보스 격파!')
+      this.audio.bossDeath()
       this.score += 500
+    } else {
+      this.audio.death()
     }
   }
 
@@ -361,8 +391,10 @@ export class Game {
 
   private openLevelUp() {
     this.state = 'levelup'
+    this.audio.levelup()
     const choices = rollChoices(3)
     this.hud.showLevelUp(choices, (u) => {
+      this.audio.pick()
       u.apply(this.player)
       this.hud.setHp(this.player.hp, this.player.stats.maxHp)
       this.hud.setXp(this.player.xp, this.player.xpToNext)
@@ -379,6 +411,8 @@ export class Game {
 
   private gameOver() {
     this.state = 'gameover'
+    this.audio.gameOver()
+    this.audio.stopMusic()
     this.hud.showGameOver(this.spawner.wave, this.kills, this.score, this.player.level)
   }
 }

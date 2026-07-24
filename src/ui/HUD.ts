@@ -58,6 +58,8 @@ export class HUD {
         </div>
       </div>
 
+      <button class="mute-btn" id="muteBtn" title="소리 켜기/끄기">🔊</button>
+
       <div id="bossBar">
         <div class="name">◆ 마계의 지배자 ◆</div>
         <div class="bar"><div class="fill" id="bossFill" style="width:100%"></div></div>
@@ -114,6 +116,17 @@ export class HUD {
     ;(this.q('#restartBtn') as HTMLButtonElement).onclick = () => {
       this.overOv.classList.remove('show')
       cb()
+    }
+  }
+
+  onToggleMute(cb: (muted: boolean) => void) {
+    const btn = this.q('#muteBtn') as HTMLButtonElement
+    let muted = false
+    btn.onclick = () => {
+      muted = !muted
+      btn.textContent = muted ? '🔇' : '🔊'
+      btn.classList.toggle('muted', muted)
+      cb(muted)
     }
   }
 

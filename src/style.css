@@ -131,6 +131,31 @@ canvas {
   opacity: 0.7;
 }
 
+/* 음소거 버튼 */
+.mute-btn {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  pointer-events: auto;
+  cursor: pointer;
+  width: 42px;
+  height: 42px;
+  font-size: 20px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel);
+  color: #fff;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.mute-btn:hover {
+  transform: scale(1.08);
+  border-color: var(--gold);
+}
+.mute-btn.muted {
+  opacity: 0.55;
+}
+
 /* 보스 체력바 */
 #bossBar {
   position: absolute;
