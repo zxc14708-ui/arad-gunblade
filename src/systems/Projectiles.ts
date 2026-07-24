@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { COLORS } from '../config'
+import { noOutline } from '../rendering/toon'
 
 export interface Bullet {
   mesh: THREE.Mesh
@@ -29,9 +30,9 @@ export class Projectiles {
   enemyBullets: EnemyBullet[] = []
   private bulletGeo = new THREE.SphereGeometry(0.16, 8, 8)
   private ebGeo = new THREE.SphereGeometry(0.28, 10, 10)
-  private bulletMat = new THREE.MeshBasicMaterial({ color: COLORS.bullet })
-  private critMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
-  private ebMat = new THREE.MeshBasicMaterial({ color: COLORS.enemyBullet })
+  private bulletMat = noOutline(new THREE.MeshBasicMaterial({ color: COLORS.bullet }))
+  private critMat = noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff }))
+  private ebMat = noOutline(new THREE.MeshBasicMaterial({ color: COLORS.enemyBullet }))
 
   constructor(scene: THREE.Scene) {
     this.scene = scene

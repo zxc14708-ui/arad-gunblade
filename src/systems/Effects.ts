@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { COLORS } from '../config'
+import { noOutline } from '../rendering/toon'
 
 type Particle = {
   mesh: THREE.Mesh
@@ -31,7 +32,7 @@ export class Effects {
 
   burst(pos: THREE.Vector3, color = COLORS.hit, count = 8, power = 6) {
     for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(this.sphereGeo, new THREE.MeshBasicMaterial({ color }))
+      const m = new THREE.Mesh(this.sphereGeo, noOutline(new THREE.MeshBasicMaterial({ color })))
       m.position.copy(pos)
       const a = Math.random() * Math.PI * 2
       const up = Math.random() * 0.6 + 0.2
@@ -52,7 +53,7 @@ export class Effects {
     const geo = new THREE.RingGeometry(0.6, range, 20, 1, -arc / 2, arc)
     const mesh = new THREE.Mesh(
       geo,
-      new THREE.MeshBasicMaterial({ color: COLORS.slash, transparent: true, opacity: 0.75, side: THREE.DoubleSide }),
+      noOutline(new THREE.MeshBasicMaterial({ color: COLORS.slash, transparent: true, opacity: 0.75, side: THREE.DoubleSide })),
     )
     mesh.rotation.x = -Math.PI / 2
     mesh.rotation.z = -angle + Math.PI / 2

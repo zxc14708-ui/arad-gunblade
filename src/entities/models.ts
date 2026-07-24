@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import { COLORS } from '../config'
+import { toonMat } from '../rendering/toon'
 
+// 캐릭터/적 머티리얼을 셀 셰이딩(툰)으로 통일
 function mat(color: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.1, ...opts })
+  return toonMat(color, opts)
 }
 
 /**

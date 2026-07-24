@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { COLORS } from '../config'
+import { noOutline } from '../rendering/toon'
 
 interface Orb {
   mesh: THREE.Mesh
@@ -13,12 +14,9 @@ export class Orbs {
   scene: THREE.Scene
   orbs: Orb[] = []
   private geo = new THREE.OctahedronGeometry(0.22, 0)
-  private mat = new THREE.MeshStandardMaterial({
-    color: COLORS.xp,
-    emissive: COLORS.xp,
-    emissiveIntensity: 0.9,
-    roughness: 0.3,
-  })
+  private mat = noOutline(
+    new THREE.MeshStandardMaterial({ color: COLORS.xp, emissive: COLORS.xp, emissiveIntensity: 0.9, roughness: 0.3 }),
+  )
 
   constructor(scene: THREE.Scene) {
     this.scene = scene

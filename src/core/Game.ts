@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { CONFIG, COLORS } from '../config'
 import { Input } from './Input'
 import { Dungeon } from '../systems/Dungeon'
@@ -16,6 +17,7 @@ type State = 'start' | 'playing' | 'levelup' | 'gameover'
 
 export class Game {
   private renderer: THREE.WebGLRenderer
+  private outline!: OutlineEffect
   private scene: THREE.Scene
   private camera: THREE.PerspectiveCamera
   private input: Input
@@ -53,8 +55,16 @@ export class Game {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.05
+    this.renderer.toneMappingExposure = 1.1
     container.appendChild(this.renderer.domElement)
+
+    // 만화풍 잉크 외곽선 (셀 셰이딩과 함께)
+    this.outline = new OutlineEffect(this.renderer, {
+      defaultThickness: 0.004,
+      defaultColor: [0.04, 0.02, 0.05],
+      defaultAlpha: 0.9,
+      defaultKeepAlive: true,
+    })
 
     // 씬
     this.scene = new THREE.Scene()
@@ -81,9 +91,12 @@ export class Game {
     key.shadow.camera.bottom = -s
     key.shadow.bias = -0.0004
     this.scene.add(key)
-    const rim = new THREE.DirectionalLight(0x4a6cff, 0.5)
-    rim.position.set(-15, 20, -20)
+    const rim = new THREE.DirectionalLight(0x6a8cff, 0.9) // 셀룩 강조용 림라이트
+    rim.position.set(-15, 14, -22)
     this.scene.add(rim)
+    const fill = new THREE.DirectionalLight(0xffd0a0, 0.35)
+    fill.position.set(10, 6, 14)
+    this.scene.add(fill)
 
     // 시스템
     this.dungeon = new Dungeon(this.scene)
@@ -124,6 +137,7 @@ export class Game {
     this.camera.aspect = window.innerWidth / window.innerHeight
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(window.innerWidth, window.innerHeight)
+    this.outline.setSize(window.innerWidth, window.innerHeight)
   }
 
   private startGame() {
@@ -210,7 +224,7 @@ export class Game {
     const rect = this.renderer.domElement.getBoundingClientRect()
     this.effects.update(this.state === 'playing' ? dt : 0, this.camera, rect)
 
-    this.renderer.render(this.scene, this.camera)
+    this.outline.render(this.scene, this.camera)
   }
 
   private step(dt: number) {

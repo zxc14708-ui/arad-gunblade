@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { CONFIG, COLORS } from '../config'
+import { toonMat, noOutline } from '../rendering/toon'
 
 /** 원형 던전 아레나 — 바닥, 외벽, 장식 기둥 */
 export class Dungeon {
@@ -7,9 +8,9 @@ export class Dungeon {
   radius = CONFIG.arenaRadius
 
   constructor(scene: THREE.Scene) {
-    // 바닥
+    // 바닥 (외곽선 제외)
     const floorGeo = new THREE.CircleGeometry(this.radius, 48)
-    const floorMat = new THREE.MeshStandardMaterial({ color: COLORS.floor, roughness: 0.95 })
+    const floorMat = noOutline(toonMat(COLORS.floor))
     const floor = new THREE.Mesh(floorGeo, floorMat)
     floor.rotation.x = -Math.PI / 2
     floor.receiveShadow = true
@@ -22,41 +23,39 @@ export class Dungeon {
     grid.position.y = 0.02
     this.group.add(grid)
 
-    // 중앙 마법진 장식
+    // 중앙 마법진 장식 (발광 링 — 외곽선 제외)
     const rune = new THREE.Mesh(
       new THREE.RingGeometry(3, 3.4, 40),
-      new THREE.MeshBasicMaterial({ color: COLORS.xp, transparent: true, opacity: 0.25, side: THREE.DoubleSide }),
+      noOutline(new THREE.MeshBasicMaterial({ color: COLORS.xp, transparent: true, opacity: 0.25, side: THREE.DoubleSide })),
     )
     rune.rotation.x = -Math.PI / 2
     rune.position.y = 0.03
     this.group.add(rune)
     const rune2 = new THREE.Mesh(
       new THREE.RingGeometry(1.4, 1.6, 30),
-      new THREE.MeshBasicMaterial({ color: COLORS.xp, transparent: true, opacity: 0.15, side: THREE.DoubleSide }),
+      noOutline(new THREE.MeshBasicMaterial({ color: COLORS.xp, transparent: true, opacity: 0.15, side: THREE.DoubleSide })),
     )
     rune2.rotation.x = -Math.PI / 2
     rune2.position.y = 0.03
     this.group.add(rune2)
 
-    // 외벽 (원통)
+    // 외벽 (원통 — 외곽선 제외)
     const wallGeo = new THREE.CylinderGeometry(this.radius + 0.5, this.radius + 0.5, 4, 48, 1, true)
-    const wallMat = new THREE.MeshStandardMaterial({ color: COLORS.wall, roughness: 0.9, side: THREE.BackSide })
+    const wallMat = noOutline(toonMat(COLORS.wall, { side: THREE.BackSide }))
     const wall = new THREE.Mesh(wallGeo, wallMat)
     wall.position.y = 2
     this.group.add(wall)
 
     // 벽 상단 테두리
-    const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(this.radius + 0.5, 0.35, 8, 48),
-      new THREE.MeshStandardMaterial({ color: COLORS.wallTop, roughness: 0.7 }),
-    )
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(this.radius + 0.5, 0.35, 8, 48), toonMat(COLORS.wallTop))
     rim.rotation.x = Math.PI / 2
     rim.position.y = 4
     this.group.add(rim)
 
     // 장식 기둥 (외곽을 따라 — 던전 분위기, 충돌 없음)
     const pillarGeo = new THREE.CylinderGeometry(0.6, 0.7, 5, 8)
-    const pillarMat = new THREE.MeshStandardMaterial({ color: COLORS.wallTop, roughness: 0.8 })
+    const pillarMat = toonMat(COLORS.wallTop)
+    const flameMat = noOutline(new THREE.MeshBasicMaterial({ color: 0xffb050 }))
     for (let i = 0; i < 10; i++) {
       const a = (i / 10) * Math.PI * 2
       const pillar = new THREE.Mesh(pillarGeo, pillarMat)
@@ -67,10 +66,7 @@ export class Dungeon {
       const torch = new THREE.PointLight(0xff8030, 6, 14, 2)
       torch.position.set(Math.cos(a) * (this.radius - 1.5), 5, Math.sin(a) * (this.radius - 1.5))
       this.group.add(torch)
-      const flame = new THREE.Mesh(
-        new THREE.SphereGeometry(0.25, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xffb050 }),
-      )
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), flameMat)
       flame.position.copy(torch.position)
       this.group.add(flame)
     }
