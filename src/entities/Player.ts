@@ -109,6 +109,7 @@ export class Player {
   private walkPhase = 0
   private char!: CharacterSprite
   private moving = false
+  private shootAnim = 0
 
   // 탄약/장전
   magSize = START_GUN.magSize
@@ -117,7 +118,7 @@ export class Player {
   private reloadTimer = 0
 
   constructor() {
-    this.char = new CharacterSprite()
+    this.char = new CharacterSprite(this.gun.id, this.sword.id)
     this.group = this.char.object
     this.stats = {} as PlayerStats
     this.recompute()
@@ -157,7 +158,7 @@ export class Player {
     if (this.hp > 0) this.hp = Math.min(this.hp, this.stats.maxHp)
   }
 
-  /** 무기 장착(총/검 자동 판별) */
+  /** 무기 장착(총/검 자동 판별) — 캐릭터가 든 무기 스프라이트도 갱신 */
   equip(w: GunDef | SwordDef) {
     if (w.kind === 'gun') {
       this.gun = w
@@ -168,6 +169,7 @@ export class Player {
       this.sword = w
       this.recompute()
     }
+    this.char.setWeapons(this.gun.id, this.sword.id)
   }
 
   get isDashing() {
@@ -273,6 +275,7 @@ export class Player {
       if (this.ammo > 0) {
         this.gunTimer = this.stats.gunCooldown
         this.ammo--
+        this.shootAnim = 0.16 // 사격 모션 재생
         const shots = this.stats.multishot
         const baseDir = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
         for (let i = 0; i < shots; i++) {
@@ -328,10 +331,17 @@ export class Player {
       dt,
       this.pos,
       this.angle,
-      { moving: this.moving, dashing: this.isDashing, swinging: this.swingAnim > 0, invulnerable: this.invulnerable },
+      {
+        moving: this.moving,
+        dashing: this.isDashing,
+        swinging: this.swingAnim > 0,
+        shooting: this.shootAnim > 0,
+        invulnerable: this.invulnerable,
+      },
       this.hitFlash,
     )
     if (this.swingAnim > 0) this.swingAnim -= dt
+    if (this.shootAnim > 0) this.shootAnim -= dt
   }
 
   takeDamage(amount: number): boolean {

@@ -241,9 +241,58 @@ export class AudioManager {
     return 440 * Math.pow(2, (m - 69) / 12)
   }
 
+  // ── BGM 파일 (public/thorn_garden.ogg) — 실패 시 신시사이저 폴백 ──
+  private static readonly BGM_URL = 'thorn_garden.ogg'
+  private bgmBuffer: AudioBuffer | null = null
+  private bgmSource: AudioBufferSourceNode | null = null
+  private bgmLoading = false
+  private bgmFailed = false
+
   startMusic() {
     if (!this.ctx || this.musicOn) return
     this.musicOn = true
+
+    if (this.bgmBuffer) {
+      this.playFileBgm()
+      return
+    }
+    if (this.bgmFailed) {
+      this.startSequencer()
+      return
+    }
+    if (!this.bgmLoading) {
+      this.bgmLoading = true
+      fetch(AudioManager.BGM_URL)
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status))
+          return r.arrayBuffer()
+        })
+        .then((ab) => this.ctx!.decodeAudioData(ab))
+        .then((buf) => {
+          this.bgmBuffer = buf
+          this.bgmLoading = false
+          if (this.musicOn) this.playFileBgm()
+        })
+        .catch(() => {
+          this.bgmFailed = true
+          this.bgmLoading = false
+          if (this.musicOn) this.startSequencer()
+        })
+    }
+  }
+
+  private playFileBgm() {
+    if (!this.ctx || !this.bgmBuffer) return
+    this.bgmSource?.stop()
+    const src = this.ctx.createBufferSource()
+    src.buffer = this.bgmBuffer
+    src.loop = true
+    src.connect(this.musicGain)
+    src.start()
+    this.bgmSource = src
+  }
+
+  private startSequencer() {
     this.step = 0
     this.nextStepTime = this.now() + 0.1
     this.scheduler()
@@ -254,6 +303,14 @@ export class AudioManager {
     if (this.schedulerId !== null) {
       clearInterval(this.schedulerId)
       this.schedulerId = null
+    }
+    if (this.bgmSource) {
+      try {
+        this.bgmSource.stop()
+      } catch {
+        /* 이미 정지됨 */
+      }
+      this.bgmSource = null
     }
   }
 
