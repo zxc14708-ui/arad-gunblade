@@ -1,31 +1,51 @@
 import * as THREE from 'three'
 
 /**
- * 2D 주인공 빌보드 — 던파 총검사 픽셀 스프라이트 (참조 원화 기반).
- * 은백발 스파이크 헤어 + 안경 + 흰 롱코트(펄럭이는 자락) + 녹색 조끼 + 흰 크라바트.
+ * 2D 주인공 빌보드 — SD 총검사 아트 시트(public/gunblader.png) 사용.
  *
- * 스프라이트 시트 9프레임: 0 대기 / 1-4 걷기 / 5-6 검 베기(들기→휘두름) / 7-8 사격(발사→반동).
- * 무기(gunId/swordId)별로 캐릭터가 실제로 그 무기를 든 시트를 새로 그린다 → setWeapons().
- * 실제 아트로 교체하려면 SHEET_URL(가로 9프레임 스트립)만 지정.
+ * 아트 시트: 96x64 셀 × 27프레임 스트립 (오른쪽 기준)
+ *   대기 0-3 / 걷기 4-10 / 검 공격 11-18 / 총 공격 19-26
+ * 로드 실패 시(또는 로드 전) 절차 생성 픽셀 시트(9프레임)로 폴백.
+ * 절차 시트는 무기별 드로잉을 지원하므로 폴백 상태에선 무기 교체가 반영된다.
  */
+interface SheetSpec {
+  n: number
+  aspect: number // 셀 가로/세로
+  anim: Record<'idle' | 'walk' | 'attack' | 'shoot', number[]>
+  fps: { idle: number; walk: number; dash: number; attack: number; shoot: number }
+}
+
 const FW = 48
 const FH = 56
-const N = 9
-const ANIM: Record<'idle' | 'walk' | 'attack' | 'shoot', number[]> = {
-  idle: [0],
-  walk: [1, 2, 3, 4],
-  attack: [5, 6],
-  shoot: [7, 8],
+const PROC_SPEC: SheetSpec = {
+  n: 9,
+  aspect: FW / FH,
+  anim: { idle: [0], walk: [1, 2, 3, 4], attack: [5, 6], shoot: [7, 8] },
+  fps: { idle: 2, walk: 9, dash: 15, attack: 10, shoot: 12 },
+}
+const ART_SPEC: SheetSpec = {
+  n: 27,
+  aspect: 96 / 64,
+  anim: {
+    idle: [0, 1, 2, 3],
+    walk: [4, 5, 6, 7, 8, 9, 10],
+    attack: [11, 12, 13, 14, 15, 16, 17, 18],
+    shoot: [19, 20, 21, 22, 23, 24, 25, 26],
+  },
+  fps: { idle: 5, walk: 14, dash: 20, attack: 26, shoot: 26 },
 }
 
 export class CharacterSprite {
-  static SHEET_URL: string | null = null
+  /** 커스텀 아트 시트 경로 (null이면 절차 생성만 사용) */
+  static SHEET_URL: string | null = 'gunblader.png'
 
   object = new THREE.Group()
   private sprite: THREE.Sprite
   private mat: THREE.SpriteMaterial
   private shadow: THREE.Mesh
-  private readonly baseH = 3.1
+  private readonly baseH = 3.7
+  private spec: SheetSpec = PROC_SPEC
+  private artActive = false
   private animTime = 0
   private flip = 1
   private lastState = ''
@@ -35,15 +55,14 @@ export class CharacterSprite {
   constructor(gunId = 'm1911', swordId = 'katana') {
     this.gunId = gunId
     this.swordId = swordId
-    const tex = CharacterSprite.SHEET_URL
-      ? new THREE.TextureLoader().load(CharacterSprite.SHEET_URL)
-      : makeTexture(makeSheet(gunId, swordId))
-    tex.repeat.set(1 / N, 1)
 
+    // 우선 절차 시트로 시작 (즉시 표시)
+    const tex = makeTexture(makeSheet(gunId, swordId))
+    tex.repeat.set(1 / this.spec.n, 1)
     this.mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
     this.sprite = new THREE.Sprite(this.mat)
     this.sprite.center.set(0.5, 0)
-    this.sprite.scale.set(this.baseH * (FW / FH), this.baseH, 1)
+    this.applyScale()
     this.object.add(this.sprite)
 
     const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false })
@@ -53,17 +72,45 @@ export class CharacterSprite {
     this.shadow.position.y = 0.02
     this.shadow.scale.set(1, 0.55, 1)
     this.object.add(this.shadow)
+
+    // 아트 시트 비동기 로드 → 성공 시 교체
+    if (CharacterSprite.SHEET_URL) {
+      new THREE.TextureLoader().load(
+        CharacterSprite.SHEET_URL,
+        (loaded) => {
+          loaded.magFilter = THREE.NearestFilter
+          loaded.minFilter = THREE.NearestFilter
+          loaded.generateMipmaps = false
+          loaded.colorSpace = THREE.SRGBColorSpace
+          this.spec = ART_SPEC
+          loaded.repeat.set(1 / this.spec.n, 1)
+          const old = this.mat.map
+          this.mat.map = loaded
+          this.mat.needsUpdate = true
+          this.artActive = true
+          this.applyScale()
+          old?.dispose()
+        },
+        undefined,
+        () => {
+          /* 로드 실패 → 절차 시트 유지 */
+        },
+      )
+    }
   }
 
-  /** 무기 교체 시 해당 무기를 든 시트로 재생성 */
+  private applyScale() {
+    this.sprite.scale.set(this.baseH * this.spec.aspect, this.baseH, 1)
+  }
+
+  /** 무기 교체 — 아트 시트 사용 중엔 시트 고정, 폴백(절차) 상태에서만 재생성 */
   setWeapons(gunId: string, swordId: string) {
-    if (CharacterSprite.SHEET_URL) return
-    if (gunId === this.gunId && swordId === this.swordId) return
     this.gunId = gunId
     this.swordId = swordId
+    if (this.artActive) return
     const old = this.mat.map
     const tex = makeTexture(makeSheet(gunId, swordId))
-    tex.repeat.set(1 / N, 1)
+    tex.repeat.set(1 / this.spec.n, 1)
     this.mat.map = tex
     this.mat.needsUpdate = true
     old?.dispose()
@@ -83,7 +130,7 @@ export class CharacterSprite {
   }
 
   private setFrame(idx: number, faceLeft: boolean) {
-    const fw = 1 / N
+    const fw = 1 / this.spec.n
     const map = this.mat.map!
     if (faceLeft) {
       map.offset.x = (idx + 1) * fw
@@ -111,10 +158,13 @@ export class CharacterSprite {
       this.animTime = 0 // 동작 시작 프레임부터 재생
       this.lastState = state
     }
-    const fps = state === 'attack' ? 10 : state === 'shoot' ? 12 : state === 'walk' ? (st.dashing ? 15 : 9) : 2
+    const fpsT = this.spec.fps
+    const fps = state === 'attack' ? fpsT.attack : state === 'shoot' ? fpsT.shoot : state === 'walk' ? (st.dashing ? fpsT.dash : fpsT.walk) : fpsT.idle
     this.animTime += dt
-    const frames = ANIM[state]
-    const idx = frames[Math.floor(this.animTime * fps) % frames.length]
+    const frames = this.spec.anim[state]
+    const raw = Math.floor(this.animTime * fps)
+    // 베기는 원샷(마지막 프레임 유지), 나머지는 루프
+    const idx = state === 'attack' ? frames[Math.min(raw, frames.length - 1)] : frames[raw % frames.length]
     this.setFrame(idx, faceLeft)
 
     const bob = st.moving ? Math.abs(Math.sin(this.animTime * (st.dashing ? 18 : 11))) * (st.dashing ? 0.14 : 0.08) : 0
@@ -136,7 +186,7 @@ function makeTexture(canvas: HTMLCanvasElement): THREE.Texture {
   return t
 }
 
-// ══════════════════ 시트 드로잉 ══════════════════
+// ══════════════════ 절차 생성 폴백 시트 (아트 로드 실패 시) ══════════════════
 const C = {
   out: '#241f1b',
   skin: '#e6b98e',
@@ -162,10 +212,10 @@ const C = {
 
 type Mode = 'idle' | 'walk' | 'windup' | 'slash' | 'shoot1' | 'shoot2'
 
-/** 가로 9프레임 시트 생성 (무기별) */
+/** 가로 9프레임 폴백 시트 생성 (무기별) */
 export function makeSheet(gunId: string, swordId: string): HTMLCanvasElement {
   const cv = document.createElement('canvas')
-  cv.width = FW * N
+  cv.width = FW * 9
   cv.height = FH
   const x = cv.getContext('2d')!
   x.imageSmoothingEnabled = false

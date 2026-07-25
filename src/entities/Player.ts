@@ -317,7 +317,7 @@ export class Player {
       // 전방 짧은 대시
       const fwd = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
       this.pos.addScaledVector(fwd, this.stats.lunge * dt * 6)
-      this.swingAnim = 0.25
+      this.swingAnim = 0.3 // 아트 시트 8프레임 재생 시간
       // 레전더리: 발도 시 총 즉시 장전
       if (this.mods.swordReloads && this.ammo < this.magSize) {
         this.ammo = this.magSize
