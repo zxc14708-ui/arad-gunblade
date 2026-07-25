@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { CONFIG, COLORS } from '../config'
 import { Input } from '../core/Input'
-import { buildGunblade } from './models'
+import { CharacterSprite } from './CharacterSprite'
 
 export interface PlayerStats {
   maxHp: number
@@ -62,28 +62,18 @@ export class Player {
   private invuln = 0
   private hitFlash = 0
   private walkPhase = 0
-  private katana: THREE.Object3D | null = null
-  private slide: THREE.Object3D | null = null
-  private legL: THREE.Object3D | null = null
-  private legR: THREE.Object3D | null = null
-  private armR: THREE.Object3D | null = null
+  private char!: CharacterSprite
   private moving = false
-  private lean = 0
 
   // M1911 탄약/장전
   magSize = CONFIG.gun.magSize
   ammo = CONFIG.gun.magSize
   reloading = false
   private reloadTimer = 0
-  private slideKick = 0
 
   constructor() {
-    this.group = buildGunblade()
-    this.katana = this.group.getObjectByName('katana') ?? null
-    this.slide = this.group.getObjectByName('pistolSlide') ?? null
-    this.legL = this.group.getObjectByName('legL') ?? null
-    this.legR = this.group.getObjectByName('legR') ?? null
-    this.armR = this.group.getObjectByName('armR') ?? null
+    this.char = new CharacterSprite()
+    this.group = this.char.object
     this.stats = {
       maxHp: CONFIG.player.maxHp,
       moveSpeed: CONFIG.player.speed,
@@ -206,7 +196,6 @@ export class Player {
       if (this.ammo > 0) {
         this.gunTimer = this.stats.gunCooldown
         this.ammo--
-        this.slideKick = 0.06
         const shots = this.stats.multishot
         const baseDir = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
         for (let i = 0; i < shots; i++) {
@@ -251,62 +240,16 @@ export class Player {
   }
 
   private swingAnim = 0
-  private readonly SWING_DUR = 0.25
   private syncMesh(dt: number) {
-    this.group.position.set(this.pos.x, 0, this.pos.z)
-    this.group.rotation.y = this.angle
-
-    // ── 대시 시 전방 기울임 (order YXZ) ──
-    const leanTarget = this.isDashing ? -0.3 : 0
-    this.lean += (leanTarget - this.lean) * Math.min(1, dt * 14)
-    this.group.rotation.x = this.lean
-
-    // ── 걷기/뛰기: 다리 스윙 + 몸통 바운스 ──
-    const swing = Math.sin(this.walkPhase)
-    const amp = this.isDashing ? 0.95 : 0.5
-    if (this.moving) {
-      if (this.legL) this.legL.rotation.x = swing * amp
-      if (this.legR) this.legR.rotation.x = -swing * amp
-      this.group.position.y = Math.abs(Math.sin(this.walkPhase)) * (this.isDashing ? 0.09 : 0.05)
-    } else {
-      // 멈추면 다리를 서서히 기본 자세로
-      if (this.legL) this.legL.rotation.x *= 1 - Math.min(1, dt * 12)
-      if (this.legR) this.legR.rotation.x *= 1 - Math.min(1, dt * 12)
-      this.group.position.y *= 1 - Math.min(1, dt * 12)
-    }
-
-    // ── 검 휘두르기: 오른팔(어깨) 아크 스윙 ──
-    if (this.swingAnim > 0) {
-      this.swingAnim -= dt
-      if (this.armR) {
-        const t = 1 - Math.max(0, this.swingAnim) / this.SWING_DUR // 0→1
-        // 오른쪽 위에서 앞쪽 왼편으로 쓸어내리는 횡베기
-        const raise = Math.sin(t * Math.PI) // 0→1→0 (중간에 살짝 들림)
-        this.armR.rotation.set(-0.4 - raise * 0.9, 0.6 - t * 1.9, -raise * 0.4)
-      }
-    } else if (this.armR) {
-      // 기본 자세로 복귀
-      this.armR.rotation.x += (0 - this.armR.rotation.x) * Math.min(1, dt * 14)
-      this.armR.rotation.y += (0 - this.armR.rotation.y) * Math.min(1, dt * 14)
-      this.armR.rotation.z += (0 - this.armR.rotation.z) * Math.min(1, dt * 14)
-    }
-
-    // 권총 슬라이드 블로우백 (발사 시 뒤로 튐)
-    if (this.slide) {
-      if (this.slideKick > 0) this.slideKick -= dt
-      const kick = Math.max(0, this.slideKick) / 0.06
-      this.slide.position.z = -kick * 0.12
-    }
-    // 피격 플래시
-    const flash = this.hitFlash > 0
-    this.group.traverse((o) => {
-      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
-      if (m && m.emissive) {
-        m.emissiveIntensity = flash ? 0.8 : (m.userData.baseEmissive ?? 0)
-        if (flash) m.emissive.setHex(0xff3030)
-      }
-    })
-    this.group.visible = !(this.invulnerable && Math.floor(performance.now() / 60) % 2 === 0)
+    // 2D 스프라이트(빌보드) 갱신
+    this.char.update(
+      dt,
+      this.pos,
+      this.angle,
+      { moving: this.moving, dashing: this.isDashing, swinging: this.swingAnim > 0, invulnerable: this.invulnerable },
+      this.hitFlash,
+    )
+    if (this.swingAnim > 0) this.swingAnim -= dt
   }
 
   takeDamage(amount: number): boolean {
