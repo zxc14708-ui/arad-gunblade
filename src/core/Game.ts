@@ -5,6 +5,7 @@ import { Input } from './Input'
 import { Dungeon } from '../systems/Dungeon'
 import { Player } from '../entities/Player'
 import { Enemy } from '../entities/Enemy'
+import { enemyTexture, ENEMY_SCALE } from '../entities/EnemySprite'
 import { Projectiles } from '../systems/Projectiles'
 import { Orbs } from '../systems/Orbs'
 import { Effects } from '../systems/Effects'
@@ -40,6 +41,7 @@ export class Game {
   private score = 0
   private boss: Enemy | null = null
   private wasDashing = false
+  private ghostTimer = 0
   private pendingReward = false
   private settingsOpen = false
   /** 획득한 특성 목록 (id → 업그레이드 + 획득 횟수=레벨) */
@@ -261,6 +263,17 @@ export class Game {
       this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
     }
 
+    // 대시 잔상 (대시 중 일정 간격으로 고스트 생성)
+    if (this.player.isDashing) {
+      this.ghostTimer -= dt
+      if (this.ghostTimer <= 0) {
+        this.ghostTimer = 0.045
+        this.effects.ghost(this.player.ghostParams(), this.player.pos)
+      }
+    } else {
+      this.ghostTimer = 0
+    }
+
     // 대시 시작 감지 → 회피 사운드
     if (this.player.isDashing && !this.wasDashing) this.audio.dash()
     // 대시 종료 감지 → 레전더리 '섬광강타' 폭발
@@ -469,6 +482,8 @@ export class Game {
     this.scene.remove(e.group)
     this.kills++
     this.score += Math.round(e.maxHp)
+    // 사망 산화 연출 (섬광 → 주저앉으며 소멸) + 파편
+    this.effects.deathDissolve(e.pos, enemyTexture(e.kind), ENEMY_SCALE[e.kind])
     this.effects.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), COLORS.hit, 14, 8)
     this.orbs.drop(e.pos.x, e.pos.z, e.xp)
     // 레전더리 '폭심': 처치 시 폭발

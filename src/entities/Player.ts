@@ -184,6 +184,11 @@ export class Player {
   get dashCooldownRatio() {
     return 1 - Math.max(0, this.dashCdTimer) / this.stats.dashCooldown
   }
+  /** 대시 잔상용 현재 프레임 정보 */
+  ghostParams() {
+    return this.char.ghostParams()
+  }
+
   /** 장전 진행도 0..1 */
   get reloadRatio() {
     return this.reloading ? 1 - this.reloadTimer / this.stats.reloadTime : 1

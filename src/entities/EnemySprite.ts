@@ -18,6 +18,12 @@ function tex(kind: EnemyKind): THREE.Texture {
 
 const SCALE: Record<EnemyKind, number> = { imp: 1.7, brute: 3.0, shooter: 2.0, boss: 4.2 }
 
+/** 사망 연출 등 외부에서 적 텍스처/크기 참조용 */
+export function enemyTexture(kind: EnemyKind): THREE.Texture {
+  return tex(kind)
+}
+export { SCALE as ENEMY_SCALE }
+
 /** 적 빌보드 스프라이트 + 그림자. 반환 group을 씬에 추가하고, mat로 피격 틴트. */
 export function buildEnemySprite(kind: EnemyKind): { group: THREE.Group; mat: THREE.SpriteMaterial } {
   const group = new THREE.Group()

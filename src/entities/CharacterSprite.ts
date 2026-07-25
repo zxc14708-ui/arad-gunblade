@@ -69,6 +69,19 @@ export class CharacterSprite {
     old?.dispose()
   }
 
+  /** 대시 잔상용: 현재 프레임의 텍스처/UV/크기 정보 */
+  ghostParams() {
+    const map = this.mat.map!
+    return {
+      map,
+      offsetX: map.offset.x,
+      repeatX: map.repeat.x,
+      sx: this.sprite.scale.x,
+      sy: this.sprite.scale.y,
+      bobY: this.sprite.position.y,
+    }
+  }
+
   private setFrame(idx: number, faceLeft: boolean) {
     const fw = 1 / N
     const map = this.mat.map!
@@ -192,132 +205,132 @@ function drawFrame(x: CanvasRenderingContext2D, mode: Mode, leg: number, gunId: 
     x.fill()
   }
 
+  // 비율: 머리 축소(r6) + 다리 연장(엉덩이35→발51) → 팔다리 모션 가독성 향상
   const lunge = mode === 'slash' ? 3 : 0 // 베기 시 전진
   const recoil = mode === 'shoot1' ? -1 : 0 // 사격 반동
   const bx = cx + lunge + recoil // 몸 기준 x
 
-  // ── 뒤로 펄럭이는 코트 자락 (참조: 크게 갈라진 흰 자락) ──
-  const tailSwing = mode === 'slash' ? 6 : mode === 'windup' ? 2 : leg !== 0 ? 2 : 0
+  // ── 뒤로 펄럭이는 코트 자락 ──
+  const tailSwing = mode === 'slash' ? 7 : mode === 'windup' ? 2 : Math.abs(leg) * 3
   TRI(
     [
-      [bx - 6, 26],
-      [bx - 13 - tailSwing, 50],
-      [bx - 5 - tailSwing / 2, 48],
+      [bx - 5, 23],
+      [bx - 13 - tailSwing, 48],
+      [bx - 4 - tailSwing / 2, 46],
     ],
     C.coatSh,
   )
   TRI(
     [
-      [bx - 4, 26],
-      [bx - 9 - tailSwing, 51],
-      [bx - 1, 47],
+      [bx - 3, 23],
+      [bx - 9 - tailSwing, 49],
+      [bx, 45],
     ],
     C.coat,
   )
 
   // ── 검 (몸 뒤: 대기/걷기=어깨 거치, windup=치켜듦) ──
-  if (mode === 'idle' || mode === 'walk') drawSword(x, bx + 8, 24, 'shoulder', swordId)
-  if (mode === 'windup') drawSword(x, bx + 7, 20, 'windup', swordId)
+  if (mode === 'idle' || mode === 'walk') drawSword(x, bx + 7, 20, 'shoulder', swordId)
+  if (mode === 'windup') drawSword(x, bx + 6, 16, 'windup', swordId)
 
-  // ── 다리 & 부츠 ──
-  const lLift = Math.max(0, leg) * 3
-  const rLift = Math.max(0, -leg) * 3
-  const legSpread = mode === 'slash' ? 4 : 0 // 돌진 자세
+  // ── 다리 & 부츠 (긴 다리 + 보폭 스트라이드) ──
+  const stride = leg * 2.5 // 앞뒤 보폭
+  const fLift = Math.max(0, leg) * 4 // 앞다리 들어올림
+  const bLift = Math.max(0, -leg) * 4 // 뒷다리 들어올림
+  const spread = mode === 'slash' ? 5 : 0 // 돌진 자세 벌림
   // 뒷다리
-  R(bx - 5 - legSpread, 40, 5, 10 - rLift, C.pants)
-  R(bx - 6 - legSpread, 48 - rLift, 7, 4, C.boot)
-  R(bx - 6 - legSpread, 51 - rLift, 7, 1, C.out)
+  R(bx - 5 - spread - stride, 34, 4, 13 - bLift, C.pants)
+  R(bx - 6 - spread - stride, 46 - bLift, 6, 4, C.boot)
+  R(bx - 6 - spread - stride, 49 - bLift, 6, 1, C.out)
   // 앞다리
-  R(bx + 1 + legSpread, 40, 5, 10 - lLift, C.pants)
-  R(bx + legSpread, 48 - lLift, 7, 4, C.boot)
-  R(bx + legSpread, 51 - lLift, 7, 1, C.out)
+  R(bx + 1 + spread + stride, 34, 4, 13 - fLift, C.pants)
+  R(bx + spread + stride, 46 - fLift, 6, 4, C.boot)
+  R(bx + spread + stride, 49 - fLift, 6, 1, C.out)
 
-  // ── 코트 몸통 (흰 롱코트, 허리 아래로 벌어짐) ──
+  // ── 코트 몸통 (흰 롱코트) ──
   TRI(
     [
-      [bx - 8, 20],
-      [bx + 8, 20],
-      [bx + 10, 43],
-      [bx - 10, 43],
+      [bx - 7, 15],
+      [bx + 7, 15],
+      [bx + 9, 35],
+      [bx - 9, 35],
     ],
     C.coat,
   )
-  R(bx + 4, 21, 5, 21, C.coatSh) // 음영
-  R(bx - 8, 42, 18, 1, C.gold) // 금색 밑단 트림
+  R(bx + 3, 16, 5, 18, C.coatSh) // 음영
+  R(bx - 8, 34, 17, 1, C.gold) // 금색 밑단 트림
   // 앞 열림 → 녹색 조끼 + 금단추
-  R(bx - 3, 21, 6, 15, C.vest)
-  R(bx - 1, 23, 1, 1, C.gold)
-  R(bx - 1, 27, 1, 1, C.gold)
-  R(bx - 1, 31, 1, 1, C.gold)
+  R(bx - 3, 16, 6, 12, C.vest)
+  R(bx - 1, 18, 1, 1, C.gold)
+  R(bx - 1, 22, 1, 1, C.gold)
+  R(bx - 1, 26, 1, 1, C.gold)
   // 벨트 + 버클
-  R(bx - 8, 36, 17, 2, '#4f3320')
-  R(bx - 1, 35, 3, 3, C.gold)
+  R(bx - 7, 29, 15, 2, '#4f3320')
+  R(bx - 1, 28, 3, 3, C.gold)
   // 흰 크라바트
   TRI(
     [
-      [bx - 3, 18],
-      [bx + 3, 18],
-      [bx, 25],
+      [bx - 3, 13],
+      [bx + 3, 13],
+      [bx, 19],
     ],
     C.cravat,
   )
 
   // ── 검 팔 (오른팔) ──
   if (mode === 'idle' || mode === 'walk') {
-    R(bx + 5, 21, 4, 8, C.coat) // 어깨로 올린 팔
-    R(bx + 7, 23, 3, 3, C.glove)
+    R(bx + 4, 16, 4, 7, C.coat) // 어깨로 올린 팔
+    R(bx + 6, 18, 3, 3, C.glove)
   } else if (mode === 'windup') {
-    R(bx + 4, 17, 4, 7, C.coat)
-    R(bx + 6, 16, 3, 3, C.glove)
+    R(bx + 3, 12, 4, 6, C.coat)
+    R(bx + 5, 11, 3, 3, C.glove)
   }
 
-  // ── 머리 (은백발 스파이크 + 안경) ──
-  const hy = 12 + (mode === 'slash' ? 1 : 0)
+  // ── 머리 (은백발 스파이크 + 안경) — 축소된 머리 ──
+  const hy = 9 + (mode === 'slash' ? 1 : 0)
   x.fillStyle = C.skin
   x.beginPath()
-  x.arc(bx, hy, 7, 0, 7)
+  x.arc(bx, hy, 6, 0, 7)
   x.fill()
-  R(bx - 7, hy + 1, 14, 2, C.skinSh) // 턱 음영
-  // 머리카락: 위로 뻗친 스파이크
+  R(bx - 5, hy + 3, 10, 1, C.skinSh) // 턱 음영
+  // 머리카락
   x.fillStyle = C.hair
   x.beginPath()
-  x.arc(bx, hy - 3, 7.5, Math.PI, 0)
+  x.arc(bx, hy - 2, 6.5, Math.PI, 0)
   x.fill()
-  TRI([[bx - 7, hy - 5], [bx - 10, hy - 11], [bx - 3, hy - 7]], C.hair)
-  TRI([[bx - 2, hy - 7], [bx - 1, hy - 14], [bx + 3, hy - 7]], C.hair)
-  TRI([[bx + 3, hy - 6], [bx + 8, hy - 12], [bx + 7, hy - 4]], C.hair)
-  TRI([[bx + 6, hy - 3], [bx + 11, hy - 6], [bx + 7, hy - 1]], C.hairSh) // 옆 뻗침
+  TRI([[bx - 6, hy - 4], [bx - 9, hy - 9], [bx - 2, hy - 6]], C.hair)
+  TRI([[bx - 2, hy - 6], [bx, hy - 12], [bx + 3, hy - 5]], C.hair)
+  TRI([[bx + 3, hy - 5], [bx + 7, hy - 9], [bx + 6, hy - 3]], C.hair)
+  TRI([[bx + 5, hy - 2], [bx + 10, hy - 5], [bx + 6, hy]], C.hairSh) // 옆 뻗침
   // 안경 (은테)
-  R(bx - 5, hy - 1, 4, 3, C.out)
-  R(bx + 1, hy - 1, 4, 3, C.out)
-  R(bx - 4, hy, 2, 1, '#8899aa')
-  R(bx + 2, hy, 2, 1, '#8899aa')
+  R(bx - 4, hy, 3, 2, C.out)
+  R(bx + 1, hy, 3, 2, C.out)
+  R(bx - 3, hy, 1, 1, '#8899aa')
+  R(bx + 2, hy, 1, 1, '#8899aa')
   R(bx - 1, hy, 2, 1, C.out)
 
-  // ── 총 팔 (왼팔) + 총 ──
+  // ── 총 팔 (왼팔) + 총 — 걷기 시 다리 반대 위상으로 스윙 ──
   if (mode === 'shoot1' || mode === 'shoot2') {
-    // 팔 전방으로 쭉
-    R(bx + 2, 22, 9, 3, C.coat)
-    R(bx + 10, 22, 3, 3, C.glove)
-    drawGun(x, bx + 12, 22, gunId, mode === 'shoot1')
+    R(bx + 2, 18, 9, 3, C.coat) // 팔 전방으로 쭉
+    R(bx + 10, 18, 3, 3, C.glove)
+    drawGun(x, bx + 12, 18, gunId, mode === 'shoot1')
   } else if (mode === 'slash') {
-    // 베기 중엔 총 팔은 뒤로
-    R(bx - 8, 22, 5, 3, C.coat)
+    R(bx - 7, 18, 5, 3, C.coat) // 베기 중 뒤로 젖힌 팔
   } else {
-    // 대기/걷기: 총 내려 든 손
-    R(bx - 8, 24, 3, 8, C.coat)
-    R(bx - 8, 31, 3, 3, C.glove)
-    drawGunSmall(x, bx - 8, 33, gunId)
+    const armSwing = -leg * 2 // 팔은 다리와 반대로
+    R(bx - 8 + armSwing, 17, 3, 9, C.coat)
+    R(bx - 8 + armSwing, 25, 3, 3, C.glove)
+    drawGunSmall(x, bx - 8 + armSwing, 27, gunId)
   }
 
   // ── 베기 검 (몸 앞, 스윙 궤적 포함) ──
   if (mode === 'slash') {
-    drawSword(x, bx + 6, 27, 'slash', swordId)
+    drawSword(x, bx + 6, 23, 'slash', swordId)
     // 잔상 아크
     x.strokeStyle = 'rgba(255,244,200,0.75)'
     x.lineWidth = 2
     x.beginPath()
-    x.arc(bx + 4, 26, 17, -0.9, 0.75)
+    x.arc(bx + 4, 22, 17, -0.9, 0.75)
     x.stroke()
   }
 }
