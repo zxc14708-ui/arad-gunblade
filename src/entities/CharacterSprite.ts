@@ -148,8 +148,9 @@ export class CharacterSprite {
     st: { moving: boolean; dashing: boolean; swinging: boolean; shooting: boolean; invulnerable: boolean },
     hitFlash: number,
   ) {
-    if (Math.sin(aimAngle) < -0.15) this.flip = -1
-    else if (Math.sin(aimAngle) > 0.15) this.flip = 1
+    // 조준 x성분으로 좌우 전환 (데드존 좁게 → 방향 전환이 굼뜨지 않게)
+    if (Math.sin(aimAngle) < -0.05) this.flip = -1
+    else if (Math.sin(aimAngle) > 0.05) this.flip = 1
     const faceLeft = this.flip < 0
 
     // 우선순위: 베기 > 사격 > 걷기 > 대기

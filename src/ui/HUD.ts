@@ -141,23 +141,35 @@ export class HUD {
   }
 
   onStart(cb: () => void) {
-    ;(this.q('#startBtn') as HTMLButtonElement).onclick = () => {
+    const btn = this.q('#startBtn') as HTMLButtonElement
+    btn.onclick = () => {
+      btn.blur() // 포커스 남으면 Space/Enter가 버튼을 재활성화함
       this.startOv.classList.remove('show')
       cb()
     }
   }
   onRestart(cb: () => void) {
-    ;(this.q('#restartBtn') as HTMLButtonElement).onclick = () => {
+    const btn = this.q('#restartBtn') as HTMLButtonElement
+    btn.onclick = () => {
+      btn.blur()
       this.overOv.classList.remove('show')
       cb()
     }
   }
 
   onOpenSettings(cb: () => void) {
-    ;(this.q('#settingsBtn') as HTMLButtonElement).onclick = cb
+    const btn = this.q('#settingsBtn') as HTMLButtonElement
+    btn.onclick = () => {
+      btn.blur()
+      cb()
+    }
   }
   onCloseSettings(cb: () => void) {
-    ;(this.q('#settingsClose') as HTMLButtonElement).onclick = cb
+    const btn = this.q('#settingsClose') as HTMLButtonElement
+    btn.onclick = () => {
+      btn.blur()
+      cb()
+    }
   }
 
   onVolume(cb: (kind: 'master' | 'music' | 'sfx', v: number) => void) {

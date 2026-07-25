@@ -199,6 +199,7 @@ export class Game {
       this.closeSettings()
     } else {
       this.settingsOpen = true
+      this.input.clearAll() // 설정창 여는 동안 눌린 키 해제
       this.audio.init()
       this.audio.resume()
       this.hud.openSettings(
@@ -226,6 +227,7 @@ export class Game {
   private loop = () => {
     requestAnimationFrame(this.loop)
     const dt = Math.min(this.clock.getDelta(), 0.05)
+    this.input.update() // 포커스 상실로 유실된 keyup 복구(키 고정 방지)
 
     if (this.state === 'playing' && !this.settingsOpen) this.step(dt)
 
@@ -532,6 +534,7 @@ export class Game {
 
   private openLevelUp() {
     this.state = 'levelup'
+    this.input.clearAll() // 선택창 동안 눌린 키 해제(재개 시 키 고정 방지)
     this.audio.levelup()
     this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', rollChoices(3), (u) => {
       this.applyTrait(u)
@@ -542,6 +545,7 @@ export class Game {
   /** 보스 처치 보상: 장비 1개 + 특성 1개 선택 */
   private openBossReward() {
     this.state = 'reward'
+    this.input.clearAll()
     this.audio.levelup()
     const weapons = rollWeapons(3, [this.player.gun.id, this.player.sword.id])
     this.hud.showEquipment(weapons as WeaponDef[], (w) => {

@@ -1,4 +1,12 @@
-/** 키보드 / 마우스 입력 관리 */
+/**
+ * 키보드 / 마우스 입력 관리
+ *
+ * 키 고정(stuck key) 방지:
+ *   창 포커스 상실(알트탭)·탭 전환·우클릭 메뉴 등에서 keyup 이벤트가 유실되면
+ *   키가 계속 눌린 상태로 남아 캐릭터가 한 방향으로 고정된다.
+ *   blur/visibilitychange/pagehide에서 초기화하고, 매 프레임 document.hasFocus()로
+ *   이벤트가 유실된 경우까지 복구한다.
+ */
 export class Input {
   keys = new Set<string>()
   mouseDown = false
@@ -6,6 +14,7 @@ export class Input {
   /** 마우스의 NDC 좌표 (-1..1) */
   ndc = { x: 0, y: 0 }
   private el: HTMLElement
+  private hadFocus = true
 
   constructor(el: HTMLElement) {
     this.el = el
@@ -15,9 +24,31 @@ export class Input {
     window.addEventListener('mouseup', this.onMouseUp)
     window.addEventListener('mousemove', this.onMove)
     el.addEventListener('contextmenu', (e) => e.preventDefault())
+
+    // 포커스/가시성 변화 시 입력 초기화
+    window.addEventListener('blur', this.clearAll)
+    window.addEventListener('pagehide', this.clearAll)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.clearAll()
+    })
+  }
+
+  /** 눌린 키·버튼 전부 해제 */
+  clearAll = () => {
+    this.keys.clear()
+    this.mouseDown = false
+    this.rightDown = false
+  }
+
+  /** 매 프레임 호출 — 포커스가 빠진 사이 유실된 keyup을 복구 */
+  update() {
+    const focused = document.hasFocus()
+    if (this.hadFocus && !focused) this.clearAll()
+    this.hadFocus = focused
   }
 
   private onKey = (e: KeyboardEvent) => {
+    if (e.isComposing) return // IME 조합 중에는 무시(keyup 유실 방지)
     this.keys.add(e.code)
     // 스크롤 방지
     if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault()
