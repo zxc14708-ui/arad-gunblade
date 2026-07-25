@@ -20,7 +20,9 @@ export class Game {
   private renderer: THREE.WebGLRenderer
   private outline!: OutlineEffect
   private scene: THREE.Scene
-  private camera: THREE.PerspectiveCamera
+  private camera!: THREE.OrthographicCamera
+  private viewSize = 14 // 오쏘 카메라가 보여줄 세로 절반 크기(월드 단위)
+  private pixelScale = 3 // 픽셀아트: 내부 렌더 해상도 축소 배율
   private input: Input
   private hud: HUD
 
@@ -47,17 +49,17 @@ export class Game {
   private aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private raycaster = new THREE.Raycaster()
   private aimGround = new THREE.Vector3()
-  private camOffset = new THREE.Vector3(0, 33, 20)
+  private camOffset = new THREE.Vector3(0, 24, 17)
 
   constructor(container: HTMLElement) {
-    // 렌더러
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    this.renderer.setSize(window.innerWidth, window.innerHeight)
+    // 렌더러 (픽셀아트: 저해상도 렌더 → CSS 확대)
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
+    this.renderer.setPixelRatio(1)
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.1
+    this.renderer.domElement.classList.add('pixelated')
     container.appendChild(this.renderer.domElement)
 
     // 만화풍 잉크 외곽선 (셀 셰이딩과 함께)
@@ -73,10 +75,11 @@ export class Game {
     this.scene.background = new THREE.Color(COLORS.fog)
     this.scene.fog = new THREE.Fog(COLORS.fog, 35, 70)
 
-    // 카메라
-    this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200)
+    // 카메라 (오쏘그래픽 2.5D 탑다운)
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200)
     this.camera.position.copy(this.camOffset)
     this.camera.lookAt(0, 0, 0)
+    this.setRenderSize()
 
     // 조명
     this.scene.add(new THREE.AmbientLight(COLORS.ambient, 1.1))
@@ -135,11 +138,23 @@ export class Game {
     requestAnimationFrame(this.loop)
   }
 
-  private onResize = () => {
-    this.camera.aspect = window.innerWidth / window.innerHeight
+  private onResize = () => this.setRenderSize()
+
+  /** 오쏘 프러스텀 + 저해상도(픽셀) 렌더 버퍼 설정 */
+  private setRenderSize() {
+    const w = window.innerWidth
+    const h = window.innerHeight
+    const aspect = w / h
+    this.camera.left = -aspect * this.viewSize
+    this.camera.right = aspect * this.viewSize
+    this.camera.top = this.viewSize
+    this.camera.bottom = -this.viewSize
     this.camera.updateProjectionMatrix()
-    this.renderer.setSize(window.innerWidth, window.innerHeight)
-    this.outline.setSize(window.innerWidth, window.innerHeight)
+    // 내부 렌더는 축소, 캔버스는 CSS로 화면 전체 (image-rendering: pixelated)
+    const rw = Math.ceil(w / this.pixelScale)
+    const rh = Math.ceil(h / this.pixelScale)
+    this.renderer.setSize(rw, rh, false)
+    this.outline.setSize(rw, rh)
   }
 
   private startGame() {

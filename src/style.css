@@ -30,6 +30,14 @@ canvas {
   cursor: crosshair;
 }
 
+/* 픽셀아트: 저해상도 렌더 버퍼를 화면 전체로 확대(니어리스트) */
+canvas.pixelated {
+  width: 100% !important;
+  height: 100% !important;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
 #ui {
   position: fixed;
   inset: 0;

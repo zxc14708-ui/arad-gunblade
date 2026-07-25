@@ -1,6 +1,6 @@
 import * as THREE from 'three'
-import { CONFIG, COLORS } from '../config'
-import { buildImp, buildBrute, buildShooter, buildBoss } from './models'
+import { CONFIG } from '../config'
+import { buildEnemySprite } from './EnemySprite'
 
 export type EnemyKind = 'imp' | 'brute' | 'shooter' | 'boss'
 
@@ -10,16 +10,15 @@ interface KindDef {
   damage: number
   xp: number
   radius: number
-  build: () => THREE.Group
   ranged?: boolean
   shootCd?: number
 }
 
 const DEFS: Record<EnemyKind, KindDef> = {
-  imp: { hp: 1, speed: 1, damage: 1, xp: 1, radius: 0.6, build: buildImp },
-  brute: { hp: 4.5, speed: 0.6, damage: 2.2, xp: 3.5, radius: 1.1, build: buildBrute },
-  shooter: { hp: 1.4, speed: 0.7, damage: 1.4, xp: 2.2, radius: 0.6, build: buildShooter, ranged: true, shootCd: 2.2 },
-  boss: { hp: 40, speed: 0.85, damage: 3, xp: 30, radius: 1.9, build: buildBoss, ranged: true, shootCd: 1.6 },
+  imp: { hp: 1, speed: 1, damage: 1, xp: 1, radius: 0.6 },
+  brute: { hp: 4.5, speed: 0.6, damage: 2.2, xp: 3.5, radius: 1.1 },
+  shooter: { hp: 1.4, speed: 0.7, damage: 1.4, xp: 2.2, radius: 0.6, ranged: true, shootCd: 2.2 },
+  boss: { hp: 40, speed: 0.85, damage: 3, xp: 30, radius: 1.9, ranged: true, shootCd: 1.6 },
 }
 
 let NEXT_ID = 1
@@ -44,11 +43,14 @@ export class Enemy {
   private hitFlash = 0
   private def: KindDef
   private bob = Math.random() * Math.PI * 2
+  private mat: THREE.SpriteMaterial
 
   constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number) {
     this.kind = kind
     this.def = DEFS[kind]
-    this.group = this.def.build()
+    const built = buildEnemySprite(kind)
+    this.group = built.group
+    this.mat = built.mat
     this.pos.set(x, 0, z)
     this.group.position.copy(this.pos)
     this.maxHp = CONFIG.enemy.baseHp * this.def.hp * hpMul
@@ -91,29 +93,13 @@ export class Enemy {
       this.pos.addScaledVector(dir, this.speed * dt)
     }
 
-    // 메시 동기화
+    // 스프라이트 동기화 (빌보드 — 회전 불필요, 위아래 바운스)
     this.bob += dt * (this.def.ranged ? 2 : 8)
-    this.group.position.set(this.pos.x, Math.abs(Math.sin(this.bob)) * 0.12, this.pos.z)
-    if (dist > 0.001) this.group.rotation.y = Math.atan2(dir.x, dir.z)
+    this.group.position.set(this.pos.x, Math.abs(Math.sin(this.bob)) * 0.15, this.pos.z)
 
-    // 떠다니는 오브 회전 (슈터)
-    const orb = this.group.getObjectByName('orb')
-    if (orb) {
-      orb.rotation.y += dt * 3
-      orb.position.x = Math.cos(this.bob) * 0.5
-      orb.position.z = Math.sin(this.bob) * 0.5 + 0.2
-    }
-
-    // 피격 플래시
-    this.group.traverse((o) => {
-      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
-      if (m && 'emissive' in m) {
-        if (this.hitFlash > 0) {
-          m.emissive.setHex(0xffffff)
-          m.emissiveIntensity = this.hitFlash * 5
-        }
-      }
-    })
+    // 피격 플래시 (흰색 번쩍)
+    if (this.hitFlash > 0) this.mat.color.setRGB(2.2, 2.2, 2.2)
+    else this.mat.color.setRGB(1, 1, 1)
 
     return shoot
   }
