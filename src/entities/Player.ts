@@ -1,26 +1,67 @@
 import * as THREE from 'three'
-import { CONFIG, COLORS } from '../config'
+import { CONFIG } from '../config'
 import { Input } from '../core/Input'
 import { CharacterSprite } from './CharacterSprite'
+import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
 
+/** 무기 정의 × 특성 배수로 산출되는 실효 스탯 */
 export interface PlayerStats {
   maxHp: number
   moveSpeed: number
+  dashCooldown: number
   // 총
   gunDamage: number
   gunCooldown: number
   bulletSpeed: number
   pierce: number
   multishot: number
+  spread: number
+  magSize: number
+  reloadTime: number
   // 검
   swordDamage: number
   swordRange: number
   swordCooldown: number
+  swordArc: number
+  knockback: number
+  lunge: number
   // 공통
   critChance: number
   critMult: number
-  lifesteal: number // 흡혈 비율
+  lifesteal: number
   magnetRange: number
+}
+
+/** 특성이 누적하는 배수/가산치 + 레전더리 특수 효과 플래그 */
+export interface Mods {
+  gunDamage: number // ×
+  gunCooldown: number // ×
+  bulletSpeed: number // ×
+  pierce: number // +
+  multishot: number // +
+  swordDamage: number // ×
+  swordRange: number // ×
+  swordCooldown: number // ×
+  moveSpeed: number // ×
+  dashCooldown: number // ×
+  maxHp: number // +
+  critChance: number // +
+  critMult: number // 기본 2, +
+  lifesteal: number // +
+  magnetRange: number // ×
+  // 레전더리 특수
+  explodeOnKill: number // >0이면 처치 시 폭발 데미지
+  swordReloads: boolean // 검을 휘두르면 총 즉시 장전
+  dashStrike: number // >0이면 대시 종료 시 주변 데미지
+}
+
+function freshMods(): Mods {
+  return {
+    gunDamage: 1, gunCooldown: 1, bulletSpeed: 1, pierce: 0, multishot: 0,
+    swordDamage: 1, swordRange: 1, swordCooldown: 1, moveSpeed: 1, dashCooldown: 1,
+    maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0, magnetRange: 1,
+    explodeOnKill: 0, swordReloads: false, dashStrike: 0,
+  }
 }
 
 export interface BulletSpec {
@@ -46,8 +87,11 @@ export class Player {
   pos = new THREE.Vector3(0, 0, 0)
   vel = new THREE.Vector3()
   angle = 0 // 바라보는 방향(라디안, +Z 기준)
-  hp: number
+  hp = 0
   stats: PlayerStats
+  mods: Mods = freshMods()
+  gun: GunDef = START_GUN
+  sword: SwordDef = START_SWORD
 
   level = 1
   xp = 0
@@ -65,32 +109,64 @@ export class Player {
   private char!: CharacterSprite
   private moving = false
 
-  // M1911 탄약/장전
-  magSize = CONFIG.gun.magSize
-  ammo = CONFIG.gun.magSize
+  // 탄약/장전
+  magSize = START_GUN.magSize
+  ammo = START_GUN.magSize
   reloading = false
   private reloadTimer = 0
 
   constructor() {
     this.char = new CharacterSprite()
     this.group = this.char.object
-    this.stats = {
-      maxHp: CONFIG.player.maxHp,
-      moveSpeed: CONFIG.player.speed,
-      gunDamage: CONFIG.gun.damage,
-      gunCooldown: CONFIG.gun.cooldown,
-      bulletSpeed: CONFIG.gun.bulletSpeed,
-      pierce: CONFIG.gun.pierce,
-      multishot: 1,
-      swordDamage: CONFIG.sword.damage,
-      swordRange: CONFIG.sword.range,
-      swordCooldown: CONFIG.sword.cooldown,
-      critChance: 0.1,
-      critMult: 2,
-      lifesteal: 0,
-      magnetRange: CONFIG.xp.orbMagnetRange,
-    }
+    this.stats = {} as PlayerStats
+    this.recompute()
     this.hp = this.stats.maxHp
+    this.ammo = this.magSize
+  }
+
+  /** 무기 정의 × 특성 배수 → 실효 스탯 재계산 */
+  recompute() {
+    const m = this.mods
+    const g = this.gun
+    const s = this.sword
+    this.stats = {
+      maxHp: CONFIG.player.maxHp + m.maxHp,
+      moveSpeed: CONFIG.player.speed * m.moveSpeed,
+      dashCooldown: CONFIG.player.dashCooldown * m.dashCooldown,
+      gunDamage: g.damage * m.gunDamage,
+      gunCooldown: g.cooldown * m.gunCooldown,
+      bulletSpeed: g.bulletSpeed * m.bulletSpeed,
+      pierce: g.pierce + m.pierce,
+      multishot: g.pellets + m.multishot,
+      spread: g.spread,
+      magSize: g.magSize,
+      reloadTime: g.reloadTime,
+      swordDamage: s.damage * m.swordDamage,
+      swordRange: s.range * m.swordRange,
+      swordCooldown: s.cooldown * m.swordCooldown,
+      swordArc: s.arc,
+      knockback: s.knockback,
+      lunge: s.lunge,
+      critChance: Math.min(1, 0.1 + m.critChance),
+      critMult: m.critMult,
+      lifesteal: m.lifesteal,
+      magnetRange: CONFIG.xp.orbMagnetRange * m.magnetRange,
+    }
+    this.magSize = this.stats.magSize
+    if (this.hp > 0) this.hp = Math.min(this.hp, this.stats.maxHp)
+  }
+
+  /** 무기 장착(총/검 자동 판별) */
+  equip(w: GunDef | SwordDef) {
+    if (w.kind === 'gun') {
+      this.gun = w
+      this.recompute()
+      this.ammo = this.magSize // 새 총은 꽉 찬 탄창
+      this.reloading = false
+    } else {
+      this.sword = w
+      this.recompute()
+    }
   }
 
   get isDashing() {
@@ -103,16 +179,16 @@ export class Player {
     return this.dashCdTimer <= 0
   }
   get dashCooldownRatio() {
-    return 1 - Math.max(0, this.dashCdTimer) / CONFIG.player.dashCooldown
+    return 1 - Math.max(0, this.dashCdTimer) / this.stats.dashCooldown
   }
   /** 장전 진행도 0..1 */
   get reloadRatio() {
-    return this.reloading ? 1 - this.reloadTimer / CONFIG.gun.reloadTime : 1
+    return this.reloading ? 1 - this.reloadTimer / this.stats.reloadTime : 1
   }
   private startReload() {
     if (this.reloading || this.ammo >= this.magSize) return false
     this.reloading = true
-    this.reloadTimer = CONFIG.gun.reloadTime
+    this.reloadTimer = this.stats.reloadTime
     return true
   }
 
@@ -167,7 +243,7 @@ export class Player {
       if (input.down('ShiftLeft') && this.dashReady && (mv.x !== 0 || mv.z !== 0)) {
         this.dashDir.set(mv.x, 0, mv.z).normalize()
         this.dashTimer = CONFIG.player.dashDuration
-        this.dashCdTimer = CONFIG.player.dashCooldown
+        this.dashCdTimer = this.stats.dashCooldown
       }
     }
 
@@ -201,7 +277,7 @@ export class Player {
         for (let i = 0; i < shots; i++) {
           const spreadIdx = shots > 1 ? (i - (shots - 1) / 2) * 0.12 : 0
           const dir = baseDir.clone()
-          const jitter = (Math.random() - 0.5) * CONFIG.gun.spread + spreadIdx
+          const jitter = (Math.random() - 0.5) * this.stats.spread + spreadIdx
           dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), jitter)
           const crit = this.rollCrit()
           bullets.push({
@@ -223,16 +299,21 @@ export class Player {
       slash = {
         pos: this.pos.clone(),
         angle: this.angle,
-        arc: CONFIG.sword.arc,
+        arc: this.stats.swordArc,
         range: this.stats.swordRange,
         damage: this.stats.swordDamage * (crit ? this.stats.critMult : 1),
         crit,
-        knockback: CONFIG.sword.knockback,
+        knockback: this.stats.knockback,
       }
       // 전방 짧은 대시
       const fwd = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
-      this.pos.addScaledVector(fwd, CONFIG.sword.lunge * dt * 6)
+      this.pos.addScaledVector(fwd, this.stats.lunge * dt * 6)
       this.swingAnim = 0.25
+      // 레전더리: 발도 시 총 즉시 장전
+      if (this.mods.swordReloads && this.ammo < this.magSize) {
+        this.ammo = this.magSize
+        this.reloading = false
+      }
     }
 
     this.syncMesh(dt)

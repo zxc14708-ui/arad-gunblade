@@ -1,4 +1,5 @@
 import { Upgrade } from '../systems/Upgrades'
+import { WeaponDef } from '../systems/Weapons'
 
 /** DOM 기반 HUD / 오버레이 관리 */
 export class HUD {
@@ -84,7 +85,7 @@ export class HUD {
       <div class="hud-ammo" id="ammoBox">
         <div class="ammo-pips" id="ammoPips"></div>
         <div class="ammo-text" id="ammoText">7 / 7</div>
-        <div class="ammo-label">M1911 · <kbd>R</kbd> 장전</div>
+        <div class="ammo-label"><span id="gunName">M1911</span> · <kbd>R</kbd> 장전</div>
       </div>
 
       <div class="hud-dash">
@@ -115,6 +116,8 @@ export class HUD {
           <div class="slider-row"><label>전체</label><input type="range" id="volMaster" min="0" max="100" value="85"/><span class="slval" id="volMasterV">85%</span></div>
           <div class="slider-row"><label>배경음</label><input type="range" id="volMusic" min="0" max="100" value="70"/><span class="slval" id="volMusicV">70%</span></div>
           <div class="slider-row"><label>효과음</label><input type="range" id="volSfx" min="0" max="100" value="85"/><span class="slval" id="volSfxV">85%</span></div>
+          <div class="settings-sec">🗡️ 장착 무기</div>
+          <div class="equipped" id="equipped"></div>
           <div class="settings-sec">✨ 획득 특성 <span class="traits-count" id="traitsCount"></span></div>
           <div class="traits" id="traits"></div>
           <button class="btn small" id="settingsClose">닫기 (Tab)</button>
@@ -122,8 +125,8 @@ export class HUD {
       </div>
 
       <div class="overlay" id="levelOv">
-        <div class="levelup-head">LEVEL UP!</div>
-        <div class="levelup-sub">강화할 능력을 선택하세요</div>
+        <div class="levelup-head" id="levelHead">LEVEL UP!</div>
+        <div class="levelup-sub" id="levelSub">강화할 능력을 선택하세요</div>
         <div class="cards" id="cards"></div>
       </div>
 
@@ -172,7 +175,11 @@ export class HUD {
     wire('#volSfx', '#volSfxV', 'sfx')
   }
 
-  openSettings(traits: { upgrade: Upgrade; count: number }[], vol: { master: number; music: number; sfx: number }) {
+  openSettings(
+    traits: { upgrade: Upgrade; count: number }[],
+    vol: { master: number; music: number; sfx: number },
+    equip?: { gun: string; gunIcon: string; sword: string; swordIcon: string },
+  ) {
     // 슬라이더를 현재 음량에 맞춤
     const set = (id: string, valId: string, v: number) => {
       ;(this.q(id) as HTMLInputElement).value = String(Math.round(v * 100))
@@ -181,6 +188,13 @@ export class HUD {
     set('#volMaster', '#volMasterV', vol.master)
     set('#volMusic', '#volMusicV', vol.music)
     set('#volSfx', '#volSfxV', vol.sfx)
+
+    // 장착 무기
+    if (equip) {
+      this.q('#equipped').innerHTML = `
+        <div class="eq"><span class="eqi">${equip.gunIcon}</span><span>${equip.gun}</span></div>
+        <div class="eq"><span class="eqi">${equip.swordIcon}</span><span>${equip.sword}</span></div>`
+    }
 
     // 획득 특성 목록
     const box = this.q('#traits')
@@ -211,15 +225,20 @@ export class HUD {
   }
 
   /** 탄약 표시 갱신 */
-  setAmmo(ammo: number, mag: number, reloading: boolean, ratio: number) {
+  setAmmo(ammo: number, mag: number, reloading: boolean, ratio: number, gunName?: string) {
     if (ammo !== this.lastAmmo || mag !== this.lastMag) {
       this.lastAmmo = ammo
       this.lastMag = mag
-      // 탄알 핍 재구성
-      let pips = ''
-      for (let i = 0; i < mag; i++) pips += `<i class="${i < ammo ? 'on' : 'off'}"></i>`
-      this.ammoPips.innerHTML = pips
+      // 탄알 핍 재구성 (너무 많으면 숫자만)
+      if (mag <= 14) {
+        let pips = ''
+        for (let i = 0; i < mag; i++) pips += `<i class="${i < ammo ? 'on' : 'off'}"></i>`
+        this.ammoPips.innerHTML = pips
+      } else {
+        this.ammoPips.innerHTML = ''
+      }
     }
+    if (gunName) this.q('#gunName').textContent = gunName
     this.ammoBox.classList.toggle('reloading', reloading)
     this.ammoText.textContent = reloading ? `장전 중… ${Math.round(ratio * 100)}%` : `${ammo} / ${mag}`
   }
@@ -260,23 +279,53 @@ export class HUD {
     this.bossFill.style.width = Math.max(0, (hp / max) * 100) + '%'
   }
 
-  showLevelUp(choices: Upgrade[], onPick: (u: Upgrade) => void) {
+  /** 특성 선택 (레벨업 / 보스 보상 공용) */
+  showLevelUp(head: string, sub: string, choices: Upgrade[], onPick: (u: Upgrade) => void) {
+    this.q('#levelHead').textContent = head
+    this.q('#levelSub').textContent = sub
+    this.renderCards(
+      choices.map((u) => ({ icon: u.icon, name: u.name, desc: u.desc, rarity: u.rarity })),
+      (i) => onPick(choices[i]),
+    )
+  }
+
+  /** 보스 보상 장비(무기) 선택 */
+  showEquipment(weapons: WeaponDef[], onPick: (w: WeaponDef) => void) {
+    this.q('#levelHead').textContent = '보스 보상 · 장비'
+    this.q('#levelSub').textContent = '무기를 하나 선택해 교체하세요'
+    this.renderCards(
+      weapons.map((w) => ({
+        icon: w.icon,
+        name: w.name,
+        desc: w.desc,
+        rarity: w.rarity,
+        tag: w.kind === 'gun' ? '총' : '검',
+      })),
+      (i) => onPick(weapons[i]),
+    )
+  }
+
+  private renderCards(
+    items: { icon: string; name: string; desc: string; rarity: string; tag?: string }[],
+    onPick: (index: number) => void,
+  ) {
     const cards = this.q('#cards')
     cards.innerHTML = ''
-    for (const u of choices) {
+    items.forEach((it, i) => {
       const card = document.createElement('div')
-      card.className = `card ${u.rarity}`
+      card.className = `card ${it.rarity}`
       card.innerHTML = `
-        <div class="cicon">${u.icon}</div>
-        <div class="cname">${u.name}</div>
-        <div class="cdesc">${u.desc}</div>
-        <div class="crar">${u.rarity}</div>`
+        ${it.tag ? `<div class="ctag">${it.tag}</div>` : ''}
+        <div class="cicon">${it.icon}</div>
+        <div class="cname">${it.name}</div>
+        <div class="cdesc">${it.desc}</div>
+        <div class="crar">${it.rarity}</div>`
       card.onclick = () => {
         this.levelOv.classList.remove('show')
-        onPick(u)
+        onPick(i)
       }
       cards.appendChild(card)
-    }
+    })
     this.levelOv.classList.add('show')
   }
 

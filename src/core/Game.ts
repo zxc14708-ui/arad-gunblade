@@ -10,10 +10,11 @@ import { Orbs } from '../systems/Orbs'
 import { Effects } from '../systems/Effects'
 import { Spawner } from '../systems/Spawner'
 import { rollChoices, Upgrade } from '../systems/Upgrades'
+import { rollWeapons, WeaponDef } from '../systems/Weapons'
 import { AudioManager } from '../systems/Audio'
 import { HUD } from '../ui/HUD'
 
-type State = 'start' | 'playing' | 'levelup' | 'gameover'
+type State = 'start' | 'playing' | 'levelup' | 'reward' | 'gameover'
 
 export class Game {
   private renderer: THREE.WebGLRenderer
@@ -37,6 +38,7 @@ export class Game {
   private score = 0
   private boss: Enemy | null = null
   private wasDashing = false
+  private pendingReward = false
   private settingsOpen = false
   /** 획득한 특성 목록 (id → 업그레이드 + 획득 횟수=레벨) */
   private acquired = new Map<string, { upgrade: Upgrade; count: number }>()
@@ -185,6 +187,7 @@ export class Game {
       this.hud.openSettings(
         [...this.acquired.values()],
         { master: this.audio.masterVol, music: this.audio.musicVol, sfx: this.audio.sfxVol },
+        { gun: this.player.gun.name, gunIcon: this.player.gun.icon, sword: this.player.sword.name, swordIcon: this.player.sword.icon },
       )
     }
   }
@@ -245,6 +248,10 @@ export class Game {
 
     // 대시 시작 감지 → 회피 사운드
     if (this.player.isDashing && !this.wasDashing) this.audio.dash()
+    // 대시 종료 감지 → 레전더리 '섬광강타' 폭발
+    if (!this.player.isDashing && this.wasDashing && this.player.mods.dashStrike > 0) {
+      this.aoeDamage(this.player.pos.x, this.player.pos.z, 4.5, this.player.mods.dashStrike, COLORS.slash)
+    }
     this.wasDashing = this.player.isDashing
 
     // 스포너 (새로 스폰된 적을 씬에 추가)
@@ -279,11 +286,30 @@ export class Game {
     // HUD
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setDash(this.player.dashCooldownRatio, this.player.dashReady)
-    this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading, this.player.reloadRatio)
+    this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading, this.player.reloadRatio, this.player.gun.name)
     this.hud.setStats(this.player.level, this.spawner.wave, this.kills, this.score)
 
     // 사망
     if (!this.player.alive) this.gameOver()
+    // 보스 처치 보상 (프레임 종료 후 안전하게 오픈)
+    else if (this.pendingReward) {
+      this.pendingReward = false
+      this.openBossReward()
+    }
+  }
+
+  /** 지정 위치 주변 원형 광역 피해 (레전더리 폭발 등) */
+  private aoeDamage(x: number, z: number, radius: number, damage: number, color: number) {
+    this.effects.burst(new THREE.Vector3(x, 1, z), color, 18, 10)
+    for (const e of this.enemies) {
+      if (!e.alive) continue
+      const d = Math.hypot(e.pos.x - x, e.pos.z - z)
+      if (d <= radius + e.radius) {
+        e.takeDamage(damage)
+        e.knockback(x, z, 6)
+        this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), damage, false)
+      }
+    }
   }
 
   private onWaveStart(wave: number) {
@@ -430,12 +456,17 @@ export class Game {
     this.score += Math.round(e.maxHp)
     this.effects.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), COLORS.hit, 14, 8)
     this.orbs.drop(e.pos.x, e.pos.z, e.xp)
+    // 레전더리 '폭심': 처치 시 폭발
+    if (this.player.mods.explodeOnKill > 0) {
+      this.aoeDamage(e.pos.x, e.pos.z, 3.2, this.player.mods.explodeOnKill, 0xffa040)
+    }
     if (e === this.boss) {
       this.boss = null
       this.hud.showBoss(false)
-      this.hud.banner_('보스 격파!')
+      this.hud.banner_('보스 격파! 보상 획득')
       this.audio.bossDeath()
       this.score += 500
+      this.pendingReward = true
     } else {
       this.audio.death()
     }
@@ -447,27 +478,51 @@ export class Game {
     if (leveled) this.openLevelUp()
   }
 
+  /** 특성 적용 + 획득 기록 */
+  private applyTrait(u: Upgrade) {
+    this.audio.pick()
+    u.apply(this.player)
+    const cur = this.acquired.get(u.id)
+    if (cur) cur.count++
+    else this.acquired.set(u.id, { upgrade: u, count: 1 })
+    this.hud.setHp(this.player.hp, this.player.stats.maxHp)
+    this.hud.setXp(this.player.xp, this.player.xpToNext)
+  }
+
+  /** 특성 선택 후, 쌓인 레벨업이 더 있으면 이어서 처리 */
+  private afterTrait() {
+    if (this.player.gainXp(0)) {
+      this.hud.setXp(this.player.xp, this.player.xpToNext)
+      this.openLevelUp()
+    } else {
+      this.state = 'playing'
+      this.clock.getDelta() // 정지 동안 누적된 dt 폐기
+    }
+  }
+
   private openLevelUp() {
     this.state = 'levelup'
     this.audio.levelup()
-    const choices = rollChoices(3)
-    this.hud.showLevelUp(choices, (u) => {
+    this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', rollChoices(3), (u) => {
+      this.applyTrait(u)
+      this.afterTrait()
+    })
+  }
+
+  /** 보스 처치 보상: 장비 1개 + 특성 1개 선택 */
+  private openBossReward() {
+    this.state = 'reward'
+    this.audio.levelup()
+    const weapons = rollWeapons(3, [this.player.gun.id, this.player.sword.id])
+    this.hud.showEquipment(weapons as WeaponDef[], (w) => {
       this.audio.pick()
-      u.apply(this.player)
-      // 획득 특성 기록 (같은 특성 재획득 시 레벨 증가)
-      const cur = this.acquired.get(u.id)
-      if (cur) cur.count++
-      else this.acquired.set(u.id, { upgrade: u, count: 1 })
-      this.hud.setHp(this.player.hp, this.player.stats.maxHp)
-      this.hud.setXp(this.player.xp, this.player.xpToNext)
-      // 한 번에 여러 레벨이 쌓였으면 연속으로 선택창을 다시 연다
-      if (this.player.gainXp(0)) {
-        this.hud.setXp(this.player.xp, this.player.xpToNext)
-        this.openLevelUp()
-      } else {
-        this.state = 'playing'
-        this.clock.getDelta() // 정지 동안 누적된 dt 폐기
-      }
+      this.player.equip(w)
+      this.hud.setAmmo(this.player.ammo, this.player.magSize, false, 1, this.player.gun.name)
+      // 이어서 특성 선택 (보스 보상 — 고희귀 편향)
+      this.hud.showLevelUp('보스 보상 · 특성', '강력한 특성을 선택하세요', rollChoices(3, true), (u) => {
+        this.applyTrait(u)
+        this.afterTrait()
+      })
     })
   }
 

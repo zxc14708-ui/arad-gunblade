@@ -512,6 +512,52 @@ canvas {
 .card.epic { border-color: rgba(200, 120, 255, 0.7); }
 .card.epic:hover { border-color: #c878ff; box-shadow: 0 12px 28px rgba(200,120,255,0.35); }
 .card.epic .crar { color: #c878ff; }
+.card.legendary {
+  border-color: #f0a030;
+  background: linear-gradient(160deg, rgba(60,40,10,0.92), rgba(20,16,24,0.9));
+  box-shadow: 0 0 18px rgba(240,160,48,0.35);
+}
+.card.legendary:hover {
+  border-color: #ffca50;
+  box-shadow: 0 14px 34px rgba(240,170,50,0.5), 0 0 22px rgba(255,200,80,0.5);
+}
+.card.legendary .cname { color: #ffd873; text-shadow: 0 0 8px rgba(255,190,60,0.6); }
+.card.legendary .crar { color: #ffca50; }
+
+/* 카드 좌상단 태그(총/검) */
+.card { position: relative; }
+.ctag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid var(--border);
+  color: var(--gold);
+}
+
+/* 설정창 장착 무기 */
+.equipped {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.eq {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #fff;
+}
+.eq .eqi { font-size: 22px; }
 
 .gameover-stats {
   margin-top: 18px;
