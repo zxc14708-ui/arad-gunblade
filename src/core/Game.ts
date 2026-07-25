@@ -460,7 +460,7 @@ export class Game {
     if (this.player.mods.explodeOnKill > 0) {
       this.aoeDamage(e.pos.x, e.pos.z, 3.2, this.player.mods.explodeOnKill, 0xffa040)
     }
-    if (e === this.boss) {
+    if (e.kind === 'boss') {
       this.boss = null
       this.hud.showBoss(false)
       this.hud.banner_('보스 격파! 보상 획득')
