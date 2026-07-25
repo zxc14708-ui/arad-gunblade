@@ -211,7 +211,6 @@ export class Player {
     dt: number,
     input: Input,
     aimGround: THREE.Vector3,
-    arenaRadius: number,
   ): { bullets: BulletSpec[]; slash: SlashSpec | null; startedReload: boolean } {
     const bullets: BulletSpec[] = []
     let slash: SlashSpec | null = null
@@ -255,13 +254,7 @@ export class Player {
       }
     }
 
-    // 아레나 경계
-    const r = Math.hypot(this.pos.x, this.pos.z)
-    const limit = arenaRadius - CONFIG.player.radius
-    if (r > limit) {
-      this.pos.x = (this.pos.x / r) * limit
-      this.pos.z = (this.pos.z / r) * limit
-    }
+    // (방 경계 제한은 Game이 Room.clamp로 처리)
 
     // M1911 장전 처리
     if (this.reloading) {

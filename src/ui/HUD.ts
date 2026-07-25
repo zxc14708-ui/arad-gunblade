@@ -37,7 +37,7 @@ export class HUD {
 
     this.elLevel = this.q('#sLevel')
     this.elWave = this.q('#sWave')
-    this.elScore = this.q('#sScore')
+    this.elScore = this.q('#sGold')
     this.elKills = this.q('#sKills')
     this.hpFill = this.q('#hpFill')
     this.hpLabel = this.q('#hpLabel')
@@ -64,13 +64,16 @@ export class HUD {
       <div class="hud-top">
         <div class="stat-row">
           <span>Lv <b id="sLevel">1</b></span>
-          <span>웨이브 <b id="sWave">0</b></span>
+          <span id="progWrap">방 <b id="sWave">0</b></span>
           <span>처치 <b id="sKills">0</b></span>
-          <span>점수 <b id="sScore">0</b></span>
+          <span class="gold-stat">🪙 <b id="sGold">0</b></span>
         </div>
+        <div class="room-track" id="roomTrack"></div>
       </div>
 
       <button class="icon-btn" id="settingsBtn" title="설정 (Tab)">⚙️</button>
+
+      <div class="prompt" id="prompt"><kbd>E</kbd> <span id="promptText"></span></div>
 
       <div id="bossBar">
         <div class="name">◆ 마계의 지배자 ◆</div>
@@ -100,11 +103,12 @@ export class HUD {
         <div class="subtitle">던전앤파이터 팬 게임 · 총검사</div>
         <div class="helptext">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp; <kbd>마우스</kbd> 조준<br/>
-          <kbd>좌클릭</kbd> M1911 사격 (7발) &nbsp;·&nbsp; <kbd>R</kbd> 장전<br/>
-          <kbd>우클릭</kbd> / <kbd>Space</kbd> 카타나 베기 &nbsp;·&nbsp; <kbd>Shift</kbd> 대시 (무적)<br/>
-          <kbd>Tab</kbd> 설정 · 획득 특성 보기<br/><br/>
-          밀려오는 마족을 처치하고, 레벨업마다 능력을 강화하라.<br/>
-          5웨이브마다 <b style="color:#e0554f">보스</b>가 등장한다.
+          <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>R</kbd> 장전 &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
+          <kbd>Shift</kbd> 대시 (무적) &nbsp;·&nbsp; <kbd>E</kbd> 상호작용 &nbsp;·&nbsp; <kbd>Tab</kbd> 설정<br/><br/>
+          마을의 <b style="color:#c8b0ff">포탈</b>로 던전에 입장하라.<br/>
+          방을 클리어하고 <b style="color:#ffd070">문</b>을 골라 전진 —
+          보스 앞엔 <b style="color:#7fd8f0">상인과 회복 분수</b>가 있다.<br/>
+          던전 구조는 <b>매 판 랜덤</b>으로 바뀐다.
         </div>
         <button class="btn" id="startBtn">게임 시작</button>
       </div>
@@ -130,10 +134,28 @@ export class HUD {
         <div class="cards" id="cards"></div>
       </div>
 
+      <div class="overlay" id="shopOv">
+        <div class="shop-panel">
+          <div class="shop-head">🛒 상인</div>
+          <div class="shop-sub">골드로 무기·특성을 구매하세요 · 보유 <b class="gold-stat">🪙 <span id="shopGold">0</span></b></div>
+          <div class="shop-items" id="shopItems"></div>
+          <div class="shop-actions">
+            <button class="btn small" id="shopReroll">🔄 재고 리셋 (<span id="rerollPrice">25</span>🪙)</button>
+            <button class="btn small alt" id="shopClose">나가기 (Esc)</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="overlay" id="clearOv">
+        <div class="title" style="color:#7fe08a">STAGE CLEAR</div>
+        <div class="gameover-stats" id="clearStats"></div>
+        <button class="btn" id="clearBtn">마을로 귀환</button>
+      </div>
+
       <div class="overlay" id="overOv">
         <div class="title" style="color:#e0554f">YOU DIED</div>
         <div class="gameover-stats" id="overStats"></div>
-        <button class="btn" id="restartBtn">다시 도전</button>
+        <button class="btn" id="restartBtn">마을로 귀환</button>
       </div>
 
       <div class="credit">Dungeon &amp; Fighter fan game — 총검사 · Three.js</div>
@@ -255,11 +277,38 @@ export class HUD {
     this.ammoText.textContent = reloading ? `장전 중… ${Math.round(ratio * 100)}%` : `${ammo} / ${mag}`
   }
 
-  setStats(level: number, wave: number, kills: number, score: number) {
+  setStats(level: number, wave: number, kills: number, gold: number) {
     this.elLevel.textContent = String(level)
     this.elWave.textContent = String(wave)
     this.elKills.textContent = String(kills)
-    this.elScore.textContent = String(score)
+    this.elScore.textContent = String(gold)
+  }
+
+  /** 던전 진행 표시 (현재 방/보스까지) */
+  setRoomTrack(depth: number, bossDepth: number, kinds: string[]) {
+    const t = this.q('#roomTrack')
+    if (depth <= 0) {
+      t.innerHTML = ''
+      return
+    }
+    let html = ''
+    for (let i = 1; i <= bossDepth; i++) {
+      const cls = i < depth ? 'done' : i === depth ? 'now' : ''
+      const icon = i === bossDepth ? '💀' : i === bossDepth - 1 ? '🛒' : '·'
+      html += `<i class="${cls}">${i === depth ? (kinds[0] ?? '●') : icon}</i>`
+    }
+    t.innerHTML = html
+  }
+
+  /** 상호작용 프롬프트 */
+  setPrompt(text: string | null) {
+    const p = this.q('#prompt')
+    if (text) {
+      this.q('#promptText').textContent = text
+      p.classList.add('show')
+    } else {
+      p.classList.remove('show')
+    }
   }
 
   setHp(hp: number, max: number) {
@@ -339,6 +388,78 @@ export class HUD {
       cards.appendChild(card)
     })
     this.levelOv.classList.add('show')
+  }
+
+  // ══════════ 상점 ══════════
+  private shopHandlers: {
+    buy: (i: number) => void
+    reroll: () => void
+    close: () => void
+  } | null = null
+
+  onShop(buy: (i: number) => void, reroll: () => void, close: () => void) {
+    this.shopHandlers = { buy, reroll, close }
+    ;(this.q('#shopReroll') as HTMLButtonElement).onclick = () => {
+      ;(this.q('#shopReroll') as HTMLButtonElement).blur()
+      reroll()
+    }
+    ;(this.q('#shopClose') as HTMLButtonElement).onclick = () => {
+      ;(this.q('#shopClose') as HTMLButtonElement).blur()
+      close()
+    }
+  }
+
+  /** 상점 열기/갱신 */
+  renderShop(
+    items: { icon: string; name: string; desc: string; rarity: string; price: number; sold: boolean; tag?: string }[],
+    gold: number,
+    rerollPrice: number,
+  ) {
+    this.q('#shopGold').textContent = String(gold)
+    this.q('#rerollPrice').textContent = String(rerollPrice)
+    const box = this.q('#shopItems')
+    box.innerHTML = ''
+    items.forEach((it, i) => {
+      const el = document.createElement('div')
+      const afford = gold >= it.price && !it.sold
+      el.className = `shop-item ${it.rarity}${it.sold ? ' sold' : ''}${afford ? '' : ' poor'}`
+      el.innerHTML = `
+        ${it.tag ? `<div class="ctag">${it.tag}</div>` : ''}
+        <div class="si-icon">${it.icon}</div>
+        <div class="si-name">${it.name}</div>
+        <div class="si-desc">${it.desc}</div>
+        <div class="si-price">${it.sold ? '판매됨' : `🪙 ${it.price}`}</div>`
+      if (afford) {
+        el.onclick = () => this.shopHandlers?.buy(i)
+      }
+      box.appendChild(el)
+    })
+    const rr = this.q('#shopReroll') as HTMLButtonElement
+    rr.classList.toggle('poor', gold < rerollPrice)
+    this.q<HTMLDivElement>('#shopOv').classList.add('show')
+  }
+
+  closeShop() {
+    this.q<HTMLDivElement>('#shopOv').classList.remove('show')
+  }
+  get shopOpen() {
+    return this.q<HTMLDivElement>('#shopOv').classList.contains('show')
+  }
+
+  onStageClear(cb: () => void) {
+    const btn = this.q('#clearBtn') as HTMLButtonElement
+    btn.onclick = () => {
+      btn.blur()
+      this.q<HTMLDivElement>('#clearOv').classList.remove('show')
+      cb()
+    }
+  }
+
+  showStageClear(stage: number, kills: number, gold: number, level: number) {
+    this.q('#clearStats').innerHTML = `
+      스테이지 <b>${stage}</b> 클리어! &nbsp;·&nbsp; 레벨 <b>${level}</b><br/>
+      처치 <b>${kills}</b> &nbsp;·&nbsp; 획득 골드 <b>🪙 ${gold}</b>`
+    this.q<HTMLDivElement>('#clearOv').classList.add('show')
   }
 
   showGameOver(wave: number, kills: number, score: number, level: number) {

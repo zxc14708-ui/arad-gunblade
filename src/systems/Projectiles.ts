@@ -61,22 +61,23 @@ export class Projectiles {
     this.enemyBullets.push({ mesh, pos: pos.clone(), dir: dir.clone().normalize(), speed, life: 4, damage })
   }
 
-  update(dt: number, arenaRadius: number) {
+  /** 방 경계(사각형) 밖으로 나간 투사체는 제거 */
+  update(dt: number, bounds: { minX: number; maxX: number; minZ: number; maxZ: number }) {
+    const out = (p: THREE.Vector3) =>
+      p.x < bounds.minX - 1 || p.x > bounds.maxX + 1 || p.z < bounds.minZ - 1 || p.z > bounds.maxZ + 1
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i]
       b.life -= dt
       b.pos.addScaledVector(b.dir, b.speed * dt)
       b.mesh.position.copy(b.pos)
-      const r = Math.hypot(b.pos.x, b.pos.z)
-      if (b.life <= 0 || r > arenaRadius + 2) this.removeBullet(i)
+      if (b.life <= 0 || out(b.pos)) this.removeBullet(i)
     }
     for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
       const b = this.enemyBullets[i]
       b.life -= dt
       b.pos.addScaledVector(b.dir, b.speed * dt)
       b.mesh.position.copy(b.pos)
-      const r = Math.hypot(b.pos.x, b.pos.z)
-      if (b.life <= 0 || r > arenaRadius + 2) this.removeEnemyBullet(i)
+      if (b.life <= 0 || out(b.pos)) this.removeEnemyBullet(i)
     }
   }
 
