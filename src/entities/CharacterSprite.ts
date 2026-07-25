@@ -1,49 +1,65 @@
 import * as THREE from 'three'
 
 /**
- * 하이브리드 2D 캐릭터 — 3D 월드 안에 항상 카메라를 향하는 빌보드 스프라이트.
- *
- * 지금은 캔버스로 그린 "플레이스홀더 총검사"를 쓰지만,
- * 나중에 고퀄 스프라이트 시트/일러스트로 교체하기 쉽게 설계되어 있다:
- *   - CharacterSprite.SHEET_URL 에 이미지 경로를 넣으면 그 이미지를 사용
- *   - (스프라이트 시트 프레임 애니메이션은 setSheet()로 확장 가능)
+ * 하이브리드 2D 주인공 — 카메라를 향하는 빌보드 + 스프라이트 시트 프레임 애니메이션.
+ * 캔버스로 7프레임(대기/걷기4/공격2) 시트를 생성해 idle·walk·attack을 재생한다.
+ * 실제 아트로 교체하려면 SHEET_URL(가로 7프레임 스트립)만 넣으면 된다.
  */
+const FW = 40 // 프레임 너비(px)
+const FH = 56 // 프레임 높이(px)
+const N = 7 // 총 프레임 수
+const ANIM: Record<'idle' | 'walk' | 'attack', number[]> = {
+  idle: [0],
+  walk: [1, 2, 3, 4],
+  attack: [5, 6],
+}
+
 export class CharacterSprite {
-  /** 실제 아트로 교체하려면 여기에 '/character.png' 같은 경로를 넣으세요. */
   static SHEET_URL: string | null = null
 
   object = new THREE.Group()
   private sprite: THREE.Sprite
   private mat: THREE.SpriteMaterial
   private shadow: THREE.Mesh
-  private readonly baseW = 2.0
-  private readonly baseH = 2.9
-  private walkPhase = 0
+  private readonly baseH = 3.0
+  private animTime = 0
   private flip = 1
-  private facingLerp = 1
 
   constructor() {
     const tex = CharacterSprite.SHEET_URL
       ? new THREE.TextureLoader().load(CharacterSprite.SHEET_URL)
-      : new THREE.CanvasTexture(drawGunbladeSprite())
-    tex.magFilter = THREE.LinearFilter
-    tex.minFilter = THREE.LinearMipmapLinearFilter
+      : new THREE.CanvasTexture(makeSheet())
+    tex.magFilter = THREE.NearestFilter
+    tex.minFilter = THREE.NearestFilter
+    tex.generateMipmaps = false
     tex.colorSpace = THREE.SRGBColorSpace
+    tex.repeat.set(1 / N, 1)
 
     this.mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
     this.sprite = new THREE.Sprite(this.mat)
-    this.sprite.center.set(0.5, 0) // 하단(발) 기준 앵커
-    this.sprite.scale.set(this.baseW, this.baseH, 1)
+    this.sprite.center.set(0.5, 0)
+    this.sprite.scale.set(this.baseH * (FW / FH), this.baseH, 1)
     this.object.add(this.sprite)
 
-    // 발밑 가짜 그림자 (스프라이트는 그림자를 못 드리우므로)
-    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false })
+    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false })
     shadowMat.userData.outlineParameters = { visible: false }
-    this.shadow = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), shadowMat)
+    this.shadow = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20), shadowMat)
     this.shadow.rotation.x = -Math.PI / 2
     this.shadow.position.y = 0.02
     this.shadow.scale.set(1, 0.55, 1)
     this.object.add(this.shadow)
+  }
+
+  private setFrame(idx: number, faceLeft: boolean) {
+    const fw = 1 / N
+    const map = this.mat.map!
+    if (faceLeft) {
+      map.offset.x = (idx + 1) * fw
+      map.repeat.x = -fw
+    } else {
+      map.offset.x = idx * fw
+      map.repeat.x = fw
+    }
   }
 
   update(
@@ -53,221 +69,163 @@ export class CharacterSprite {
     st: { moving: boolean; dashing: boolean; swinging: boolean; invulnerable: boolean },
     hitFlash: number,
   ) {
-    // ── 좌우 바라보기 (조준 x 방향으로 플립) ──
-    const targetFlip = Math.sin(aimAngle) < -0.15 ? -1 : Math.sin(aimAngle) > 0.15 ? 1 : this.flip
-    this.flip = targetFlip
-    this.facingLerp += (this.flip - this.facingLerp) * Math.min(1, dt * 16)
+    // 좌우 바라보기
+    if (Math.sin(aimAngle) < -0.15) this.flip = -1
+    else if (Math.sin(aimAngle) > 0.15) this.flip = 1
+    const faceLeft = this.flip < 0
 
-    // ── 걷기 바운스 / 대시 스트레치 / 베기 펀치 ──
-    let bob = 0
-    if (st.moving) {
-      this.walkPhase += dt * (st.dashing ? 20 : 11)
-      bob = Math.abs(Math.sin(this.walkPhase)) * (st.dashing ? 0.16 : 0.1)
-    } else {
-      this.walkPhase = 0
-    }
-    let sw = this.baseW * this.facingLerp
-    let sh = this.baseH
-    if (st.dashing) {
-      sh *= 1.06
-      sw *= 0.96
-    }
-    if (st.swinging) {
-      sw *= 1.06
-      sh *= 1.04
-    }
-    this.sprite.scale.set(sw, sh, 1)
+    // 애니메이션 선택
+    const state = st.swinging ? 'attack' : st.moving ? 'walk' : 'idle'
+    const fps = state === 'attack' ? 14 : state === 'walk' ? (st.dashing ? 14 : 9) : 2.5
+    this.animTime += dt
+    const frames = ANIM[state]
+    const idx = frames[Math.floor(this.animTime * fps) % frames.length]
+    this.setFrame(idx, faceLeft)
+
+    // 위치 + 걷기 바운스
+    const bob = st.moving ? Math.abs(Math.sin(this.animTime * (st.dashing ? 18 : 11))) * (st.dashing ? 0.14 : 0.08) : 0
     this.sprite.position.set(0, bob, 0)
     this.object.position.set(pos.x, 0, pos.z)
 
-    // ── 피격 붉은 틴트 ──
-    if (hitFlash > 0) this.mat.color.setRGB(1, 0.4, 0.4)
+    // 피격 틴트 / 무적 깜빡임
+    if (hitFlash > 0) this.mat.color.setRGB(1, 0.45, 0.45)
     else this.mat.color.setRGB(1, 1, 1)
-
-    // ── 무적 깜빡임 ──
     this.mat.opacity = st.invulnerable && Math.floor(performance.now() / 70) % 2 === 0 ? 0.35 : 1
-    this.shadow.visible = !st.dashing || true
   }
 }
 
-/** 캔버스로 그린 플레이스홀더 총검사 스프라이트 (셀/도트풍) */
-function drawGunbladeSprite(): HTMLCanvasElement {
-  const W = 220
-  const H = 320
+// ══════════ 스프라이트 시트 생성 ══════════
+function makeSheet(): HTMLCanvasElement {
   const cv = document.createElement('canvas')
-  cv.width = W
-  cv.height = H
+  cv.width = FW * N
+  cv.height = FH
   const x = cv.getContext('2d')!
-  x.lineJoin = 'round'
-  x.lineCap = 'round'
+  x.imageSmoothingEnabled = false
+  // 0 idle, 1-4 walk, 5-6 attack
+  drawFrame(x, 0, { legPhase: 0, swing: 0 })
+  drawFrame(x, 1, { legPhase: 1, swing: 0 })
+  drawFrame(x, 2, { legPhase: 0, swing: 0 })
+  drawFrame(x, 3, { legPhase: -1, swing: 0 })
+  drawFrame(x, 4, { legPhase: 0, swing: 0 })
+  drawFrame(x, 5, { legPhase: 0, swing: 0.25 })
+  drawFrame(x, 6, { legPhase: 0, swing: 1 })
+  return cv
+}
 
-  const OUTLINE = '#241f1b'
-  const shape = (fill: string, lw = 5, draw?: () => void) => {
-    x.beginPath()
-    draw?.()
-    x.fillStyle = fill
-    x.fill()
-    x.lineWidth = lw
-    x.strokeStyle = OUTLINE
-    x.stroke()
+const COL = {
+  coat: '#f2efe6',
+  coatSh: '#d3cabb',
+  skin: '#e2b48c',
+  hair: '#d8bf6e',
+  vest: '#4a5a3c',
+  cravat: '#f2ebd8',
+  pants: '#33271c',
+  boot: '#6b4526',
+  kat: '#a6503c',
+  katEdge: '#e8d9b0',
+  gold: '#c99a3e',
+  gun: '#33343a',
+  out: '#241f1b',
+}
+
+function drawFrame(x: CanvasRenderingContext2D, frame: number, pose: { legPhase: number; swing: number }) {
+  const ox = frame * FW
+  const cx = ox + 20
+  const R = (px: number, py: number, w: number, h: number, c: string) => {
+    x.fillStyle = c
+    x.fillRect(Math.round(px), Math.round(py), w, h)
   }
-  const rrect = (px: number, py: number, w: number, h: number, r: number) => {
-    x.beginPath()
-    x.moveTo(px + r, py)
-    x.arcTo(px + w, py, px + w, py + h, r)
-    x.arcTo(px + w, py + h, px, py + h, r)
-    x.arcTo(px, py + h, px, py, r)
-    x.arcTo(px, py, px + w, py, r)
-    x.closePath()
-  }
+  const lp = pose.legPhase
 
-  // ── 뒤로 나부끼는 코트 자락 (베이지 안감) ──
-  shape('#d9c8a4', 5, () => {
-    x.moveTo(70, 150)
-    x.quadraticCurveTo(20, 230, 55, 300)
-    x.lineTo(95, 290)
-    x.quadraticCurveTo(80, 220, 95, 160)
-    x.closePath()
-  })
+  // ── 다리 & 부츠 (걷기: 앞발 올라감) ──
+  const lBootY = 49 - Math.max(0, lp) * 2
+  const rBootY = 49 - Math.max(0, -lp) * 2
+  R(cx - 6, 40, 5, lBootY - 40 + 2, COL.pants)
+  R(cx + 1, 40, 5, rBootY - 40 + 2, COL.pants)
+  R(cx - 7, lBootY, 6, 5, COL.boot)
+  R(cx + 1, rBootY, 6, 5, COL.boot)
+  R(cx - 7, lBootY + 4, 6, 1, COL.out)
+  R(cx + 1, rBootY + 4, 6, 1, COL.out)
 
-  // ── 카타나 (오른손, 뒤쪽 대각선 — 붉은 도신) ──
-  x.save()
-  x.translate(150, 175)
-  x.rotate(0.55)
-  shape('#a6503c', 5, () => rrect(-6, -8, 12, 150, 5)) // 도신
-  x.fillStyle = '#e8d9b0' // 날
-  x.fillRect(-6, -8, 3, 150)
-  shape('#c99a3e', 4, () => rrect(-14, 138, 28, 10, 4)) // 금 코등이
-  shape('#1a1a1a', 4, () => rrect(-7, 146, 14, 34, 5)) // 손잡이
-  // 금색 술
-  x.strokeStyle = '#d8b24a'
-  x.lineWidth = 3
-  for (let i = -1; i <= 1; i++) {
-    x.beginPath()
-    x.moveTo(i * 5, 180)
-    x.lineTo(i * 6, 205)
-    x.stroke()
-  }
-  x.restore()
-
-  // ── 다리 & 부츠 ──
-  shape('#33271c', 5, () => rrect(88, 240, 20, 55, 7)) // 왼다리
-  shape('#33271c', 5, () => rrect(114, 240, 20, 55, 7)) // 오른다리
-  shape('#6b4526', 5, () => rrect(84, 288, 26, 24, 6)) // 왼부츠
-  shape('#6b4526', 5, () => rrect(112, 288, 26, 24, 6)) // 오른부츠
-
-  // ── 흰 롱코트 몸통 (아래로 벌어짐) ──
-  shape('#f2efe6', 6, () => {
-    x.moveTo(78, 120)
-    x.lineTo(142, 120)
-    x.lineTo(158, 275)
-    x.lineTo(62, 275)
-    x.closePath()
-  })
-  // 코트 앞 열림(녹색 조끼)
-  shape('#4a5a3c', 4, () => {
-    x.moveTo(98, 128)
-    x.lineTo(122, 128)
-    x.lineTo(118, 205)
-    x.lineTo(102, 205)
-    x.closePath()
-  })
-  // 조끼 금단추
-  x.fillStyle = '#d8b24a'
-  for (let i = 0; i < 3; i++) {
-    x.beginPath()
-    x.arc(110, 145 + i * 20, 2.6, 0, 7)
-    x.fill()
-  }
-  // 벨트 + 금 메달
-  shape('#4f3320', 3, () => rrect(80, 200, 60, 12, 4))
-  x.fillStyle = '#c99a3e'
+  // ── 흰 롱코트 (사다리꼴) ──
+  x.fillStyle = COL.coat
   x.beginPath()
-  x.arc(110, 206, 8, 0, 7)
+  x.moveTo(cx - 8, 20)
+  x.lineTo(cx + 8, 20)
+  x.lineTo(cx + 11, 45)
+  x.lineTo(cx - 11, 45)
+  x.closePath()
   x.fill()
-  x.lineWidth = 2
-  x.strokeStyle = OUTLINE
+  // 코트 그림자(오른쪽)
+  R(cx + 4, 22, 4, 22, COL.coatSh)
+  // 코트 외곽선(간단)
+  x.strokeStyle = COL.out
+  x.lineWidth = 1
   x.stroke()
-  // 코트 라펠(옷깃)
-  shape('#f2efe6', 4, () => {
-    x.moveTo(98, 122)
-    x.lineTo(110, 150)
-    x.lineTo(90, 150)
-    x.closePath()
-  })
-  shape('#f2efe6', 4, () => {
-    x.moveTo(122, 122)
-    x.lineTo(130, 150)
-    x.lineTo(110, 150)
-    x.closePath()
-  })
-  // 오른어깨 금색 자수
-  x.fillStyle = '#c99a3e'
-  for (let i = 0; i < 4; i++) {
-    x.beginPath()
-    x.arc(140 - i * 3, 130 + i * 9, 3 - i * 0.3, 0, 7)
-    x.fill()
-  }
-
-  // ── 오른팔 소매(카타나 쪽, 몸 앞) ──
-  shape('#f2efe6', 5, () => rrect(132, 150, 22, 60, 10))
-  shape('#2b2620', 4, () => x.arc(146, 210, 9, 0, 7)) // 장갑 손
-
-  // ── 왼팔 + M1911 (얼굴 옆, 총구 위로) ──
-  shape('#f2efe6', 5, () => {
-    // 어깨→팔꿈치→위로
-    x.moveTo(80, 135)
-    x.lineTo(66, 100)
-    x.lineTo(80, 96)
-    x.lineTo(94, 140)
-    x.closePath()
-  })
-  shape('#2b2620', 4, () => x.arc(72, 92, 9, 0, 7)) // 장갑 손
-  // M1911 (총구 위)
-  x.save()
-  x.translate(72, 88)
-  x.rotate(-0.15)
-  shape('#3a3a42', 3.5, () => rrect(-6, -46, 12, 40, 3)) // 슬라이드
-  shape('#5a3a24', 3.5, () => rrect(-7, -8, 14, 16, 3)) // 그립
-  x.restore()
+  // 앞 열림 + 녹색 조끼
+  R(cx - 3, 21, 6, 16, COL.vest)
+  R(cx - 1, 23, 1, 1, COL.gold)
+  R(cx - 1, 27, 1, 1, COL.gold)
+  R(cx - 1, 31, 1, 1, COL.gold)
+  // 벨트
+  R(cx - 8, 36, 17, 2, '#4f3320')
+  R(cx - 1, 35, 3, 3, COL.gold)
 
   // ── 흰 크라바트 ──
-  shape('#f2ebd8', 4, () => {
-    x.moveTo(102, 116)
-    x.lineTo(118, 116)
-    x.lineTo(112, 140)
-    x.lineTo(108, 140)
-    x.closePath()
-  })
+  x.fillStyle = COL.cravat
+  x.beginPath()
+  x.moveTo(cx - 3, 18)
+  x.lineTo(cx + 3, 18)
+  x.lineTo(cx, 26)
+  x.closePath()
+  x.fill()
+
+  // ── 카타나 (오른손) — swing에 따라 아래-오른쪽 → 위-왼쪽 횡베기 ──
+  const pivX = cx + 7
+  const pivY = 26
+  const ang = lerp(0.7, -2.1, pose.swing) // rad (canvas y-down)
+  const len = 20
+  const ex = pivX + Math.cos(ang) * len
+  const ey = pivY + Math.sin(ang) * len
+  x.strokeStyle = COL.kat
+  x.lineWidth = 3
+  x.beginPath()
+  x.moveTo(pivX, pivY)
+  x.lineTo(ex, ey)
+  x.stroke()
+  x.strokeStyle = COL.katEdge
+  x.lineWidth = 1
+  x.beginPath()
+  x.moveTo(pivX, pivY)
+  x.lineTo(ex, ey)
+  x.stroke()
+  R(pivX - 2, pivY - 2, 4, 4, COL.gold) // 코등이
+
+  // ── 왼팔 + M1911 (얼굴 옆, 총구 위) ──
+  R(cx - 10, 12, 4, 12, COL.coat) // 소매
+  R(cx - 12, 5, 4, 9, COL.gun) // 슬라이드
+  R(cx - 13, 12, 5, 4, COL.gun) // 그립부
+  R(cx - 11, 3, 2, 3, COL.gun) // 총구
 
   // ── 머리 ──
-  shape('#e2b48c', 5, () => x.arc(110, 92, 27, 0, 7)) // 얼굴
-  // 금발 (뒤로 넘긴 스파이크)
-  shape('#d8bf6e', 5, () => {
-    x.moveTo(84, 88)
-    x.quadraticCurveTo(80, 58, 100, 62)
-    x.quadraticCurveTo(105, 48, 116, 60)
-    x.quadraticCurveTo(126, 50, 132, 66)
-    x.quadraticCurveTo(140, 62, 136, 90)
-    x.quadraticCurveTo(120, 72, 84, 88)
-    x.closePath()
-  })
+  x.fillStyle = COL.skin
+  x.beginPath()
+  x.arc(cx, 12, 7, 0, 7)
+  x.fill()
+  // 금발
+  x.fillStyle = COL.hair
+  x.beginPath()
+  x.arc(cx, 9, 8, Math.PI, 0)
+  x.fill()
+  R(cx - 8, 6, 3, 3, COL.hair)
+  R(cx + 5, 6, 3, 3, COL.hair)
+  R(cx - 2, 3, 3, 3, COL.hair)
   // 안경
-  x.strokeStyle = '#2a2a30'
-  x.lineWidth = 3
-  x.fillStyle = 'rgba(120,140,160,0.5)'
-  x.beginPath()
-  x.arc(101, 92, 7, 0, 7)
-  x.fill()
-  x.stroke()
-  x.beginPath()
-  x.arc(119, 92, 7, 0, 7)
-  x.fill()
-  x.stroke()
-  x.beginPath()
-  x.moveTo(108, 92)
-  x.lineTo(112, 92)
-  x.stroke()
+  R(cx - 5, 11, 3, 2, COL.out)
+  R(cx + 1, 11, 3, 2, COL.out)
+  R(cx - 2, 11, 1, 1, COL.out)
+}
 
-  return cv
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t
 }

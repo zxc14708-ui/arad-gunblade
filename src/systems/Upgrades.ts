@@ -37,6 +37,10 @@ const POOL: Upgrade[] = [
     apply: (p) => { p.mods.critMult += 0.6; p.recompute() } },
   { id: 'dash_cd', name: '연막 회피', desc: '대시 쿨타임 -25%', icon: '🌫️', rarity: 'rare',
     apply: (p) => { p.mods.dashCooldown *= 0.75; p.recompute() } },
+  { id: 'reload', name: '신속 장전', desc: '장전 시간 -30%', icon: '🔁', rarity: 'rare',
+    apply: (p) => { p.mods.reloadTime *= 0.7; p.recompute() } },
+  { id: 'bullet_speed', name: '고속탄', desc: '탄속 +35%, 총 데미지 +10%', icon: '💨', rarity: 'rare',
+    apply: (p) => { p.mods.bulletSpeed *= 1.35; p.mods.gunDamage *= 1.1; p.recompute() } },
 
   // ── Epic ──
   { id: 'multishot', name: '멀티샷', desc: '발사 탄환 +1', icon: '🎯', rarity: 'epic',
@@ -63,6 +67,10 @@ const POOL: Upgrade[] = [
     apply: (p) => { p.mods.pierce += 3; p.mods.bulletSpeed *= 1.4; p.recompute() } },
   { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', rarity: 'legendary',
     apply: (p) => { p.mods.dashStrike += 44; p.recompute() } },
+  { id: 'lg_twinblade', name: '⭐ 쌍검무(雙劍舞)', desc: '검 연사 속도 +45%, 검 데미지 +15%', icon: '🌀', rarity: 'legendary',
+    apply: (p) => { p.mods.swordCooldown *= 0.55; p.mods.swordDamage *= 1.15; p.recompute() } },
+  { id: 'lg_gunsword', name: '⭐ 총검일체', desc: '총·검 데미지 +25%, 발도 시 총 즉시 장전', icon: '⚜️', rarity: 'legendary',
+    apply: (p) => { p.mods.gunDamage *= 1.25; p.mods.swordDamage *= 1.25; p.mods.swordReloads = true; p.recompute() } },
 ]
 
 const WEIGHTS: Record<Rarity, number> = { common: 5, rare: 2.5, epic: 1, legendary: 0.4 }

@@ -64,6 +64,16 @@ export const GUNS: GunDef[] = [
     desc: '강력한 한 방 · 관통 · 느린 연사',
     damage: 34, cooldown: 0.5, bulletSpeed: 50, magSize: 6, reloadTime: 1.4, pellets: 1, spread: 0.01, pierce: 1,
   },
+  {
+    kind: 'gun', id: 'crossbow', name: '연발 석궁', icon: '🏹', rarity: 'rare',
+    desc: '강한 관통 볼트 · 중간 연사',
+    damage: 22, cooldown: 0.4, bulletSpeed: 46, magSize: 8, reloadTime: 1.5, pellets: 1, spread: 0.015, pierce: 3,
+  },
+  {
+    kind: 'gun', id: 'autocannon', name: '오토캐논', icon: '🚀', rarity: 'legendary',
+    desc: '폭발적 연사 + 관통 + 대용량 탄창',
+    damage: 11, cooldown: 0.09, bulletSpeed: 52, magSize: 40, reloadTime: 1.7, pellets: 1, spread: 0.05, pierce: 1,
+  },
 ]
 
 export const SWORDS: SwordDef[] = [
@@ -91,6 +101,16 @@ export const SWORDS: SwordDef[] = [
     kind: 'sword', id: 'warhammer', name: '전투 망치', icon: '🔨', rarity: 'epic',
     desc: '초강력 강타 + 강한 넉백 · 매우 느림',
     damage: 96, cooldown: 1.0, range: 3.9, arc: Math.PI, knockback: 28, lunge: 2,
+  },
+  {
+    kind: 'sword', id: 'glaive', name: '언월도', icon: '🌙', rarity: 'rare',
+    desc: '전방위 광역 베기 · 넓은 사거리',
+    damage: 44, cooldown: 0.5, range: 4.4, arc: Math.PI * 1.4, knockback: 10, lunge: 4,
+  },
+  {
+    kind: 'sword', id: 'moonblade', name: '월광검(月光劍)', icon: '🗡️', rarity: 'legendary',
+    desc: '초광역 360° 참격 · 빠름 · 강력',
+    damage: 58, cooldown: 0.4, range: 4.6, arc: Math.PI * 1.9, knockback: 12, lunge: 5,
   },
 ]
 

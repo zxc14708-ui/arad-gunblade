@@ -1,9 +1,9 @@
 import * as THREE from 'three'
 import { COLORS } from '../config'
-import { noOutline } from '../rendering/toon'
+import { puffTex, slashTex } from '../rendering/pixelfx'
 
 type Particle = {
-  mesh: THREE.Mesh
+  mesh: THREE.Sprite
   vel: THREE.Vector3
   life: number
   maxLife: number
@@ -20,24 +20,25 @@ type Floater = {
 export class Effects {
   private scene: THREE.Scene
   private particles: Particle[] = []
-  private slashes: { mesh: THREE.Mesh; life: number; max: number }[] = []
+  private slashes: { mesh: THREE.Sprite; life: number; max: number }[] = []
   private floaters: Floater[] = []
   private layer: HTMLDivElement
-  private sphereGeo = new THREE.SphereGeometry(0.1, 6, 6)
 
   constructor(scene: THREE.Scene, uiLayer: HTMLDivElement) {
     this.scene = scene
     this.layer = uiLayer
   }
 
+  /** 픽셀 퍼프 파티클 폭발 */
   burst(pos: THREE.Vector3, color = COLORS.hit, count = 8, power = 6) {
     for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(this.sphereGeo, noOutline(new THREE.MeshBasicMaterial({ color })))
+      const mat = new THREE.SpriteMaterial({ map: puffTex(), color, transparent: true, depthWrite: false })
+      const m = new THREE.Sprite(mat)
       m.position.copy(pos)
       const a = Math.random() * Math.PI * 2
       const up = Math.random() * 0.6 + 0.2
       const s = Math.random() * power
-      m.scale.setScalar(Math.random() * 0.8 + 0.5)
+      m.scale.setScalar(Math.random() * 0.4 + 0.3)
       this.scene.add(m)
       this.particles.push({
         mesh: m,
@@ -48,18 +49,16 @@ export class Effects {
     }
   }
 
-  /** 베기 부채꼴 궤적 */
-  slash(pos: THREE.Vector3, angle: number, arc: number, range: number) {
-    const geo = new THREE.RingGeometry(0.6, range, 20, 1, -arc / 2, arc)
-    const mesh = new THREE.Mesh(
-      geo,
-      noOutline(new THREE.MeshBasicMaterial({ color: COLORS.slash, transparent: true, opacity: 0.75, side: THREE.DoubleSide })),
-    )
-    mesh.rotation.x = -Math.PI / 2
-    mesh.rotation.z = -angle + Math.PI / 2
-    mesh.position.set(pos.x, 0.6, pos.z)
-    this.scene.add(mesh)
-    this.slashes.push({ mesh, life: 0.22, max: 0.22 })
+  /** 픽셀 베기 크레센트 (조준 방향으로 회전한 빌보드) */
+  slash(pos: THREE.Vector3, angle: number, _arc: number, range: number) {
+    const mat = new THREE.SpriteMaterial({ map: slashTex(), transparent: true, depthWrite: false })
+    mat.rotation = -angle + Math.PI / 2 // 조준 방향으로 크레센트 회전(근사)
+    const sp = new THREE.Sprite(mat)
+    const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
+    sp.position.set(pos.x + fwd.x * range * 0.4, 0.9, pos.z + fwd.z * range * 0.4)
+    sp.scale.setScalar(range * 1.2)
+    this.scene.add(sp)
+    this.slashes.push({ mesh: sp, life: 0.18, max: 0.18 })
   }
 
   /** 데미지 숫자 (크리티컬이면 강조) */
@@ -99,11 +98,9 @@ export class Effects {
       const s = this.slashes[i]
       s.life -= dt
       const t = Math.max(0, s.life / s.max)
-      ;(s.mesh.material as THREE.MeshBasicMaterial).opacity = t * 0.75
-      s.mesh.scale.setScalar(1 + (1 - t) * 0.2)
+      ;(s.mesh.material as THREE.SpriteMaterial).opacity = t
       if (s.life <= 0) {
         this.scene.remove(s.mesh)
-        s.mesh.geometry.dispose()
         ;(s.mesh.material as THREE.Material).dispose()
         this.slashes.splice(i, 1)
       }

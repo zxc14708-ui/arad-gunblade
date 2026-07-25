@@ -1,9 +1,8 @@
 import * as THREE from 'three'
-import { COLORS } from '../config'
-import { noOutline } from '../rendering/toon'
+import { bulletTex, enemyBulletTex } from '../rendering/pixelfx'
 
 export interface Bullet {
-  mesh: THREE.Mesh
+  mesh: THREE.Sprite
   pos: THREE.Vector3
   dir: THREE.Vector3
   speed: number
@@ -15,7 +14,7 @@ export interface Bullet {
 }
 
 export interface EnemyBullet {
-  mesh: THREE.Mesh
+  mesh: THREE.Sprite
   pos: THREE.Vector3
   dir: THREE.Vector3
   speed: number
@@ -28,22 +27,19 @@ export class Projectiles {
   scene: THREE.Scene
   bullets: Bullet[] = []
   enemyBullets: EnemyBullet[] = []
-  private bulletGeo = new THREE.SphereGeometry(0.16, 8, 8)
-  private ebGeo = new THREE.SphereGeometry(0.28, 10, 10)
-  private bulletMat = noOutline(new THREE.MeshBasicMaterial({ color: COLORS.bullet }))
-  private critMat = noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff }))
-  private ebMat = noOutline(new THREE.MeshBasicMaterial({ color: COLORS.enemyBullet }))
+  private bulletMat = new THREE.SpriteMaterial({ map: bulletTex(), transparent: true, depthWrite: false })
+  private critMat = new THREE.SpriteMaterial({ map: bulletTex(), color: 0xffffff, transparent: true, depthWrite: false })
+  private ebMat = new THREE.SpriteMaterial({ map: enemyBulletTex(), transparent: true, depthWrite: false })
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
   }
 
   spawnBullet(pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number, crit: boolean, pierce: number) {
-    const mesh = new THREE.Mesh(this.bulletGeo, crit ? this.critMat : this.bulletMat)
+    const mesh = new THREE.Sprite(crit ? this.critMat : this.bulletMat)
     mesh.position.copy(pos)
-    if (crit) mesh.scale.setScalar(1.5)
+    mesh.scale.setScalar(crit ? 0.9 : 0.6)
     this.scene.add(mesh)
-    // 궤적 잔상 느낌: 살짝 늘림
     this.bullets.push({
       mesh,
       pos: pos.clone(),
@@ -58,8 +54,9 @@ export class Projectiles {
   }
 
   spawnEnemyBullet(pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number) {
-    const mesh = new THREE.Mesh(this.ebGeo, this.ebMat)
+    const mesh = new THREE.Sprite(this.ebMat)
     mesh.position.copy(pos)
+    mesh.scale.setScalar(0.8)
     this.scene.add(mesh)
     this.enemyBullets.push({ mesh, pos: pos.clone(), dir: dir.clone().normalize(), speed, life: 4, damage })
   }

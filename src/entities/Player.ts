@@ -37,6 +37,7 @@ export interface Mods {
   gunDamage: number // ×
   gunCooldown: number // ×
   bulletSpeed: number // ×
+  reloadTime: number // ×
   pierce: number // +
   multishot: number // +
   swordDamage: number // ×
@@ -57,7 +58,7 @@ export interface Mods {
 
 function freshMods(): Mods {
   return {
-    gunDamage: 1, gunCooldown: 1, bulletSpeed: 1, pierce: 0, multishot: 0,
+    gunDamage: 1, gunCooldown: 1, bulletSpeed: 1, reloadTime: 1, pierce: 0, multishot: 0,
     swordDamage: 1, swordRange: 1, swordCooldown: 1, moveSpeed: 1, dashCooldown: 1,
     maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0, magnetRange: 1,
     explodeOnKill: 0, swordReloads: false, dashStrike: 0,
@@ -140,7 +141,7 @@ export class Player {
       multishot: g.pellets + m.multishot,
       spread: g.spread,
       magSize: g.magSize,
-      reloadTime: g.reloadTime,
+      reloadTime: g.reloadTime * m.reloadTime,
       swordDamage: s.damage * m.swordDamage,
       swordRange: s.range * m.swordRange,
       swordCooldown: s.cooldown * m.swordCooldown,
