@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { CONFIG } from '../config'
-import { buildEnemySprite } from './EnemySprite'
+import { EnemySprite } from './EnemySprite'
 
 export type EnemyKind = 'imp' | 'brute' | 'shooter' | 'boss'
 
@@ -43,14 +43,13 @@ export class Enemy {
   private hitFlash = 0
   private def: KindDef
   private bob = Math.random() * Math.PI * 2
-  private mat: THREE.SpriteMaterial
+  private sprite: EnemySprite
 
   constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number) {
     this.kind = kind
     this.def = DEFS[kind]
-    const built = buildEnemySprite(kind)
-    this.group = built.group
-    this.mat = built.mat
+    this.sprite = new EnemySprite(kind)
+    this.group = this.sprite.group
     this.pos.set(x, 0, z)
     this.group.position.copy(this.pos)
     this.maxHp = CONFIG.enemy.baseHp * this.def.hp * hpMul
@@ -72,6 +71,7 @@ export class Enemy {
     if (dist > 0.001) dir.divideScalar(dist)
 
     let shoot: THREE.Vector3 | null = null
+    let moving = false
 
     if (this.knockTimer > 0) {
       // 넉백 중
@@ -81,25 +81,32 @@ export class Enemy {
     } else if (this.def.ranged) {
       // 원거리: 일정 거리 유지하며 사격
       const desired = 12
-      if (dist > desired + 1.5) this.pos.addScaledVector(dir, this.speed * dt)
-      else if (dist < desired - 2) this.pos.addScaledVector(dir, -this.speed * dt)
+      if (dist > desired + 1.5) {
+        this.pos.addScaledVector(dir, this.speed * dt)
+        moving = true
+      } else if (dist < desired - 2) {
+        this.pos.addScaledVector(dir, -this.speed * dt)
+        moving = true
+      }
       this.shootTimer -= dt
       if (this.shootTimer <= 0) {
         this.shootTimer = this.def.shootCd ?? 2
         shoot = dir.clone()
+        this.sprite.playAttack(0.5) // 시전 모션
       }
     } else {
       // 근접: 추격
       this.pos.addScaledVector(dir, this.speed * dt)
+      moving = true
+      // 접촉 사거리에 들어오면 공격 모션
+      if (dist < this.radius + 1.4) this.sprite.playAttack(0.4)
     }
 
-    // 스프라이트 동기화 (빌보드 — 회전 불필요, 위아래 바운스)
+    // 스프라이트 동기화 (빌보드 — 프레임 애니메이션 + 좌우 플립)
     this.bob += dt * (this.def.ranged ? 2 : 8)
-    this.group.position.set(this.pos.x, Math.abs(Math.sin(this.bob)) * 0.15, this.pos.z)
-
-    // 피격 플래시 (흰색 번쩍)
-    if (this.hitFlash > 0) this.mat.color.setRGB(2.2, 2.2, 2.2)
-    else this.mat.color.setRGB(1, 1, 1)
+    this.group.position.set(this.pos.x, 0, this.pos.z)
+    const bobY = moving ? Math.abs(Math.sin(this.bob)) * 0.12 : 0
+    this.sprite.update(dt, moving, dir.x < -0.05, this.hitFlash, bobY)
 
     return shoot
   }

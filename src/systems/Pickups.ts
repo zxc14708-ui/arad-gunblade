@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { COLORS } from '../config'
 import { noOutline } from '../rendering/toon'
+import { ASSET, cloneTex, loadTex } from '../rendering/assets'
 
 type PickupType = 'xp' | 'gold'
 
@@ -12,47 +13,11 @@ interface Pickup {
   bob: number
 }
 
-const texCache = new Map<string, THREE.Texture>()
-function makeTex(key: string, size: number, draw: (x: CanvasRenderingContext2D) => void): THREE.Texture {
-  let t = texCache.get(key)
-  if (!t) {
-    const c = document.createElement('canvas')
-    c.width = c.height = size
-    const ctx = c.getContext('2d')!
-    ctx.imageSmoothingEnabled = false
-    draw(ctx)
-    t = new THREE.CanvasTexture(c)
-    t.magFilter = THREE.NearestFilter
-    t.minFilter = THREE.NearestFilter
-    t.generateMipmaps = false
-    t.colorSpace = THREE.SRGBColorSpace
-    texCache.set(key, t)
-  }
-  return t
-}
-const R = (x: CanvasRenderingContext2D, px: number, py: number, w: number, h: number, c: string) => {
-  x.fillStyle = c
-  x.fillRect(px, py, w, h)
-}
-
-/** 금화 픽셀 스프라이트 */
-const coinTex = () =>
-  makeTex('coin', 12, (x) => {
-    R(x, 3, 1, 6, 10, '#c99a3e')
-    R(x, 2, 2, 8, 8, '#e8c454')
-    R(x, 3, 3, 6, 6, '#ffe58a')
-    R(x, 4, 4, 2, 3, '#fff6c0')
-    R(x, 5, 3, 2, 6, '#c99a3e')
-  })
-
-/** 경험치 결정 픽셀 스프라이트 */
-const xpTex = () =>
-  makeTex('xp', 12, (x) => {
-    R(x, 5, 1, 2, 10, '#6ad0ff')
-    R(x, 4, 2, 4, 8, '#8fe0ff')
-    R(x, 3, 4, 6, 4, '#6ad0ff')
-    R(x, 5, 4, 2, 3, '#eaffff')
-  })
+// ── 픽업 텍스처 (제공된 픽셀 애셋) ──
+/** 금화: 4프레임 회전 스트립 */
+const COIN_FRAMES = 4
+const coinTex = () => cloneTex(ASSET.props.coinStrip)
+const xpTex = () => loadTex(ASSET.props.xpCrystal)
 
 /**
  * 바닥 픽업 (경험치 결정 + 골드 코인).
@@ -62,10 +27,14 @@ export class Pickups {
   private scene: THREE.Scene
   private items: Pickup[] = []
   private xpMat = noOutline(new THREE.SpriteMaterial({ map: xpTex(), transparent: true, depthWrite: false }))
-  private goldMat = noOutline(new THREE.SpriteMaterial({ map: coinTex(), transparent: true, depthWrite: false }))
+  /** 코인은 텍스처 하나를 공유하고 프레임을 전역으로 돌린다(모든 코인이 같은 위상으로 회전) */
+  private coinMap = coinTex()
+  private goldMat = noOutline(new THREE.SpriteMaterial({ map: this.coinMap, transparent: true, depthWrite: false }))
+  private coinTime = 0
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
+    this.coinMap.repeat.set(1 / COIN_FRAMES, 1)
   }
 
   private spawn(type: PickupType, x: number, z: number, value: number, spread: number) {
@@ -93,6 +62,9 @@ export class Pickups {
   update(dt: number, playerPos: THREE.Vector3, magnetRange: number, speed: number, pickupRange = 1.1) {
     let xp = 0
     let gold = 0
+    // 코인 회전 애니메이션
+    this.coinTime += dt
+    this.coinMap.offset.x = (Math.floor(this.coinTime * 8) % COIN_FRAMES) / COIN_FRAMES
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i]
       it.bob += dt * 5

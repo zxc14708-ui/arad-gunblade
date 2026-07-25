@@ -637,7 +637,8 @@ export class Game {
     if (got.xp > 0) this.gainXp(got.xp)
     if (got.gold > 0) this.run.addGold(got.gold)
 
-    // ── 상호작용 오브젝트 ──
+    // ── 방 장식 / 상호작용 오브젝트 ──
+    this.room.update(dt)
     for (const o of this.interactables) o.update(dt)
     this.handleInteract()
 

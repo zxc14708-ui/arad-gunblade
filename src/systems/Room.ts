@@ -1,6 +1,9 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { dungeonFloorTex, dungeonWallTex, townFloorTex, townWallTex, bossFloorTex } from '../rendering/tiles'
+import { ASSET, cloneTex } from '../rendering/assets'
+
+const TORCH_FRAMES = 2
 
 export type RoomVisualKind = 'dungeon' | 'boss' | 'town'
 
@@ -30,6 +33,8 @@ export class Room {
   w: number
   d: number
   private scene: THREE.Scene
+  private torchMap: THREE.Texture | null = null
+  private torchTime = 0
 
   constructor(scene: THREE.Scene, sizeKey: string, visual: RoomVisualKind) {
     this.scene = scene
@@ -63,7 +68,8 @@ export class Room {
     const wt = wallTex.clone()
     wt.needsUpdate = true
     wt.wrapS = wt.wrapT = THREE.RepeatWrapping
-    wt.repeat.set(this.w / 3, 1)
+    // 바닥과 같은 2월드유닛 타일 크기로 맞춤 (늘어짐 방지)
+    wt.repeat.set(this.w / 2, WH / 2)
     const wallMat = noOutline(new THREE.MeshStandardMaterial({ map: wt, roughness: 1 }))
     const addWall = (cx: number, cz: number, sx: number, sz: number) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(sx, WH, sz), wallMat)
@@ -86,17 +92,21 @@ export class Room {
     outer.position.y = -0.08
     this.group.add(outer)
 
-    // ── 장식: 벽면 횃불 ──
+    // ── 장식: 벽면 횃불 (2프레임 애니메이션) ──
     if (visual !== 'town') {
-      const flameMat = noOutline(new THREE.SpriteMaterial({ color: 0xffb050 }))
+      this.torchMap = cloneTex(ASSET.props.torchStrip)
+      this.torchMap.repeat.set(1 / TORCH_FRAMES, 1)
+      const torchMat = noOutline(
+        new THREE.SpriteMaterial({ map: this.torchMap, transparent: true, depthWrite: false }),
+      )
       for (const tx of [-halfW * 0.55, halfW * 0.55]) {
-        const light = new THREE.PointLight(0xff8030, 7, 18, 2)
-        light.position.set(tx, 3.2, -halfD + 0.4)
+        const light = new THREE.PointLight(0xff8030, 8, 20, 2)
+        light.position.set(tx, 3.4, -halfD + 0.5)
         this.group.add(light)
-        const flame = new THREE.Sprite(flameMat)
-        flame.scale.setScalar(0.7)
-        flame.position.set(tx, 3.2, -halfD + 0.4)
-        this.group.add(flame)
+        const torch = new THREE.Sprite(torchMat)
+        torch.scale.set(1.5 * (24 / 24), 1.5, 1)
+        torch.position.set(tx, 2.6, -halfD + 0.5)
+        this.group.add(torch)
       }
     }
 
@@ -114,6 +124,13 @@ export class Room {
     }
 
     scene.add(this.group)
+  }
+
+  /** 횃불 불꽃 애니메이션 */
+  update(dt: number) {
+    if (!this.torchMap) return
+    this.torchTime += dt
+    this.torchMap.offset.x = (Math.floor(this.torchTime * 7) % TORCH_FRAMES) / TORCH_FRAMES
   }
 
   /** 플레이어 진입 위치 (남쪽 중앙) */
