@@ -200,6 +200,8 @@ canvas.pixelated {
   color: #70758a;
   font-size: 12px;
   font-style: normal;
+  position: relative;
+  z-index: 1;
 }
 .minimap-room.unknown { border-style: dashed; color: #4d5165; }
 .minimap-room.visited { color: #cbd2df; background: rgba(58, 67, 88, 0.7); }
@@ -211,6 +213,14 @@ canvas.pixelated {
   box-shadow: 0 0 10px rgba(255, 210, 96, 0.8);
   transform: scale(1.12);
 }
+.minimap-link {
+  position: absolute;
+  display: block;
+  background: #6d748c;
+  z-index: 2;
+}
+.minimap-link.east { left: 100%; top: calc(50% - 1px); width: 4px; height: 2px; }
+.minimap-link.south { top: 100%; left: calc(50% - 1px); width: 2px; height: 4px; }
 
 /* 상호작용 프롬프트 */
 .prompt {

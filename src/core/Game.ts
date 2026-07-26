@@ -320,11 +320,30 @@ export class Game {
     this.hud.setMinimap(this.run.minimap())
     if (this.curPlan?.kind === 'boss') {
       this.onStageClear()
+    } else if (this.curPlan?.kind === 'elite') {
+      this.grantEliteReward()
     } else {
       this.audio.pick()
       this.hud.banner_('방 클리어! 문이 열렸다')
       this.openDoors()
     }
+  }
+
+  /** Elite rooms grant a reward before exits are unlocked. */
+  private grantEliteReward() {
+    this.state = 'reward'
+    this.input.clearAll()
+    this.audio.levelup()
+    const gold = 35 + this.run.depth * 12
+    this.run.addGold(gold)
+    this.hud.showLevelUp('ELITE CLEAR!', `고급 특성을 선택하세요 · 골드 +${gold}`, rollChoices(3), (u) => {
+      this.applyTrait(u)
+      this.audio.pick()
+      this.state = 'play'
+      this.hud.banner_('엘리트 보상 획득!')
+      this.openDoors()
+      this.clock.getDelta()
+    })
   }
 
   private onStageClear() {
