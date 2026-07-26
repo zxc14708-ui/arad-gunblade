@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
-import { dungeonFloorTex, dungeonWallTex, townFloorTex, townWallTex, bossFloorTex } from '../rendering/tiles'
-import { ASSET, cloneTex } from '../rendering/assets'
+import { dungeonWallTex, townFloorTex, townWallTex } from '../rendering/tiles'
+import { ASSET, cloneTex, loadTex } from '../rendering/assets'
 import type { Direction } from './RunState'
 
-const TORCH_FRAMES = 2
+const TORCH_FRAMES = 3
 
 export type RoomVisualKind = 'dungeon' | 'boss' | 'town'
 
@@ -47,14 +47,17 @@ export class Room {
     // 플레이 가능 영역(벽 두께 제외)
     this.bounds = { minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }
 
-    const floorTex = visual === 'town' ? townFloorTex() : visual === 'boss' ? bossFloorTex() : dungeonFloorTex()
+    const useForestBackdrop = visual !== 'town'
+    const floorTex = useForestBackdrop ? loadTex(ASSET.stage1.floor) : townFloorTex()
     const wallTex = visual === 'town' ? townWallTex() : dungeonWallTex()
 
     // ── 바닥 ──
     const ft = floorTex.clone()
     ft.needsUpdate = true
-    ft.wrapS = ft.wrapT = THREE.RepeatWrapping
-    ft.repeat.set(this.w / 2, this.d / 2) // 타일 2월드유닛
+    if (!useForestBackdrop) {
+      ft.wrapS = ft.wrapT = THREE.RepeatWrapping
+      ft.repeat.set(this.w / 2, this.d / 2)
+    }
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(this.w, this.d),
       noOutline(new THREE.MeshStandardMaterial({ map: ft, roughness: 1 })),
@@ -93,9 +96,28 @@ export class Room {
     outer.position.y = -0.08
     this.group.add(outer)
 
+    if (useForestBackdrop) {
+      const addDecor = (path: string, x: number, z: number, w: number, h: number) => {
+        const mat = noOutline(new THREE.SpriteMaterial({ map: loadTex(path), transparent: true, depthWrite: false }))
+        const sprite = new THREE.Sprite(mat)
+        sprite.center.set(0.5, 0)
+        sprite.scale.set(w, h, 1)
+        sprite.position.set(x, 0.03, z)
+        this.group.add(sprite)
+      }
+      const fg = ASSET.stage1.foreground
+      addDecor(fg.treeA, -halfW + 3.5, -halfD + 3, 6, 8)
+      addDecor(fg.treeB, halfW - 3.5, -halfD + 3, 6, 8)
+      addDecor(fg.bushA, -halfW + 3, halfD - 2.5, 3.2, 2.1)
+      addDecor(fg.bushB, halfW - 3, halfD - 2.5, 3.2, 2.1)
+      addDecor(fg.stoneA, -halfW + 2.4, 0, 2.2, 3)
+      addDecor(fg.stoneB, halfW - 2.4, 0, 2.2, 3)
+      addDecor(fg.vineTop, 0, -halfD + 1.6, 4.8, 2.4)
+    }
+
     // ── 장식: 벽면 횃불 (2프레임 애니메이션) ──
     if (visual !== 'town') {
-      this.torchMap = cloneTex(ASSET.props.torchStrip)
+      this.torchMap = cloneTex(ASSET.stage1.effects.campfire)
       this.torchMap.repeat.set(1 / TORCH_FRAMES, 1)
       const torchMat = noOutline(
         new THREE.SpriteMaterial({ map: this.torchMap, transparent: true, depthWrite: false }),
@@ -105,7 +127,7 @@ export class Room {
         light.position.set(tx, 3.4, -halfD + 0.5)
         this.group.add(light)
         const torch = new THREE.Sprite(torchMat)
-        torch.scale.set(1.5 * (24 / 24), 1.5, 1)
+        torch.scale.set(1.15, 1.7, 1)
         torch.position.set(tx, 2.6, -halfD + 0.5)
         this.group.add(torch)
       }
