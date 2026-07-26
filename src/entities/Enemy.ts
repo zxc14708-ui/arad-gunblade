@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { CONFIG } from '../config'
 import { EnemySprite } from './EnemySprite'
+import { noOutline } from '../rendering/toon'
 
 export type EnemyKind = 'imp' | 'brute' | 'shooter' | 'boss'
 
@@ -36,6 +37,7 @@ export class Enemy {
   damage: number
   xp: number
   radius: number
+  elite: boolean
   alive = true
   contactTimer = 0
   shootTimer: number
@@ -44,8 +46,9 @@ export class Enemy {
   private def: KindDef
   private bob = Math.random() * Math.PI * 2
   private sprite: EnemySprite
+  private eliteBarFill: THREE.Sprite | null = null
 
-  constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number) {
+  constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number, elite = false) {
     this.kind = kind
     this.def = DEFS[kind]
     this.sprite = new EnemySprite(kind)
@@ -58,7 +61,9 @@ export class Enemy {
     this.damage = CONFIG.enemy.baseDamage * this.def.damage * dmgMul
     this.xp = CONFIG.enemy.baseXp * this.def.xp
     this.radius = this.def.radius
+    this.elite = elite
     this.shootTimer = (this.def.shootCd ?? 0) * Math.random()
+    if (elite) this.createEliteMarker()
   }
 
   /** 반환: 발사할 적 투사체 방향(있으면) */
@@ -107,6 +112,7 @@ export class Enemy {
     this.group.position.set(this.pos.x, 0, this.pos.z)
     const bobY = moving ? Math.abs(Math.sin(this.bob)) * 0.12 : 0
     this.sprite.update(dt, moving, dir.x < -0.05, this.hitFlash, bobY)
+    if (this.eliteBarFill) this.eliteBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.hp / this.maxHp))
 
     return shoot
   }
@@ -124,5 +130,32 @@ export class Enemy {
     const d = Math.hypot(dx, dz) || 1
     this.vel.set((dx / d) * power, 0, (dz / d) * power)
     this.knockTimer = 0.2
+  }
+
+  /** 엘리트는 일반 적과 즉시 구분되도록 체력 바와 표식을 띄운다. */
+  private createEliteMarker() {
+    const y = this.kind === 'brute' ? 4.4 : 3.4
+    const bg = new THREE.Sprite(
+      new THREE.SpriteMaterial({ color: 0x17131e, transparent: true, opacity: 0.92, depthWrite: false }),
+    )
+    bg.position.set(0, y, 0)
+    bg.scale.set(2.7, 0.3, 1)
+    this.group.add(bg)
+
+    const fill = new THREE.Sprite(
+      new THREE.SpriteMaterial({ color: 0xd996ff, transparent: true, opacity: 0.98, depthWrite: false }),
+    )
+    fill.center.set(0, 0.5) // 왼쪽 기준 — 체력이 줄면 오른쪽부터 깎인다
+    fill.position.set(-1.25, y, 0.02)
+    fill.scale.set(2.5, 0.16, 1)
+    this.group.add(fill)
+    this.eliteBarFill = fill
+
+    const badge = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.18, 0),
+      noOutline(new THREE.MeshStandardMaterial({ color: 0xffd66d, emissive: 0xffa12c, emissiveIntensity: 0.8 })),
+    )
+    badge.position.set(0, y + 0.36, 0)
+    this.group.add(badge)
   }
 }
