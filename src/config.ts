@@ -86,6 +86,8 @@ export const CONFIG = {
     betweenWaves: 3.0,
     baseCount: 5,
     countPerWave: 2,
+    // 방 하나에서 등장하는 적 수. 전투 템포를 높이되 방 크기에 맞춰 1.6배로 제한한다.
+    roomDensity: 1.6,
   },
 
   xp: {

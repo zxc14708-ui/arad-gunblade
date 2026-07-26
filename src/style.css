@@ -177,6 +177,41 @@ canvas.pixelated {
   transform: scale(1.15);
 }
 
+/* 무작위 던전 방 그래프 */
+.minimap {
+  display: grid;
+  grid-auto-columns: 22px;
+  grid-auto-rows: 22px;
+  gap: 3px;
+  justify-content: center;
+  min-height: 22px;
+  margin-top: 7px;
+}
+.minimap-room {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #4d5165;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background: rgba(8, 10, 18, 0.8);
+  color: #70758a;
+  font-size: 12px;
+  font-style: normal;
+}
+.minimap-room.unknown { border-style: dashed; color: #4d5165; }
+.minimap-room.visited { color: #cbd2df; background: rgba(58, 67, 88, 0.7); }
+.minimap-room.cleared { color: #a8e0a2; border-color: #67a967; background: rgba(61, 117, 68, 0.38); }
+.minimap-room.current {
+  color: #fff;
+  border-color: var(--gold);
+  background: rgba(202, 156, 55, 0.45);
+  box-shadow: 0 0 10px rgba(255, 210, 96, 0.8);
+  transform: scale(1.12);
+}
+
 /* 상호작용 프롬프트 */
 .prompt {
   position: absolute;

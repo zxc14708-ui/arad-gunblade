@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { ASSET, loadTex } from '../rendering/assets'
+import type { Direction } from '../systems/RunState'
 
 export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'door'
 
@@ -44,6 +45,8 @@ export class Interactable {
   used = false
   /** 문 전용: 선택지 인덱스 */
   choiceIndex = 0
+  targetRoomId: string | null = null
+  direction: Direction | null = null
   /** 프롬프트에 표시할 라벨 */
   label: string
   private sprite: THREE.Sprite
