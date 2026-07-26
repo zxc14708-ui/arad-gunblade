@@ -3,13 +3,14 @@ import { WeaponDef } from '../systems/Weapons'
 
 export interface MiniMapRoom {
   id: string
-  kind: 'combat' | 'treasure' | 'shop' | 'boss'
+  kind: 'combat' | 'elite' | 'treasure' | 'shop' | 'boss'
   x: number
   y: number
   current: boolean
   visited: boolean
   cleared: boolean
   visible: boolean
+  exits: ('north' | 'east' | 'south' | 'west')[]
 }
 
 /** DOM 기반 HUD / 오버레이 관리 */
@@ -321,7 +322,7 @@ export class HUD {
     const visible = rooms.filter((room) => room.visible)
     const minX = Math.min(...visible.map((room) => room.x))
     const minY = Math.min(...visible.map((room) => room.y))
-    const icon: Record<MiniMapRoom['kind'], string> = { combat: '⚔', treasure: '◆', shop: '¤', boss: '☠' }
+    const icon: Record<MiniMapRoom['kind'], string> = { combat: '⚔', elite: '✦', treasure: '◆', shop: '¤', boss: '☠' }
     map.innerHTML = visible
       .map((room) => {
         const cls = [
@@ -331,7 +332,11 @@ export class HUD {
           room.cleared ? 'cleared' : '',
         ].filter(Boolean).join(' ')
         const label = room.visited ? icon[room.kind] : '?'
-        return `<i class="${cls}" style="grid-column:${room.x - minX + 1};grid-row:${room.y - minY + 1}" title="${room.visited ? room.kind : '미발견 방'}">${label}</i>`
+        const links = room.exits
+          .filter((direction) => direction === 'east' || direction === 'south')
+          .map((direction) => `<span class="minimap-link ${direction}"></span>`)
+          .join('')
+        return `<i class="${cls}" style="grid-column:${room.x - minX + 1};grid-row:${room.y - minY + 1}" title="${room.visited ? room.kind : '미발견 방'}">${links}${label}</i>`
       })
       .join('')
   }
