@@ -20,7 +20,7 @@ const TEXFN: Record<InteractKind, () => THREE.Texture> = {
   portal: portalTex,
   door: doorTex,
 }
-const SCALE: Record<InteractKind, number> = { chest: 1.8, fountain: 2.6, merchant: 3.2, portal: 3.4, door: 2.8 }
+const SCALE: Record<InteractKind, number> = { chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 5.2, door: 4.2 }
 /** 애셋 원본 종횡비(가로/세로) — 텍스처가 비동기 로드라 상수로 고정 */
 const ASPECT: Record<InteractKind, number> = {
   chest: 24 / 20,
@@ -59,9 +59,15 @@ export class Interactable {
     this.label = label
     this.pos.set(x, 0, z)
 
-    this.mat = new THREE.SpriteMaterial({ map: TEXFN[kind](), transparent: true, depthWrite: false })
+    this.mat = new THREE.SpriteMaterial({
+      map: TEXFN[kind](),
+      transparent: true,
+      depthWrite: false,
+      depthTest: kind !== 'portal' && kind !== 'door',
+    })
     this.sprite = new THREE.Sprite(this.mat)
     this.sprite.center.set(0.5, 0)
+    this.sprite.renderOrder = kind === 'portal' || kind === 'door' ? 12 : 2
     const sc = SCALE[kind]
     this.sprite.scale.set(sc * ASPECT[kind], sc, 1)
     this.group.add(this.sprite)
@@ -80,16 +86,29 @@ export class Interactable {
     if (kind === 'portal' || kind === 'door') {
       const gm = noOutline(
         new THREE.SpriteMaterial({
+          map: TEXFN[kind](),
           color: kind === 'portal' ? 0x9a7aff : 0xffd070,
           transparent: true,
-          opacity: 0.28,
+          opacity: 0.22,
           depthWrite: false,
+          depthTest: false,
         }),
       )
       this.glow = new THREE.Sprite(gm)
       this.glow.scale.setScalar(sc * 1.5)
       this.glow.center.set(0.5, 0)
+      this.glow.renderOrder = 11
       this.group.add(this.glow)
+
+      if (kind === 'portal') {
+        const marker = noOutline(
+          new THREE.MeshBasicMaterial({ color: 0x72eaff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+        )
+        const ring = new THREE.Mesh(new THREE.RingGeometry(sc * 0.34, sc * 0.5, 32), marker)
+        ring.rotation.x = -Math.PI / 2
+        ring.position.y = 0.045
+        this.group.add(ring)
+      }
     }
 
     this.group.position.copy(this.pos)

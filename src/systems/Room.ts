@@ -72,9 +72,10 @@ export class Room {
     const wt = wallTex.clone()
     wt.needsUpdate = true
     wt.wrapS = wt.wrapT = THREE.RepeatWrapping
-    // 바닥과 같은 2월드유닛 타일 크기로 맞춤 (늘어짐 방지)
     wt.repeat.set(this.w / 2, WH / 2)
-    const wallMat = noOutline(new THREE.MeshStandardMaterial({ map: wt, roughness: 1 }))
+    const wallMat = useForestBackdrop
+      ? noOutline(new THREE.MeshStandardMaterial({ color: 0x1e2a20, roughness: 1 }))
+      : noOutline(new THREE.MeshStandardMaterial({ map: wt, roughness: 1 }))
     const addWall = (cx: number, cz: number, sx: number, sz: number) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(sx, WH, sz), wallMat)
       m.position.set(cx, WH / 2, cz)
@@ -98,21 +99,20 @@ export class Room {
 
     if (useForestBackdrop) {
       const addDecor = (path: string, x: number, z: number, w: number, h: number) => {
-        const mat = noOutline(new THREE.SpriteMaterial({ map: loadTex(path), transparent: true, depthWrite: false }))
-        const sprite = new THREE.Sprite(mat)
-        sprite.center.set(0.5, 0)
-        sprite.scale.set(w, h, 1)
-        sprite.position.set(x, 0.03, z)
-        this.group.add(sprite)
+        const mat = noOutline(new THREE.MeshBasicMaterial({ map: loadTex(path), transparent: true, depthWrite: false, side: THREE.DoubleSide }))
+        const decor = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat)
+        decor.rotation.x = -Math.PI / 2
+        decor.position.set(x, 0.035, z)
+        this.group.add(decor)
       }
       const fg = ASSET.stage1.foreground
-      addDecor(fg.treeA, -halfW + 3.5, -halfD + 3, 6, 8)
-      addDecor(fg.treeB, halfW - 3.5, -halfD + 3, 6, 8)
-      addDecor(fg.bushA, -halfW + 3, halfD - 2.5, 3.2, 2.1)
-      addDecor(fg.bushB, halfW - 3, halfD - 2.5, 3.2, 2.1)
-      addDecor(fg.stoneA, -halfW + 2.4, 0, 2.2, 3)
-      addDecor(fg.stoneB, halfW - 2.4, 0, 2.2, 3)
-      addDecor(fg.vineTop, 0, -halfD + 1.6, 4.8, 2.4)
+      addDecor(fg.treeA, -halfW + 4, -halfD + 4.2, 4.2, 5.6)
+      addDecor(fg.treeB, halfW - 4, -halfD + 4.2, 4.2, 5.6)
+      addDecor(fg.bushA, -halfW + 3.2, halfD - 2.3, 2.6, 1.75)
+      addDecor(fg.bushB, halfW - 3.2, halfD - 2.3, 2.6, 1.75)
+      addDecor(fg.stoneA, -halfW + 3, -1.4, 1.5, 2)
+      addDecor(fg.stoneB, halfW - 3, 1.4, 1.5, 2)
+      addDecor(fg.vineTop, 0, -halfD + 1.8, 3.6, 1.8)
     }
 
     // ── 장식: 벽면 횃불 (2프레임 애니메이션) ──
@@ -169,7 +169,7 @@ export class Room {
 
   /** 북쪽 벽 앞 문 위치들 (개수에 따라 균등 배치) */
   doorPoint(direction: Direction): { x: number; z: number } {
-    const inset = 1.2
+    const inset = 2.8
     switch (direction) {
       case 'north': return { x: 0, z: this.bounds.minZ + inset }
       case 'east': return { x: this.bounds.maxX - inset, z: 0 }
