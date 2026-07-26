@@ -25,8 +25,8 @@ export class Game {
   private outline!: OutlineEffect
   private scene: THREE.Scene
   private camera!: THREE.OrthographicCamera
-  private viewSize = 14
-  private pixelScale = 3
+  private viewSize = 12
+  private pixelScale = 2
   private input: Input
   private hud: HUD
 
@@ -61,7 +61,7 @@ export class Game {
   private aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private raycaster = new THREE.Raycaster()
   private aimGround = new THREE.Vector3()
-  private camOffset = new THREE.Vector3(0, 24, 17)
+  private camOffset = new THREE.Vector3(0, 28, 11)
 
   constructor(container: HTMLElement) {
     // 렌더러 (픽셀아트: 저해상도 렌더 → CSS 확대)

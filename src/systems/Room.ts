@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
-import { dungeonWallTex, townFloorTex, townWallTex } from '../rendering/tiles'
-import { ASSET, cloneTex, loadTex } from '../rendering/assets'
+import { bossFloorTex, dungeonFloorTex, dungeonWallTex, townFloorTex, townWallTex } from '../rendering/tiles'
+import { ASSET, cloneTex } from '../rendering/assets'
 import type { Direction } from './RunState'
 
 const TORCH_FRAMES = 3
@@ -16,11 +16,11 @@ export interface Bounds {
 }
 
 const SIZES: Record<string, { w: number; d: number }> = {
-  combat: { w: 42, d: 30 },
-  treasure: { w: 34, d: 26 },
-  shop: { w: 38, d: 26 },
-  boss: { w: 50, d: 36 },
-  town: { w: 46, d: 32 },
+  combat: { w: 36, d: 25 },
+  treasure: { w: 30, d: 22 },
+  shop: { w: 32, d: 22 },
+  boss: { w: 42, d: 30 },
+  town: { w: 38, d: 27 },
 }
 
 /**
@@ -47,17 +47,16 @@ export class Room {
     // 플레이 가능 영역(벽 두께 제외)
     this.bounds = { minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }
 
-    const useForestBackdrop = visual !== 'town'
-    const floorTex = useForestBackdrop ? loadTex(ASSET.stage1.floor) : townFloorTex()
+    // 큰 한 장짜리 배경은 카메라 비율과 오브젝트의 크기를 왜곡해 보이므로,
+    // 전투실은 다시 반복 타일을 사용하고 스테이지 장식 에셋과 분리한다.
+    const floorTex = visual === 'town' ? townFloorTex() : visual === 'boss' ? bossFloorTex() : dungeonFloorTex()
     const wallTex = visual === 'town' ? townWallTex() : dungeonWallTex()
 
     // ── 바닥 ──
     const ft = floorTex.clone()
     ft.needsUpdate = true
-    if (!useForestBackdrop) {
-      ft.wrapS = ft.wrapT = THREE.RepeatWrapping
-      ft.repeat.set(this.w / 2, this.d / 2)
-    }
+    ft.wrapS = ft.wrapT = THREE.RepeatWrapping
+    ft.repeat.set(this.w / 2, this.d / 2)
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(this.w, this.d),
       noOutline(new THREE.MeshStandardMaterial({ map: ft, roughness: 1 })),
@@ -73,9 +72,7 @@ export class Room {
     wt.needsUpdate = true
     wt.wrapS = wt.wrapT = THREE.RepeatWrapping
     wt.repeat.set(this.w / 2, WH / 2)
-    const wallMat = useForestBackdrop
-      ? noOutline(new THREE.MeshStandardMaterial({ color: 0x1e2a20, roughness: 1 }))
-      : noOutline(new THREE.MeshStandardMaterial({ map: wt, roughness: 1 }))
+    const wallMat = noOutline(new THREE.MeshStandardMaterial({ map: wt, roughness: 1 }))
     const addWall = (cx: number, cz: number, sx: number, sz: number) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(sx, WH, sz), wallMat)
       m.position.set(cx, WH / 2, cz)
@@ -96,24 +93,6 @@ export class Room {
     outer.rotation.x = -Math.PI / 2
     outer.position.y = -0.08
     this.group.add(outer)
-
-    if (useForestBackdrop) {
-      const addDecor = (path: string, x: number, z: number, w: number, h: number) => {
-        const mat = noOutline(new THREE.MeshBasicMaterial({ map: loadTex(path), transparent: true, depthWrite: false, side: THREE.DoubleSide }))
-        const decor = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat)
-        decor.rotation.x = -Math.PI / 2
-        decor.position.set(x, 0.035, z)
-        this.group.add(decor)
-      }
-      const fg = ASSET.stage1.foreground
-      addDecor(fg.treeA, -halfW + 4, -halfD + 4.2, 4.2, 5.6)
-      addDecor(fg.treeB, halfW - 4, -halfD + 4.2, 4.2, 5.6)
-      addDecor(fg.bushA, -halfW + 3.2, halfD - 2.3, 2.6, 1.75)
-      addDecor(fg.bushB, halfW - 3.2, halfD - 2.3, 2.6, 1.75)
-      addDecor(fg.stoneA, -halfW + 3, -1.4, 1.5, 2)
-      addDecor(fg.stoneB, halfW - 3, 1.4, 1.5, 2)
-      addDecor(fg.vineTop, 0, -halfD + 1.8, 3.6, 1.8)
-    }
 
     // ── 장식: 벽면 횃불 (2프레임 애니메이션) ──
     if (visual !== 'town') {

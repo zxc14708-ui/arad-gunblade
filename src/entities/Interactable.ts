@@ -20,21 +20,21 @@ const TEXFN: Record<InteractKind, () => THREE.Texture> = {
   portal: portalTex,
   door: doorTex,
 }
-const SCALE: Record<InteractKind, number> = { chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 5.2, door: 4.2 }
+const SCALE: Record<InteractKind, number> = { chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 4.9, door: 4.3 }
 /** 애셋 원본 종횡비(가로/세로) — 텍스처가 비동기 로드라 상수로 고정 */
 const ASPECT: Record<InteractKind, number> = {
   chest: 24 / 20,
   fountain: 28 / 30,
   merchant: 26 / 34,
-  portal: 26 / 34,
-  door: 24 / 30,
+  portal: 2 / 3,
+  door: 2 / 3,
 }
 export const INTERACT_RANGE: Record<InteractKind, number> = {
   chest: 2.2,
   fountain: 2.4,
   merchant: 3.0,
-  portal: 2.6,
-  door: 2.0,
+  portal: 2.8,
+  door: 2.5,
 }
 
 /** 상호작용 가능한 월드 오브젝트 (빌보드 스프라이트 + 근접 판정) */
@@ -87,7 +87,7 @@ export class Interactable {
       const gm = noOutline(
         new THREE.SpriteMaterial({
           map: TEXFN[kind](),
-          color: kind === 'portal' ? 0x9a7aff : 0xffd070,
+          color: kind === 'portal' ? 0x6cf4ff : 0x7eaaff,
           transparent: true,
           opacity: 0.22,
           depthWrite: false,

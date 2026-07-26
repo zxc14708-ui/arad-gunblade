@@ -45,7 +45,7 @@ export class CharacterSprite {
   private sprite: THREE.Sprite
   private mat: THREE.SpriteMaterial
   private shadow: THREE.Mesh
-  private readonly baseH = 3.7
+  private readonly baseH = 3.15
   private spec: SheetSpec = PROC_SPEC
   private artActive = false
   private animTime = 0

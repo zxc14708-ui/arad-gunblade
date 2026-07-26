@@ -68,8 +68,6 @@ export function preloadAssets(): Promise<void> {
     ...Object.values(ASSET.props),
     ...Object.values(ASSET.fx).map((f) => f.path),
     ...Object.values(ASSET.monsters).flatMap((m) => Object.values(m)),
-    ASSET.stage1.floor,
-    ...Object.values(ASSET.stage1.foreground),
     ...Object.values(ASSET.stage1.effects),
   ]
   return Promise.all(
@@ -108,8 +106,8 @@ export const ASSET = {
     chestOpen: 'assets/stage1/stage1_interactive_objects/treasure_chest_open.png',
     fountain: 'assets/stage1/stage1_interactive_objects/healing_fountain.png',
     merchant: 'assets/props/merchant_stall.png',
-    portal: 'assets/stage1/stage1_interactive_objects/dungeon_portal.png',
-    door: 'assets/props/dungeon_door.png',
+    portal: 'assets/props/arcane_portal_v1.png',
+    door: 'assets/props/arcane_portal_v1.png',
     torchStrip: 'assets/props/torch_strip.png',
     coinStrip: 'assets/props/coin_strip.png',
     xpCrystal: 'assets/props/xp_crystal.png',

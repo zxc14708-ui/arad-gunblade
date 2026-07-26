@@ -1,9 +1,9 @@
 :root {
-  --gold: #e8c979;
-  --red: #e0554f;
-  --blue: #6ad0ff;
-  --panel: rgba(14, 16, 24, 0.86);
-  --border: rgba(232, 201, 121, 0.35);
+  --gold: #f4d58d;
+  --red: #ee6a61;
+  --blue: #69dcff;
+  --panel: rgba(9, 15, 25, 0.84);
+  --border: rgba(132, 214, 238, 0.38);
 }
 
 * {
@@ -48,20 +48,25 @@ canvas.pixelated {
 /* ===== 상단 HUD ===== */
 .hud-top {
   position: absolute;
-  top: 14px;
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .stat-row {
   display: flex;
-  gap: 18px;
-  font-size: 15px;
-  letter-spacing: 0.5px;
+  gap: 14px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(18, 34, 48, 0.92), rgba(8, 13, 23, 0.84));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+  letter-spacing: 0.6px;
   text-shadow: 0 2px 4px #000;
 }
 .stat-row b {
@@ -71,10 +76,15 @@ canvas.pixelated {
 /* ===== 좌하단 체력/경험치 ===== */
 .hud-bars {
   position: absolute;
-  left: 20px;
-  bottom: 20px;
-  width: 300px;
+  left: 22px;
+  bottom: 22px;
+  width: 280px;
   max-width: 40vw;
+  padding: 10px 12px 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(13, 27, 39, 0.9), rgba(8, 11, 19, 0.72));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
 }
 .bar {
   height: 20px;
@@ -113,8 +123,8 @@ canvas.pixelated {
 /* 대시 게이지 */
 .hud-dash {
   position: absolute;
-  right: 20px;
-  bottom: 20px;
+  right: 22px;
+  bottom: 22px;
   text-align: center;
 }
 .dash-ring {
@@ -185,7 +195,12 @@ canvas.pixelated {
   gap: 3px;
   justify-content: center;
   min-height: 22px;
-  margin-top: 7px;
+  margin-top: 0;
+  padding: 7px;
+  border: 1px solid rgba(132, 214, 238, 0.26);
+  border-radius: 9px;
+  background: rgba(8, 14, 23, 0.72);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
 }
 .minimap-room {
   width: 22px;
@@ -226,7 +241,7 @@ canvas.pixelated {
 .prompt {
   position: absolute;
   left: 50%;
-  bottom: 110px;
+  bottom: 118px;
   transform: translateX(-50%);
   background: var(--panel);
   border: 1px solid var(--border);
@@ -383,8 +398,14 @@ canvas.pixelated {
 /* 탄약 표시 */
 .hud-ammo {
   position: absolute;
-  right: 20px;
-  bottom: 92px;
+  right: 104px;
+  bottom: 24px;
+  min-width: 116px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(8, 14, 23, 0.78);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.26);
   text-align: right;
 }
 .ammo-pips {
