@@ -1,6 +1,12 @@
 import * as THREE from 'three'
 import { COLORS } from '../config'
-import { puffTex, slashTex } from '../rendering/pixelfx'
+import { puffTex } from '../rendering/pixelfx'
+import { ASSET, frameTextures } from '../rendering/assets'
+
+export type FxKind = 'slash' | 'death' | 'muzzle' | 'hit'
+
+/** 이펙트별 재생 속도(fps) */
+const FX_FPS: Record<FxKind, number> = { slash: 26, death: 16, muzzle: 26, hit: 22 }
 
 type Particle = {
   mesh: THREE.Sprite
@@ -24,6 +30,8 @@ export class Effects {
   private floaters: Floater[] = []
   private deaths: { sp: THREE.Sprite; life: number; max: number; base: number }[] = []
   private ghosts: { sp: THREE.Sprite; life: number; max: number }[] = []
+  /** 스프라이트 시트 이펙트 (베기/사망/총구화염/타격) */
+  private fx: { sp: THREE.Sprite; kind: FxKind; time: number; frames: THREE.Texture[]; fps: number }[] = []
   private layer: HTMLDivElement
 
   constructor(scene: THREE.Scene, uiLayer: HTMLDivElement) {
@@ -86,16 +94,37 @@ export class Effects {
     }
   }
 
-  /** 픽셀 베기 크레센트 (조준 방향으로 회전한 빌보드) */
-  slash(pos: THREE.Vector3, angle: number, _arc: number, range: number) {
-    const mat = new THREE.SpriteMaterial({ map: slashTex(), transparent: true, depthWrite: false })
-    mat.rotation = -angle + Math.PI / 2 // 조준 방향으로 크레센트 회전(근사)
+  /**
+   * 스프라이트 시트 이펙트 재생 (1회, 마지막 프레임 후 제거)
+   * @param angle 월드 조준각 — 화면 회전으로 변환해 적용
+   */
+  playFx(kind: FxKind, x: number, y: number, z: number, scale: number, angle?: number) {
+    const def = ASSET.fx[kind]
+    const frames = frameTextures(def.path, def.frames)
+    const mat = new THREE.SpriteMaterial({ map: frames[0], transparent: true, depthWrite: false })
+    if (angle !== undefined) mat.rotation = -angle + Math.PI / 2
     const sp = new THREE.Sprite(mat)
-    const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
-    sp.position.set(pos.x + fwd.x * range * 0.4, 0.9, pos.z + fwd.z * range * 0.4)
-    sp.scale.setScalar(range * 1.2)
+    sp.position.set(x, y, z)
+    sp.scale.setScalar(scale)
     this.scene.add(sp)
-    this.slashes.push({ mesh: sp, life: 0.18, max: 0.18 })
+    this.fx.push({ sp, kind, time: 0, frames, fps: FX_FPS[kind] })
+  }
+
+  /** 베기 크레센트 (조준 방향, 사거리에 맞춰 전방 배치) */
+  slash(pos: THREE.Vector3, angle: number, _arc: number, range: number) {
+    const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
+    this.playFx('slash', pos.x + fwd.x * range * 0.45, 1.1, pos.z + fwd.z * range * 0.45, range * 1.5, angle)
+  }
+
+  /** 총구 화염 (총구 앞쪽에 배치) */
+  muzzleFlash(pos: THREE.Vector3, angle: number) {
+    const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
+    this.playFx('muzzle', pos.x + fwd.x * 1.35, 1.75, pos.z + fwd.z * 1.35, 1.5, angle)
+  }
+
+  /** 피격 임팩트 */
+  hitImpact(x: number, z: number, scale = 1.3) {
+    this.playFx('hit', x, 1.2, z, scale)
   }
 
   /** 데미지 숫자 (크리티컬이면 강조) */
@@ -128,6 +157,24 @@ export class Effects {
       }
       const t = p.life / p.maxLife
       p.mesh.scale.setScalar(t * 0.9 + 0.1)
+    }
+
+    // 스프라이트 시트 이펙트 (1회 재생 후 제거)
+    for (let i = this.fx.length - 1; i >= 0; i--) {
+      const f = this.fx[i]
+      f.time += dt
+      const idx = Math.floor(f.time * f.fps)
+      if (idx >= f.frames.length) {
+        this.scene.remove(f.sp)
+        ;(f.sp.material as THREE.Material).dispose()
+        this.fx.splice(i, 1)
+        continue
+      }
+      const m = f.sp.material as THREE.SpriteMaterial
+      m.map = f.frames[idx]
+      m.needsUpdate = true
+      // 끝으로 갈수록 페이드
+      m.opacity = 1 - (idx / f.frames.length) * 0.35
     }
 
     // 사망 산화
@@ -205,10 +252,12 @@ export class Effects {
     for (const f of this.floaters) f.el.remove()
     for (const d of this.deaths) this.scene.remove(d.sp)
     for (const g of this.ghosts) this.scene.remove(g.sp)
+    for (const f of this.fx) this.scene.remove(f.sp)
     this.particles = []
     this.slashes = []
     this.floaters = []
     this.deaths = []
     this.ghosts = []
+    this.fx = []
   }
 }

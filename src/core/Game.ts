@@ -14,6 +14,7 @@ import { Effects } from '../systems/Effects'
 import { rollChoices, Upgrade } from '../systems/Upgrades'
 import { Shop, ShopItem } from '../systems/Shop'
 import { AudioManager } from '../systems/Audio'
+import { preloadAssets } from '../rendering/assets'
 import { HUD } from '../ui/HUD'
 
 type State = 'start' | 'play' | 'levelup' | 'reward' | 'shop' | 'clear' | 'gameover'
@@ -53,7 +54,6 @@ export class Game {
   private wasDashing = false
   private ghostTimer = 0
   private settingsOpen = false
-  private prevE = false
   private acquired = new Map<string, { upgrade: Upgrade; count: number }>()
 
   private clock = new THREE.Clock()
@@ -144,6 +144,9 @@ export class Game {
         else if (this.state === 'shop') this.closeShop()
       }
     })
+
+    // 애셋 선로딩 (첫 사용 시 텍스처가 비어 검게 나오는 것 방지)
+    void preloadAssets()
 
     window.addEventListener('resize', this.onResize)
     this.clock.start()
@@ -350,9 +353,8 @@ export class Game {
   // ══════════════════ 상호작용 ══════════════════
 
   private handleInteract() {
-    const pressed = this.input.down('KeyE')
-    const justPressed = pressed && !this.prevE
-    this.prevE = pressed
+    // 엣지 트리거 — 빠른 E 탭도 놓치지 않음
+    const justPressed = this.input.consumePress('KeyE')
 
     // 가장 가까운 상호작용 대상 찾기
     let target: Interactable | null = null
@@ -584,7 +586,10 @@ export class Game {
     for (const b of bullets) {
       this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
     }
-    if (bullets.length > 0) this.audio.gunshot()
+    if (bullets.length > 0) {
+      this.audio.gunshot()
+      this.effects.muzzleFlash(this.player.pos, this.player.angle) // 총구 앞쪽 화염
+    }
     if (startedReload) this.audio.reload()
     if (slash) {
       this.audio.slash()
@@ -730,7 +735,7 @@ export class Game {
           b.hitSet.add(e.id)
           this.audio.hit()
           this.applyLifesteal(b.damage)
-          this.effects.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), COLORS.hit, 5, 5)
+          this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), b.damage, b.crit)
           if (b.hitSet.size > b.pierce) {
             consumed = true
@@ -781,7 +786,7 @@ export class Game {
         e.knockback(pos.x, pos.z, knockback)
         this.audio.hit()
         this.applyLifesteal(damage)
-        this.effects.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), COLORS.slash, 8, 7)
+        this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
         this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), damage, crit)
       }
     }
@@ -795,7 +800,7 @@ export class Game {
     this.scene.remove(e.group)
     this.kills++
     this.effects.deathDissolve(e.pos, enemyTexture(e.kind), ENEMY_SCALE[e.kind])
-    this.effects.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), COLORS.hit, 14, 8)
+    this.effects.playFx('death', e.pos.x, 1.0, e.pos.z, ENEMY_SCALE[e.kind] * 1.3)
 
     // 경험치 + 골드 드랍
     this.pickups.dropXp(e.pos.x, e.pos.z, e.xp)

@@ -9,6 +9,8 @@
  */
 export class Input {
   keys = new Set<string>()
+  /** 이번 프레임까지 '눌린 적 있는' 키 — 빠른 탭이 프레임 사이에 유실되지 않게 래치 */
+  private pressed = new Set<string>()
   mouseDown = false
   rightDown = false
   /** 마우스의 NDC 좌표 (-1..1) */
@@ -36,8 +38,19 @@ export class Input {
   /** 눌린 키·버튼 전부 해제 */
   clearAll = () => {
     this.keys.clear()
+    this.pressed.clear()
     this.mouseDown = false
     this.rightDown = false
+  }
+
+  /**
+   * 키가 '눌렸는가'를 한 번만 소비한다(엣지 트리거).
+   * keydown~keyup이 한 프레임 안에 끝나도 유실되지 않는다.
+   */
+  consumePress(code: string) {
+    if (!this.pressed.has(code)) return false
+    this.pressed.delete(code)
+    return true
   }
 
   /** 매 프레임 호출 — 포커스가 빠진 사이 유실된 keyup을 복구 */
@@ -50,6 +63,7 @@ export class Input {
   private onKey = (e: KeyboardEvent) => {
     if (e.isComposing) return // IME 조합 중에는 무시(keyup 유실 방지)
     this.keys.add(e.code)
+    if (!e.repeat) this.pressed.add(e.code) // 최초 눌림만 래치
     // 스크롤 방지
     if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault()
   }

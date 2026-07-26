@@ -37,6 +37,61 @@ export function cloneTex(path: string): THREE.Texture {
   return c
 }
 
+/**
+ * 스프라이트 시트를 프레임별 텍스처 배열로 미리 잘라둔다.
+ * (인스턴스마다 clone하지 않고 프레임 텍스처를 공유 → 이펙트 대량 생성에 유리)
+ */
+const frameCache = new Map<string, THREE.Texture[]>()
+export function frameTextures(path: string, frames: number): THREE.Texture[] {
+  const key = `${path}#${frames}`
+  let arr = frameCache.get(key)
+  if (!arr) {
+    arr = Array.from({ length: frames }, (_, i) => {
+      const t = cloneTex(path)
+      t.repeat.set(1 / frames, 1)
+      t.offset.set(i / frames, 0)
+      return t
+    })
+    frameCache.set(key, arr)
+  }
+  return arr
+}
+
+/**
+ * 모든 애셋을 미리 로드한다.
+ * 시트 프레임 텍스처는 원본 이미지가 로드되기 전에 clone하면 빈(검은) 텍스처로
+ * 업로드되므로, 실제 사용 전에 반드시 원본을 먼저 받아둬야 한다.
+ */
+export function preloadAssets(): Promise<void> {
+  const paths: string[] = [
+    ...Object.values(ASSET.tiles),
+    ...Object.values(ASSET.props),
+    ...Object.values(ASSET.fx).map((f) => f.path),
+    ...Object.values(ASSET.monsters).flatMap((m) => Object.values(m)),
+  ]
+  return Promise.all(
+    paths.map(
+      (p) =>
+        new Promise<void>((resolve) => {
+          const t = loadTex(p)
+          const img = t.image as HTMLImageElement | undefined
+          if (img && img.complete) return resolve()
+          const done = () => resolve()
+          // TextureLoader가 이미 로딩 중이면 이미지 이벤트로 대기
+          if (img) {
+            img.addEventListener('load', done, { once: true })
+            img.addEventListener('error', done, { once: true })
+          } else {
+            loader.load(p, () => resolve(), undefined, () => resolve())
+          }
+        }),
+    ),
+  ).then(() => {
+    // 로드 완료 후 프레임 텍스처를 미리 생성해 두면 첫 사용에서 검게 나오지 않는다
+    for (const f of Object.values(ASSET.fx)) frameTextures(f.path, f.frames)
+  })
+}
+
 export const ASSET = {
   tiles: {
     dungeonFloor: 'assets/tiles/dungeon_floor_01.png',
@@ -55,6 +110,12 @@ export const ASSET = {
     torchStrip: 'assets/props/torch_strip.png',
     coinStrip: 'assets/props/coin_strip.png',
     xpCrystal: 'assets/props/xp_crystal.png',
+  },
+  fx: {
+    slash: { path: 'assets/fx/slash_strip.png', frames: 6 },
+    death: { path: 'assets/fx/death_dissolve_strip.png', frames: 6 },
+    muzzle: { path: 'assets/fx/muzzle_flash_strip.png', frames: 3 },
+    hit: { path: 'assets/fx/hit_impact_strip.png', frames: 4 },
   },
   monsters: {
     imp: {
