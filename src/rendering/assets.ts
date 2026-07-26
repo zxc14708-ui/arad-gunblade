@@ -111,6 +111,9 @@ export const ASSET = {
     portal: 'assets/props/arcane_portal_v1.png',
     door: 'assets/props/dungeon_door.png',
     torchStrip: 'assets/props/torch_strip.png',
+    // 마을 시설 임시 외형 — 전용 아트가 오면 교체한다 (룬석: 픽셀 스타일 유지)
+    traitAltar: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
+    traitForge: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
     coinStrip: 'assets/props/coin_strip.png',
     xpCrystal: 'assets/props/xp_crystal.png',
   },
