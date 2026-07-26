@@ -13,7 +13,7 @@ const FRAMES: Record<EnemyKind, Record<EnemyAnimState, number>> = {
   boss: { idle: 4, walk: 6, attack: 6 },
 }
 const FPS: Record<EnemyAnimState, number> = { idle: 5, walk: 10, attack: 12 }
-const SCALE: Record<EnemyKind, number> = { imp: 2.0, brute: 3.2, shooter: 2.2, boss: 4.6 }
+const SCALE: Record<EnemyKind, number> = { imp: 2.2, brute: 3.5, shooter: 2.4, boss: 5.4 }
 
 /** 사망 연출 등 외부에서 적 텍스처/크기 참조용 (대기 시트 첫 프레임 기준) */
 export function enemyTexture(kind: EnemyKind): THREE.Texture {

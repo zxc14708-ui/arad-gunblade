@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { bulletTex, enemyBulletTex } from '../rendering/pixelfx'
+import { bulletTex } from '../rendering/pixelfx'
+import { ASSET, cloneTex } from '../rendering/assets'
 
 export interface Bullet {
   mesh: THREE.Sprite
@@ -29,10 +30,16 @@ export class Projectiles {
   enemyBullets: EnemyBullet[] = []
   private bulletMat = new THREE.SpriteMaterial({ map: bulletTex(), transparent: true, depthWrite: false })
   private critMat = new THREE.SpriteMaterial({ map: bulletTex(), color: 0xffffff, transparent: true, depthWrite: false })
-  private ebMat = new THREE.SpriteMaterial({ map: enemyBulletTex(), transparent: true, depthWrite: false })
+  private ebMat = this.makeEnemyBulletMaterial()
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
+  }
+
+  private makeEnemyBulletMaterial() {
+    const map = cloneTex(ASSET.stage1.effects.fireball)
+    map.repeat.set(1 / 4, 1)
+    return new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })
   }
 
   spawnBullet(pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number, crit: boolean, pierce: number) {
