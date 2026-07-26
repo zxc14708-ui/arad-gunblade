@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { CONFIG } from '../config'
 import { EnemySprite } from './EnemySprite'
+import { noOutline } from '../rendering/toon'
 
 export type EnemyKind = 'imp' | 'brute' | 'shooter' | 'boss'
 
@@ -43,6 +44,7 @@ export class Enemy {
   damage: number
   xp: number
   radius: number
+  elite: boolean
   alive = true
   contactTimer = 0
   shootTimer: number
@@ -54,8 +56,9 @@ export class Enemy {
   private bossTell = 0
   private bossPattern = 0
   private bossAim = new THREE.Vector3(0, 0, 1)
+  private eliteBarFill: THREE.Sprite | null = null
 
-  constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number) {
+  constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number, elite = false) {
     this.kind = kind
     this.def = DEFS[kind]
     this.sprite = new EnemySprite(kind)
@@ -68,7 +71,9 @@ export class Enemy {
     this.damage = CONFIG.enemy.baseDamage * this.def.damage * dmgMul
     this.xp = CONFIG.enemy.baseXp * this.def.xp
     this.radius = this.def.radius
+    this.elite = elite
     this.shootTimer = (this.def.shootCd ?? 0) * Math.random()
+    if (elite) this.createEliteMarker()
   }
 
   /** 반환: 이번 프레임에 실행할 적 공격 이벤트(있으면) */
@@ -147,6 +152,7 @@ export class Enemy {
     this.group.position.set(this.pos.x, 0, this.pos.z)
     const bobY = moving ? Math.abs(Math.sin(this.bob)) * 0.12 : 0
     this.sprite.update(dt, moving, dir.x < -0.05, this.hitFlash, bobY)
+    if (this.eliteBarFill) this.eliteBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.hp / this.maxHp))
 
     return attack
   }
@@ -191,5 +197,26 @@ export class Enemy {
     const d = Math.hypot(dx, dz) || 1
     this.vel.set((dx / d) * power, 0, (dz / d) * power)
     this.knockTimer = 0.2
+  }
+
+  /** 엘리트는 일반 적과 즉시 구분되도록 체력 바와 속성 보석을 띄운다. */
+  private createEliteMarker() {
+    const y = this.kind === 'brute' ? 4.4 : 3.4
+    const background = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x17131e, transparent: true, opacity: 0.92, depthWrite: false }))
+    background.position.set(0, y, 0)
+    background.scale.set(2.7, 0.3, 1)
+    this.group.add(background)
+
+    const fill = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xd996ff, transparent: true, opacity: 0.98, depthWrite: false }))
+    fill.center.set(0, 0.5)
+    fill.position.set(-1.25, y, 0.02)
+    fill.scale.set(2.5, 0.16, 1)
+    this.group.add(fill)
+    this.eliteBarFill = fill
+
+    const badgeMat = noOutline(new THREE.MeshStandardMaterial({ color: 0xffd66d, emissive: 0xffa12c, emissiveIntensity: 0.8 }))
+    const badge = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), badgeMat)
+    badge.position.set(0, y + 0.36, 0)
+    this.group.add(badge)
   }
 }

@@ -48,6 +48,7 @@ export class Game {
   /** 룸 입장 시 순차 스폰 대기열 */
   private spawnQueue: EnemyKind[] = []
   private spawnTimer = 0
+  private entrySafeTimer = 0
   private curPlan: RoomPlan | null = null
 
   private kills = 0
@@ -56,6 +57,8 @@ export class Game {
   private ghostTimer = 0
   private settingsOpen = false
   private acquired = new Map<string, { upgrade: Upgrade; count: number }>()
+  private startingTraitTaken = false
+  private traitForgeUsed = false
 
   private clock = new THREE.Clock()
   private aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -178,6 +181,8 @@ export class Game {
     this.kills = 0
     this.acquired.clear()
     this.hud.setBuildSummary([])
+    this.startingTraitTaken = false
+    this.traitForgeUsed = false
     this.settingsOpen = false
     this.hud.closeSettings()
 
@@ -229,6 +234,10 @@ export class Game {
     this.interactables.push(new Interactable('merchant', -10, -2, '상인과 거래').addTo(this.scene))
     // 회복 분수
     this.interactables.push(new Interactable('fountain', 10, -2, '분수에서 회복').addTo(this.scene))
+    // 시작 허브: 실제 시작 특성 선택 + 이후 확장할 제련/보스 정보 시설의 배치.
+    this.interactables.push(new Interactable('traitAltar', -11, 5.5, '시작 특성 선택').addTo(this.scene))
+    this.interactables.push(new Interactable('traitForge', 11, 5.5, '특성 제련소').addTo(this.scene))
+    this.interactables.push(new Interactable('bossBoard', 0, 7.2, '보스 기록소 · 준비 중').addTo(this.scene))
 
     const e = this.room.entryPoint()
     this.player.pos.set(e.x, 0, e.z)
@@ -262,6 +271,7 @@ export class Game {
     const alreadyCleared = this.run.isCurrentCleared()
     this.spawnQueue = alreadyCleared ? [] : [...plan.enemies]
     this.spawnTimer = 0.25
+    this.entrySafeTimer = alreadyCleared ? 0 : 1
     if (plan.enemies.length === 0) this.run.markCurrentCleared()
     this.roomCleared = this.run.isCurrentCleared()
 
@@ -425,6 +435,15 @@ export class Game {
       case 'merchant':
         this.openShop()
         break
+      case 'traitAltar':
+        this.chooseStartingTrait(target)
+        break
+      case 'traitForge':
+        this.openTraitForge(target)
+        break
+      case 'bossBoard':
+        this.hud.banner_('보스 기록소: 패턴·난이도 안내 패널은 다음 업데이트에서 열립니다.')
+        break
     }
   }
 
@@ -447,6 +466,46 @@ export class Game {
       this.pickups.dropGold(chest.pos.x, chest.pos.z + 1.2, gold)
       this.hud.banner_(`🪙 ${gold} 골드!`)
     }
+  }
+
+  private chooseStartingTrait(altar: Interactable) {
+    if (this.startingTraitTaken || altar.used) {
+      this.hud.banner_('이번 런의 시작 특성은 이미 선택했습니다.')
+      return
+    }
+    this.state = 'levelup'
+    this.input.clearAll()
+    this.audio.levelup()
+    this.hud.showLevelUp('첫 번째 특성', '이번 런을 이끌 특성 하나를 선택하세요.', rollChoices(3), (u) => {
+      this.applyTrait(u)
+      this.startingTraitTaken = true
+      altar.markUsed()
+      this.state = 'play'
+      this.hud.banner_(`${u.name} 선택 완료!`)
+      this.clock.getDelta()
+    })
+  }
+
+  private openTraitForge(forge: Interactable) {
+    if (this.traitForgeUsed || forge.used) {
+      this.hud.banner_('특성 제련은 이번 런에서 이미 사용했습니다.')
+      return
+    }
+    const choices = [...this.acquired.values()].map(({ upgrade }) => upgrade).slice(0, 3)
+    if (choices.length === 0) {
+      this.hud.banner_('제련할 특성이 없습니다. 시작 특성 제단을 먼저 이용하세요.')
+      return
+    }
+    this.state = 'levelup'
+    this.input.clearAll()
+    this.hud.showLevelUp('특성 제련', '보유 특성 하나를 한 단계 강화합니다.', choices, (u) => {
+      this.applyTrait(u)
+      this.traitForgeUsed = true
+      forge.markUsed()
+      this.state = 'play'
+      this.hud.banner_(`${u.name} 강화!`)
+      this.clock.getDelta()
+    })
   }
 
   private useFountain(f: Interactable) {
@@ -615,6 +674,7 @@ export class Game {
 
   private step(dt: number) {
     this.updateAim()
+    this.entrySafeTimer = Math.max(0, this.entrySafeTimer - dt)
 
     // ── 플레이어 ──
     const { bullets, slash, startedReload } = this.player.update(dt, this.input, this.aimGround)
@@ -651,14 +711,14 @@ export class Game {
     this.wasDashing = this.player.isDashing
 
     // ── 룸 적 스폰 ──
-    if (this.spawnQueue.length > 0) {
+    if (this.spawnQueue.length > 0 && this.entrySafeTimer <= 0) {
       this.spawnTimer -= dt
       if (this.spawnTimer <= 0) {
         this.spawnTimer = 0.14
         const kind = this.spawnQueue.shift()!
-        const p = this.room.spawnPoint()
+        const p = this.safeSpawnPoint()
         const plan = this.curPlan!
-        const e = new Enemy(kind, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul)
+        const e = new Enemy(kind, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.kind === 'elite')
         this.enemies.push(e)
         this.scene.add(e.group)
         this.effects.burst(new THREE.Vector3(p.x, 1, p.z), 0x8a4a6a, 8, 5)
@@ -762,6 +822,21 @@ export class Game {
         this.enemies.splice(i, 1)
       }
     }
+  }
+
+  /** 진입 위치와 출입구 주변은 비워, 방을 여는 순간의 불합리한 피격을 막는다. */
+  private safeSpawnPoint() {
+    const doors: Direction[] = ['north', 'east', 'south', 'west']
+    for (let i = 0; i < 18; i++) {
+      const p = this.room.randomPoint(5)
+      const nearPlayer = Math.hypot(p.x - this.player.pos.x, p.z - this.player.pos.z) < 7
+      const nearDoor = doors.some((direction) => {
+        const door = this.room.doorPoint(direction)
+        return Math.hypot(p.x - door.x, p.z - door.z) < 5
+      })
+      if (!nearPlayer && !nearDoor) return p
+    }
+    return this.room.randomPoint(5)
   }
 
   private resolveBullets() {
