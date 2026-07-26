@@ -887,7 +887,7 @@ export class Game {
     this.scene.remove(e.group)
     this.kills++
     const death = enemyDeathArt(e.kind)
-    this.effects.deathDissolve(e.pos, death.map, death.scale, death.centerY)
+    this.effects.deathDissolve(e.pos, death.map, death.scale)
     this.effects.playFx('death', e.pos.x, 1.0, e.pos.z, ENEMY_SCALE[e.kind] * 1.3)
 
     // 경험치 + 골드 드랍

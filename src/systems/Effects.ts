@@ -39,14 +39,11 @@ export class Effects {
     this.layer = uiLayer
   }
 
-  /**
-   * 적 사망 산화: 흰 섬광 → 주황 틴트로 주저앉으며 소멸
-   * @param centerY 시트 안 캐릭터의 발 높이(스프라이트 공간 0..1) — 앵커를 발에 둔다
-   */
-  deathDissolve(pos: THREE.Vector3, map: THREE.Texture, scale: number, centerY = 0) {
+  /** 적 사망 산화: 흰 섬광 → 주황 틴트로 주저앉으며 소멸 */
+  deathDissolve(pos: THREE.Vector3, map: THREE.Texture, scale: number) {
     const mat = new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })
     const sp = new THREE.Sprite(mat)
-    sp.center.set(0.5, centerY)
+    sp.center.set(0.5, 0)
     sp.scale.set(scale, scale, 1)
     sp.position.set(pos.x, 0.02, pos.z)
     this.scene.add(sp)

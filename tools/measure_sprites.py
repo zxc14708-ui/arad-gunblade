@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""몬스터 시트의 실측값을 뽑아 EnemySprite.ts 의 ART 표를 생성한다.
+"""몬스터 시트 규격 검사기.
 
-왜 필요한가:
-  같은 몬스터의 대기/걷기/공격 시트가 셀 안에서 서로 다른 크기로 그려져 왔다.
-  (걷기는 셀을 꽉 채우고 발이 바닥에 닿는데, 대기/공격은 셀 중앙에 작게 떠 있음)
-  스프라이트를 셀 기준으로 그리면 동작이 바뀔 때마다 몬스터 크기가 튀고 공중에 뜬다.
+EnemySprite.ts 의 렌더링은 시트가 아래 규격을 지킨다는 전제로 단순하게 짜여 있다.
+새 시트를 받으면 통합 전에 이걸 먼저 돌려 규격 위반을 잡는다.
 
-  아트를 리스케일하면 원본 디테일이 뭉개지므로, 대신 시트별 실측값
-  (셀 안 캐릭터 높이 / 발 y좌표) 을 코드에 넘겨 렌더 단계에서 보정한다.
+  1. 가로 스트립, 정사각 셀 (가로 = 셀 x 프레임수)
+  2. 셀 크기·프레임 수가 EnemySprite.ts 의 FRAMES 와 일치
+  3. 모든 프레임의 발(=최하단 불투명 픽셀)이 셀 아래변에 닿음
+     -> 안 지키면 몬스터가 공중에 뜬다
+  4. 같은 몬스터의 대기/걷기 캐릭터 높이가 비슷함 (비율 0.85~1.2)
+     -> 안 지키면 동작이 바뀔 때 몬스터 크기가 튄다
+     (공격은 웅크리는 자세가 많아 낮게 나오는 것이 정상이므로 경고만)
 
 사용법:
-  python3 tools/measure_sprites.py          # 표 출력
-  python3 tools/measure_sprites.py --check  # 현재 TS 표와 불일치 시 종료코드 1
-
-새 시트를 받으면 이걸 다시 돌려 EnemySprite.ts 의 ART 를 갱신하면 된다.
+  python3 tools/measure_sprites.py          # 검사 결과 출력
+  종료코드 0 = 통과, 1 = 위반 있음
 """
 import sys
 from statistics import median
@@ -21,28 +22,37 @@ from PIL import Image
 
 ROOT = 'public/assets/stage1'
 
-# kind -> (디렉터리, idle, walk, attack)
+# kind -> (디렉터리, [(상태, 파일명, 기대 프레임수)])
 MON = {
-    'imp':     ('stage1_goblins', 'melee_goblin_idle_4f', 'melee_goblin_walk_6f', 'melee_goblin_club_attack_4f'),
-    'brute':   ('stage1_tau',     'tau_warrior_idle_4f',  'tau_warrior_walk_6f',  'tau_warrior_slam_4f'),
-    'shooter': ('stage1_goblins', 'fire_goblin_idle_4f',  'fire_goblin_walk_6f',  'fire_goblin_cast_4f'),
-    'boss':    ('stage1_tau',     'tau_chief_idle_4f',    'tau_chief_move_6f',    'tau_chief_slam_6f'),
+    'imp': ('stage1_goblins', [
+        ('idle', 'melee_goblin_idle_4f', 4),
+        ('walk', 'melee_goblin_walk_6f', 6),
+        ('attack', 'melee_goblin_club_attack_4f', 4),
+    ]),
+    'shooter': ('stage1_goblins', [
+        ('idle', 'fire_goblin_idle_4f', 4),
+        ('walk', 'fire_goblin_walk_6f', 6),
+        ('attack', 'fire_goblin_cast_4f', 4),
+    ]),
+    'brute': ('stage1_tau', [
+        ('idle', 'tau_warrior_idle_4f', 4),
+        ('walk', 'tau_warrior_walk_6f', 6),
+        ('attack', 'tau_warrior_slam_4f', 4),
+    ]),
+    'boss': ('stage1_tau', [
+        ('idle', 'tau_chief_idle_4f', 4),
+        ('walk', 'tau_chief_move_6f', 6),
+        ('attack', 'tau_chief_slam_6f', 6),
+    ]),
 }
 
 
 def measure(path):
-    """(셀 크기, 프레임 수, 대표 캐릭터 높이, 대표 발 y) — 프레임별 중앙값 기준.
-
-    중앙값을 쓰는 이유: 웅크림·도약처럼 프레임마다 키가 달라지는 것은 애니메이션
-    자체이므로 유지해야 한다. 시트 전체에 단일 보정값만 적용한다.
-    """
     im = Image.open(path).convert('RGBA')
     w, h = im.size
-    cell = h                      # 정사각 셀 전제 (가로 스트립)
-    if w % cell:
-        raise SystemExit(f'{path}: 가로 {w} 가 셀 {cell} 의 배수가 아니다')
-    n = w // cell
+    cell = h
     px = im.load()
+    n = w // cell if cell else 0
     heights, feet = [], []
     for i in range(n):
         x0 = i * cell
@@ -55,30 +65,56 @@ def measure(path):
         if top is not None:
             heights.append(bot - top + 1)
             feet.append(bot)
-    return cell, n, int(median(heights)), int(median(feet))
+    return dict(w=w, h=h, cell=cell, frames=n, heights=heights, feet=feet)
 
 
-rows = []
-for kind, (d, idle, walk, atk) in MON.items():
-    entry = {}
-    for state, name in (('idle', idle), ('walk', walk), ('attack', atk)):
-        cell, n, bh, fy = measure(f'{ROOT}/{d}/{name}.png')
-        entry[state] = dict(cell=cell, frames=n, bodyH=bh, feetY=fy)
-    rows.append((kind, entry))
+FEET_TOL = 2  # 발 위치 허용오차(px) — 1~2px 차이는 눈에 보이지 않는다
 
-print('// tools/measure_sprites.py 로 생성 — 시트를 교체하면 다시 돌려 갱신할 것')
-print('const ART: Record<EnemyKind, Record<EnemyAnimState, SheetMetrics>> = {')
-for kind, e in rows:
-    print(f'  {kind}: {{')
-    for state in ('idle', 'walk', 'attack'):
-        m = e[state]
-        print(f'    {state}: {{ cell: {m["cell"]}, frames: {m["frames"]}, '
-              f'bodyH: {m["bodyH"]}, feetY: {m["feetY"]} }},')
-    print('  },')
-print('}')
+errors, warnings = [], []
+print(f'{"kind":9} {"state":7} {"size":>10} {"cell":>5} {"frames":>7} {"bodyH(med)":>11} {"ratio":>6}')
+print('-' * 64)
 
-print('\n// 참고: 상태 간 캐릭터 높이 비율 (1.0에서 멀면 크기가 튄다)', file=sys.stderr)
-for kind, e in rows:
-    ref = e['walk']['bodyH'] / e['walk']['cell']
-    ratios = {s: round((e[s]['bodyH'] / e[s]['cell']) / ref, 2) for s in ('idle', 'walk', 'attack')}
-    print(f'//   {kind:8} {ratios}', file=sys.stderr)
+for kind, (d, sheets) in MON.items():
+    # 걷기를 기준으로 삼으므로 먼저 전부 측정한 뒤 비교한다
+    got = {}
+    for state, name, want_frames in sheets:
+        try:
+            got[state] = (name, want_frames, measure(f'{ROOT}/{d}/{name}.png'))
+        except FileNotFoundError:
+            errors.append(f'{name}: 파일 없음')
+
+    if 'walk' not in got:
+        continue
+    wm = got['walk'][2]
+    ref = (median(wm['heights']) / wm['cell']) if wm['heights'] else 0
+
+    for state, name, want_frames in sheets:
+        if state not in got:
+            continue
+        _, want_frames, m = got[state]
+        bh = median(m['heights']) if m['heights'] else 0
+        ratio = (bh / m['cell']) / ref if ref else float('nan')
+        size = '{}x{}'.format(m['w'], m['h'])
+        print(f'{kind:9} {state:7} {size:>10} {m["cell"]:>5} '
+              f'{m["frames"]:>7} {bh:>11.0f} {ratio:>6.2f}')
+
+        if m['w'] % m['cell']:
+            errors.append(f'{name}: 가로 {m["w"]} 가 셀 {m["cell"]} 의 배수가 아님')
+        if m['frames'] != want_frames:
+            errors.append(f'{name}: 프레임 {m["frames"]}개 (기대 {want_frames}개)')
+        bad = [(i, f) for i, f in enumerate(m['feet']) if m['cell'] - 1 - f > FEET_TOL]
+        if bad:
+            errors.append(f'{name}: 발이 셀 바닥에서 뜬 프레임 {[i for i, _ in bad]} '
+                          f'(발y={[f for _, f in bad]}, 기대 {m["cell"] - 1})')
+        if state == 'idle' and not (0.85 <= ratio <= 1.2):
+            errors.append(f'{name}: 대기 캐릭터 크기가 걷기의 {ratio:.2f}배 (0.85~1.2 이어야 함)')
+        if state == 'attack' and not (0.5 <= ratio <= 1.2):
+            warnings.append(f'{name}: 공격 캐릭터 크기가 걷기의 {ratio:.2f}배 — 자세 때문인지 확인')
+    print()
+
+for w in warnings:
+    print(f'경고: {w}')
+for e in errors:
+    print(f'위반: {e}')
+print(f'\n{"통과" if not errors else f"위반 {len(errors)}건"}')
+sys.exit(1 if errors else 0)
