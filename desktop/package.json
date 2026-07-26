@@ -4,9 +4,8 @@
   "version": "0.1.0",
   "main": "main.cjs",
   "scripts": {
-    "build:web": "npm --prefix .. run build",
-    "start": "npm run build:web && electron .",
-    "package:win": "npm run build:web && electron-builder --win nsis"
+    "start": "electron .",
+    "package:win": "electron-builder --win nsis"
   },
   "devDependencies": {
     "electron": "^39.0.0",
@@ -19,12 +18,6 @@
     "files": [
       "main.cjs",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "../dist",
-        "to": "dist"
-      }
     ],
     "directories": {
       "output": "release"
