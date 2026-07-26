@@ -6,7 +6,7 @@ import { Room, RoomVisualKind } from '../systems/Room'
 import { RunState, RoomPlan, ROOM_ICON, ROOM_LABEL, Direction, OPPOSITE } from '../systems/RunState'
 import { Player } from '../entities/Player'
 import { Enemy, EnemyKind } from '../entities/Enemy'
-import { enemyTexture, ENEMY_SCALE } from '../entities/EnemySprite'
+import { enemyDeathArt, ENEMY_SCALE } from '../entities/EnemySprite'
 import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
 import { Pickups } from '../systems/Pickups'
@@ -753,6 +753,59 @@ export class Game {
         this.enemies.splice(i, 1)
       }
     }
+
+    this.separateEnemies()
+  }
+
+  /**
+   * 적끼리 겹치지 않게 서로 밀어낸다.
+   * 전부 플레이어를 향해 최단거리로 직진하므로, 같은 방향에서 온 무리는 좌표가
+   * 수렴해 스프라이트가 한 덩어리로 포개져 보인다(몇 마리인지 분간이 안 된다).
+   */
+  private separateEnemies() {
+    const es = this.enemies
+    for (let i = 0; i < es.length; i++) {
+      const a = es[i]
+      for (let j = i + 1; j < es.length; j++) {
+        const b = es[j]
+        // 히트박스보다 살짝 넉넉하게 — 스프라이트가 히트박스보다 넓다
+        const min = (a.radius + b.radius) * 1.15
+        const dx = b.pos.x - a.pos.x
+        const dz = b.pos.z - a.pos.z
+        const d2 = dx * dx + dz * dz
+        if (d2 >= min * min) continue
+
+        const d = Math.sqrt(d2)
+        let nx: number
+        let nz: number
+        if (d < 0.001) {
+          // 완전히 같은 좌표면 방향이 없으므로 임의 방향으로 흩는다
+          const a2 = Math.random() * Math.PI * 2
+          nx = Math.cos(a2)
+          nz = Math.sin(a2)
+        } else {
+          nx = dx / d
+          nz = dz / d
+        }
+        const push = (min - d) * 0.5
+
+        // 보스는 밀리지 않는다 — 대신 상대를 두 배로 밀어낸다
+        if (a.kind === 'boss') {
+          b.pos.x += nx * push * 2
+          b.pos.z += nz * push * 2
+        } else if (b.kind === 'boss') {
+          a.pos.x -= nx * push * 2
+          a.pos.z -= nz * push * 2
+        } else {
+          a.pos.x -= nx * push
+          a.pos.z -= nz * push
+          b.pos.x += nx * push
+          b.pos.z += nz * push
+        }
+      }
+    }
+    // 밀려난 결과가 방 밖으로 나가지 않게 다시 제한
+    for (const e of es) this.room.clamp(e.pos, e.radius * 0.6)
   }
 
   private resolveBullets() {
@@ -833,7 +886,8 @@ export class Game {
   private killEnemy(e: Enemy) {
     this.scene.remove(e.group)
     this.kills++
-    this.effects.deathDissolve(e.pos, enemyTexture(e.kind), ENEMY_SCALE[e.kind])
+    const death = enemyDeathArt(e.kind)
+    this.effects.deathDissolve(e.pos, death.map, death.scale, death.centerY)
     this.effects.playFx('death', e.pos.x, 1.0, e.pos.z, ENEMY_SCALE[e.kind] * 1.3)
 
     // 경험치 + 골드 드랍
