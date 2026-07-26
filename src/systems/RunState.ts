@@ -1,7 +1,7 @@
 import { CONFIG } from '../config'
 import { EnemyKind } from '../entities/Enemy'
 
-export type RoomKind = 'combat' | 'treasure' | 'shop' | 'boss'
+export type RoomKind = 'combat' | 'elite' | 'treasure' | 'shop' | 'boss'
 export type Direction = 'north' | 'east' | 'south' | 'west'
 
 export const DIRECTIONS: Direction[] = ['north', 'east', 'south', 'west']
@@ -49,6 +49,7 @@ export interface MapRoom {
   visited: boolean
   cleared: boolean
   visible: boolean
+  exits: Direction[]
 }
 
 export interface RoomExit {
@@ -58,12 +59,14 @@ export interface RoomExit {
 
 export const ROOM_LABEL: Record<RoomKind, string> = {
   combat: '전투',
+  elite: '엘리트',
   treasure: '보물',
   shop: '상점',
   boss: '보스',
 }
 export const ROOM_ICON: Record<RoomKind, string> = {
   combat: '⚔',
+  elite: '✦',
   treasure: '◆',
   shop: '¤',
   boss: '☠',
@@ -128,6 +131,16 @@ export class RunState {
       return { id, kind, enemies: ['boss', ...adds], chests: 0, x, y, depth, ...m }
     }
     if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, ...m }
+    if (kind === 'elite') {
+      const count = Math.ceil((3 + depth * 1.4) * CONFIG.spawn.roomDensity)
+      const enemies: EnemyKind[] = []
+      for (let i = 0; i < count; i++) {
+        if (i === 0 || (depth >= 3 && Math.random() < 0.38)) enemies.push('brute')
+        else if (Math.random() < 0.55) enemies.push('shooter')
+        else enemies.push('imp')
+      }
+      return { id, kind, enemies, chests: 0, x, y, depth, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
+    }
     if (kind === 'treasure') {
       const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))
       const enemies: EnemyKind[] = Array.from({ length: n }, () => (Math.random() < 0.5 ? 'imp' : 'shooter'))
@@ -180,7 +193,8 @@ export class RunState {
         }
       }
       const pick = candidates[Math.floor(Math.random() * candidates.length)]
-      const kind: RoomKind = index === roomCount - 1 ? 'boss' : index === shopIndex ? 'shop' : Math.random() < 0.28 ? 'treasure' : 'combat'
+      const roll = Math.random()
+      const kind: RoomKind = index === roomCount - 1 ? 'boss' : index === shopIndex ? 'shop' : roll < 0.16 ? 'elite' : roll < 0.42 ? 'treasure' : 'combat'
       const plan = this.makePlan(`room-${index}`, index + 1, kind, pick.x, pick.y)
       this.addNode(plan)
       const node = this.nodes.get(plan.id)!
@@ -259,6 +273,7 @@ export class RunState {
       visited: node.visited,
       cleared: node.cleared,
       visible: visibleIds.has(node.plan.id),
+      exits: Object.keys(node.exits) as Direction[],
     }))
   }
 
