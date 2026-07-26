@@ -219,8 +219,8 @@ export class Game {
     this.shop = null
     this.shopRoomId = null
 
-    // 던전 포탈 (북쪽 중앙)
-    const p = this.room.doorPoints(1)[0]
+    // 던전 포탈 — 북쪽 문 라인 대신 마을 안쪽에 둬 상단 벽/HUD에 가리지 않게 한다.
+    const p = { x: 0, z: this.room.bounds.minZ + 8 }
     this.interactables.push(
       new Interactable('portal', p.x, p.z, `던전 입장 — ${this.run.cfg.name}`).addTo(this.scene),
     )

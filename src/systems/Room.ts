@@ -5,6 +5,9 @@ import { ASSET, cloneTex, loadTex } from '../rendering/assets'
 import type { Direction } from './RunState'
 
 const TORCH_FRAMES = 3
+// 방보다 카메라 시야가 넓은 경우(특히 소형 방)가 있어, 벽 바깥으로 카메라가
+// 넘어가면 그 너머가 검게 비어 보인다. 바닥만 넉넉히 연장해 항상 시야를 채운다.
+const FLOOR_BLEED = 28
 
 export type RoomVisualKind = 'dungeon' | 'boss' | 'town'
 
@@ -51,15 +54,15 @@ export class Room {
     const floorTex = useForestBackdrop ? loadTex(ASSET.stage1.floor) : townFloorTex()
     const wallTex = visual === 'town' ? townWallTex() : dungeonWallTex()
 
-    // ── 바닥 ──
+    // ── 바닥 (카메라 시야를 항상 채우도록 벽 바깥까지 타일링해 연장) ──
     const ft = floorTex.clone()
     ft.needsUpdate = true
-    if (!useForestBackdrop) {
-      ft.wrapS = ft.wrapT = THREE.RepeatWrapping
-      ft.repeat.set(this.w / 2, this.d / 2)
-    }
+    ft.wrapS = ft.wrapT = THREE.RepeatWrapping
+    const floorW = this.w + FLOOR_BLEED * 2
+    const floorD = this.d + FLOOR_BLEED * 2
+    ft.repeat.set(floorW / 2, floorD / 2)
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(this.w, this.d),
+      new THREE.PlaneGeometry(floorW, floorD),
       noOutline(new THREE.MeshStandardMaterial({ map: ft, roughness: 1 })),
     )
     floor.rotation.x = -Math.PI / 2
@@ -79,7 +82,10 @@ export class Room {
     const addWall = (cx: number, cz: number, sx: number, sz: number) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(sx, WH, sz), wallMat)
       m.position.set(cx, WH / 2, cz)
-      m.castShadow = true
+      // 벽이 바닥에 그림자를 드리우면 카메라 각도상 화면 가장자리 바닥이 거의
+      // 새까맣게 덮여 '바닥이 안 채워진 검은 여백'처럼 보인다. 벽은 그림자를
+      // 만들지 않게 한다(받는 것만 유지 — 플레이어/적 그림자는 그대로 진다).
+      m.castShadow = false
       m.receiveShadow = true
       this.group.add(m)
     }
@@ -87,15 +93,6 @@ export class Room {
     addWall(0, halfD + WT / 2, this.w + WT * 2, WT) // 남
     addWall(-halfW - WT / 2, 0, WT, this.d) // 서
     addWall(halfW + WT / 2, 0, WT, this.d) // 동
-
-    // ── 바깥 어둠 (방 밖 여백을 검게 채워 빈 공간이 보이지 않게) ──
-    const outer = new THREE.Mesh(
-      new THREE.PlaneGeometry(300, 300),
-      noOutline(new THREE.MeshBasicMaterial({ color: 0x05060a })),
-    )
-    outer.rotation.x = -Math.PI / 2
-    outer.position.y = -0.08
-    this.group.add(outer)
 
     if (useForestBackdrop) {
       const addDecor = (path: string, x: number, z: number, w: number, h: number) => {

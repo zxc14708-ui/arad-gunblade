@@ -20,20 +20,20 @@ const TEXFN: Record<InteractKind, () => THREE.Texture> = {
   portal: portalTex,
   door: doorTex,
 }
-const SCALE: Record<InteractKind, number> = { chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 5.2, door: 4.2 }
+const SCALE: Record<InteractKind, number> = { chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 4.9, door: 4.2 }
 /** 애셋 원본 종횡비(가로/세로) — 텍스처가 비동기 로드라 상수로 고정 */
 const ASPECT: Record<InteractKind, number> = {
   chest: 24 / 20,
   fountain: 28 / 30,
   merchant: 26 / 34,
-  portal: 26 / 34,
+  portal: 2 / 3,
   door: 24 / 30,
 }
 export const INTERACT_RANGE: Record<InteractKind, number> = {
   chest: 2.2,
   fountain: 2.4,
   merchant: 3.0,
-  portal: 2.6,
+  portal: 2.8,
   door: 2.0,
 }
 
@@ -61,6 +61,7 @@ export class Interactable {
 
     this.mat = new THREE.SpriteMaterial({
       map: TEXFN[kind](),
+      color: kind === 'fountain' ? 0x8dffae : 0xffffff,
       transparent: true,
       depthWrite: false,
       depthTest: kind !== 'portal' && kind !== 'door',
@@ -82,29 +83,34 @@ export class Interactable {
     shadow.scale.set(1, 0.5, 1)
     this.group.add(shadow)
 
-    // 포탈/문은 은은한 발광
-    if (kind === 'portal' || kind === 'door') {
+    // 포탈은 보랏빛 수직 관문, 분수는 초록빛 고정 수원으로 구분한다.
+    if (kind === 'portal' || kind === 'door' || kind === 'fountain') {
+      const glowColor = kind === 'portal' ? 0xb56cff : kind === 'door' ? 0x7eaaff : 0x72f7a0
       const gm = noOutline(
         new THREE.SpriteMaterial({
           map: TEXFN[kind](),
-          color: kind === 'portal' ? 0x9a7aff : 0xffd070,
+          color: glowColor,
           transparent: true,
-          opacity: 0.22,
+          opacity: kind === 'fountain' ? 0.12 : 0.22,
           depthWrite: false,
           depthTest: false,
         }),
       )
       this.glow = new THREE.Sprite(gm)
-      this.glow.scale.setScalar(sc * 1.5)
+      this.glow.scale.setScalar(sc * (kind === 'fountain' ? 1.25 : 1.5))
       this.glow.center.set(0.5, 0)
       this.glow.renderOrder = 11
       this.group.add(this.glow)
 
-      if (kind === 'portal') {
+      if (kind === 'portal' || kind === 'fountain') {
+        const ringColor = kind === 'portal' ? 0xb56cff : 0x65e99a
         const marker = noOutline(
-          new THREE.MeshBasicMaterial({ color: 0x72eaff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+          new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: kind === 'portal' ? 0.8 : 0.5, side: THREE.DoubleSide }),
         )
-        const ring = new THREE.Mesh(new THREE.RingGeometry(sc * 0.34, sc * 0.5, 32), marker)
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(sc * (kind === 'portal' ? 0.34 : 0.42), sc * (kind === 'portal' ? 0.5 : 0.55), 32),
+          marker,
+        )
         ring.rotation.x = -Math.PI / 2
         ring.position.y = 0.045
         this.group.add(ring)
@@ -116,9 +122,11 @@ export class Interactable {
 
   update(dt: number) {
     this.bob += dt * 2.5
-    // 포탈/분수는 살짝 위아래로
-    if (this.kind === 'portal' || this.kind === 'fountain') {
-      this.sprite.position.y = Math.sin(this.bob) * 0.08
+    // 포탈만 떠오르게 해 물이 고인 분수와 실루엣까지 구분한다.
+    if (this.kind === 'portal') {
+      this.sprite.position.y = Math.sin(this.bob) * 0.1
+    } else if (this.kind === 'fountain') {
+      this.sprite.position.y = Math.sin(this.bob) * 0.018
     }
     if (this.glow) {
       const m = this.glow.material as THREE.SpriteMaterial
@@ -134,6 +142,7 @@ export class Interactable {
       this.mat.needsUpdate = true
     } else if (this.kind === 'fountain') {
       this.mat.color.setRGB(0.5, 0.5, 0.55) // 사용된 분수는 어둡게
+      if (this.glow) (this.glow.material as THREE.SpriteMaterial).opacity = 0.03
     }
   }
 

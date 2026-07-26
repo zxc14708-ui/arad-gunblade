@@ -317,8 +317,10 @@ export class HUD {
     const map = this.q('#miniMap')
     if (rooms.length === 0) {
       map.innerHTML = ''
+      map.hidden = true // 마을에는 던전 지도가 없으니 빈 칸을 남기지 않는다
       return
     }
+    map.hidden = false
     const visible = rooms.filter((room) => room.visible)
     const minX = Math.min(...visible.map((room) => room.x))
     const minY = Math.min(...visible.map((room) => room.y))

@@ -117,7 +117,7 @@ export const ASSET = {
     chestOpen: 'assets/stage1/stage1_interactive_objects/treasure_chest_open.png',
     fountain: 'assets/stage1/stage1_interactive_objects/healing_fountain.png',
     merchant: 'assets/props/merchant_stall.png',
-    portal: 'assets/stage1/stage1_interactive_objects/dungeon_portal.png',
+    portal: 'assets/props/arcane_portal_v1.png',
     door: 'assets/props/dungeon_door.png',
     torchStrip: 'assets/props/torch_strip.png',
     coinStrip: 'assets/props/coin_strip.png',
