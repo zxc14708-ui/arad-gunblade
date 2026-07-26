@@ -30,6 +30,7 @@ export class Effects {
   private floaters: Floater[] = []
   private deaths: { sp: THREE.Sprite; life: number; max: number; base: number }[] = []
   private ghosts: { sp: THREE.Sprite; life: number; max: number }[] = []
+  private bossTelegraphs: { mesh: THREE.Mesh; life: number; max: number }[] = []
   /** 스프라이트 시트 이펙트 (베기/사망/총구화염/타격) */
   private fx: { sp: THREE.Sprite; kind: FxKind; time: number; frames: THREE.Texture[]; fps: number }[] = []
   private layer: HTMLDivElement
@@ -127,6 +128,22 @@ export class Effects {
     this.playFx('hit', x, 1.2, z, scale)
   }
 
+  /** 보스 패턴 직전의 바닥 경고. 공격을 보이기 전에 읽을 시간을 준다. */
+  bossTelegraph(pos: THREE.Vector3, radius: number) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff5b67,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+    const mesh = new THREE.Mesh(new THREE.RingGeometry(radius * 0.72, radius, 48), mat)
+    mesh.rotation.x = -Math.PI / 2
+    mesh.position.set(pos.x, 0.06, pos.z)
+    this.scene.add(mesh)
+    this.bossTelegraphs.push({ mesh, life: 0.62, max: 0.62 })
+  }
+
   /** 데미지 숫자 (크리티컬이면 강조) */
   damageNumber(world: THREE.Vector3, amount: number, crit = false) {
     const el = document.createElement('div')
@@ -214,6 +231,21 @@ export class Effects {
       }
     }
 
+    for (let i = this.bossTelegraphs.length - 1; i >= 0; i--) {
+      const warning = this.bossTelegraphs[i]
+      warning.life -= dt
+      const t = Math.max(0, warning.life / warning.max)
+      const mat = warning.mesh.material as THREE.MeshBasicMaterial
+      mat.opacity = 0.18 + Math.abs(Math.sin(t * 22)) * 0.6 * t
+      warning.mesh.scale.setScalar(1 + (1 - t) * 0.1)
+      if (warning.life <= 0) {
+        this.scene.remove(warning.mesh)
+        warning.mesh.geometry.dispose()
+        mat.dispose()
+        this.bossTelegraphs.splice(i, 1)
+      }
+    }
+
     // 베기 궤적
     for (let i = this.slashes.length - 1; i >= 0; i--) {
       const s = this.slashes[i]
@@ -252,12 +284,18 @@ export class Effects {
     for (const f of this.floaters) f.el.remove()
     for (const d of this.deaths) this.scene.remove(d.sp)
     for (const g of this.ghosts) this.scene.remove(g.sp)
+    for (const warning of this.bossTelegraphs) {
+      this.scene.remove(warning.mesh)
+      warning.mesh.geometry.dispose()
+      ;(warning.mesh.material as THREE.Material).dispose()
+    }
     for (const f of this.fx) this.scene.remove(f.sp)
     this.particles = []
     this.slashes = []
     this.floaters = []
     this.deaths = []
     this.ghosts = []
+    this.bossTelegraphs = []
     this.fx = []
   }
 }

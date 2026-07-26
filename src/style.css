@@ -73,6 +73,46 @@ canvas.pixelated {
   color: var(--gold);
 }
 
+/* 전투 중 현재 특성을 한눈에 보여 주는 빌드 트레이. */
+.run-build {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+}
+.run-build.show { display: flex; }
+.build-chip {
+  width: 38px;
+  height: 38px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(201, 213, 235, 0.42);
+  border-radius: 9px;
+  background: linear-gradient(145deg, rgba(33, 47, 69, 0.94), rgba(8, 13, 22, 0.86));
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.32);
+  font-size: 21px;
+}
+.build-chip.rare { border-color: #6aa0ff; }
+.build-chip.epic { border-color: #c878ff; }
+.build-chip.legendary { border-color: #f0a030; }
+.build-chip b {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 16px;
+  padding: 1px 4px;
+  border: 1px solid #101724;
+  border-radius: 8px;
+  background: var(--gold);
+  color: #18202d;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+}
+
 /* ===== 좌하단 체력/경험치 ===== */
 .hud-bars {
   position: absolute;
@@ -584,6 +624,17 @@ canvas.pixelated {
 }
 #bossFill {
   background: linear-gradient(90deg, #7a1010, #e0554f);
+}
+#bossBar.enraged .name {
+  color: #ff8a7e;
+  animation: bossRage 0.8s ease-in-out infinite alternate;
+}
+#bossBar.enraged #bossFill {
+  background: linear-gradient(90deg, #8f171b, #ffb047, #ed4d5b);
+  box-shadow: 0 0 12px rgba(255, 92, 80, 0.8);
+}
+@keyframes bossRage {
+  to { text-shadow: 0 0 14px #ff665c, 0 0 26px rgba(255, 78, 72, 0.6); }
 }
 
 /* 웨이브 배너 */

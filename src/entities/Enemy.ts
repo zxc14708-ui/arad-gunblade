@@ -14,6 +14,13 @@ interface KindDef {
   shootCd?: number
 }
 
+export interface EnemyAttack {
+  directions: THREE.Vector3[]
+  speed: number
+  /** 발사 전 바닥 경고 반경. directions가 비어 있으면 경고 단계다. */
+  telegraphRadius?: number
+}
+
 const DEFS: Record<EnemyKind, KindDef> = {
   imp: { hp: 1, speed: 1, damage: 1, xp: 1, radius: 0.6 },
   brute: { hp: 4.5, speed: 0.6, damage: 2.2, xp: 3.5, radius: 1.1 },
@@ -44,6 +51,9 @@ export class Enemy {
   private def: KindDef
   private bob = Math.random() * Math.PI * 2
   private sprite: EnemySprite
+  private bossTell = 0
+  private bossPattern = 0
+  private bossAim = new THREE.Vector3(0, 0, 1)
 
   constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number) {
     this.kind = kind
@@ -61,8 +71,8 @@ export class Enemy {
     this.shootTimer = (this.def.shootCd ?? 0) * Math.random()
   }
 
-  /** 반환: 발사할 적 투사체 방향(있으면) */
-  update(dt: number, target: THREE.Vector3): THREE.Vector3 | null {
+  /** 반환: 이번 프레임에 실행할 적 공격 이벤트(있으면) */
+  update(dt: number, target: THREE.Vector3): EnemyAttack | null {
     if (this.hitFlash > 0) this.hitFlash -= dt
     if (this.contactTimer > 0) this.contactTimer -= dt
 
@@ -70,7 +80,7 @@ export class Enemy {
     const dist = dir.length()
     if (dist > 0.001) dir.divideScalar(dist)
 
-    let shoot: THREE.Vector3 | null = null
+    let attack: EnemyAttack | null = null
     let moving = false
 
     if (this.knockTimer > 0) {
@@ -78,6 +88,36 @@ export class Enemy {
       this.knockTimer -= dt
       this.pos.addScaledVector(this.vel, dt)
       this.vel.multiplyScalar(0.86)
+    } else if (this.kind === 'boss') {
+      // 보스는 거리를 유지하며 "경고 → 발사"의 명확한 리듬으로 패턴을 사용한다.
+      const desired = 10
+      // 경고 중에는 제자리에 멈춰, 바닥 텔레그래프와 실제 공격 위치가 일치한다.
+      if (this.bossTell <= 0) {
+        if (dist > desired + 1.5) {
+          this.pos.addScaledVector(dir, this.speed * dt)
+          moving = true
+        } else if (dist < desired - 2) {
+          this.pos.addScaledVector(dir, -this.speed * dt)
+          moving = true
+        }
+      }
+
+      if (this.bossTell > 0) {
+        this.bossTell -= dt
+        if (this.bossTell <= 0) {
+          attack = this.fireBossPattern()
+          this.sprite.playAttack(0.65)
+        }
+      } else {
+        this.shootTimer -= dt
+        if (this.shootTimer <= 0) {
+          this.bossTell = 0.62
+          this.bossAim.copy(dir)
+          const enraged = this.hp / this.maxHp <= 0.5
+          const radius = this.bossPattern === 1 ? (enraged ? 7.5 : 6.2) : 4.4
+          attack = { directions: [], speed: 0, telegraphRadius: radius }
+        }
+      }
     } else if (this.def.ranged) {
       // 원거리: 일정 거리 유지하며 사격
       const desired = 12
@@ -91,7 +131,7 @@ export class Enemy {
       this.shootTimer -= dt
       if (this.shootTimer <= 0) {
         this.shootTimer = this.def.shootCd ?? 2
-        shoot = dir.clone()
+        attack = { directions: [dir.clone()], speed: 14 }
         this.sprite.playAttack(0.5) // 시전 모션
       }
     } else {
@@ -108,7 +148,34 @@ export class Enemy {
     const bobY = moving ? Math.abs(Math.sin(this.bob)) * 0.12 : 0
     this.sprite.update(dt, moving, dir.x < -0.05, this.hitFlash, bobY)
 
-    return shoot
+    return attack
+  }
+
+  private fireBossPattern(): EnemyAttack {
+    const enraged = this.hp / this.maxHp <= 0.5
+    const base = Math.atan2(this.bossAim.z, this.bossAim.x)
+    const makeDir = (angle: number) => new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle))
+    let directions: THREE.Vector3[]
+
+    if (this.bossPattern === 0) {
+      // 추적 부채꼴: 이동을 멈추기보다 대시로 빠져나가도록 유도한다.
+      const offsets = enraged ? [-0.52, -0.26, 0, 0.26, 0.52] : [-0.34, 0, 0.34]
+      directions = offsets.map((offset) => makeDir(base + offset))
+      this.shootTimer = enraged ? 1.7 : 2.15
+    } else if (this.bossPattern === 1) {
+      // 원형 파동: 보스 근처에 오래 머무르는 플레이를 견제한다.
+      const count = enraged ? 12 : 8
+      directions = Array.from({ length: count }, (_, i) => makeDir((Math.PI * 2 * i) / count))
+      this.shootTimer = enraged ? 2.25 : 2.8
+    } else {
+      // 교차 사격: 안전 지점을 읽고 가로질러 이동하게 만든다.
+      const offsets = enraged ? [-0.72, -0.36, 0, 0.36, 0.72] : [-0.62, -0.2, 0.2, 0.62]
+      directions = offsets.map((offset) => makeDir(base + offset))
+      this.shootTimer = enraged ? 1.9 : 2.35
+    }
+
+    this.bossPattern = (this.bossPattern + 1) % 3
+    return { directions, speed: enraged ? 15 : 13 }
   }
 
   takeDamage(amount: number) {

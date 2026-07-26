@@ -36,6 +36,7 @@ export class HUD {
   private ammoText!: HTMLElement
   private ammoPips!: HTMLElement
   private ammoBox!: HTMLElement
+  private runBuild!: HTMLElement
   private lastAmmo = -1
   private lastMag = -1
   private volCb: ((kind: 'master' | 'music' | 'sfx', v: number) => void) | null = null
@@ -65,6 +66,7 @@ export class HUD {
     this.ammoText = this.q('#ammoText')
     this.ammoPips = this.q('#ammoPips')
     this.ammoBox = this.q('#ammoBox')
+    this.runBuild = this.q('#runBuild')
   }
 
   private q<T extends HTMLElement>(sel: string): T {
@@ -85,6 +87,7 @@ export class HUD {
 
       <button class="icon-btn" id="settingsBtn" title="설정 (Tab)">⚙️</button>
 
+      <div class="run-build" id="runBuild" aria-label="Run build"></div>
       <div class="prompt" id="prompt"><kbd>E</kbd> <span id="promptText"></span></div>
 
       <div id="bossBar">
@@ -376,9 +379,21 @@ export class HUD {
 
   showBoss(show: boolean) {
     this.bossBar.style.display = show ? 'block' : 'none'
+    if (!show) this.bossBar.classList.remove('enraged')
   }
   setBoss(hp: number, max: number) {
-    this.bossFill.style.width = Math.max(0, (hp / max) * 100) + '%'
+    const ratio = Math.max(0, hp / max)
+    this.bossFill.style.width = ratio * 100 + '%'
+    this.bossBar.classList.toggle('enraged', ratio > 0 && ratio <= 0.5)
+  }
+
+  /** 전투 중에도 현재 빌드의 핵심 특성을 빠르게 확인한다. */
+  setBuildSummary(traits: { upgrade: Upgrade; count: number }[]) {
+    const visible = [...traits].sort((a, b) => b.count - a.count).slice(0, 6)
+    this.runBuild.innerHTML = visible
+      .map(({ upgrade, count }) => `<div class="build-chip ${upgrade.rarity}" title="${upgrade.name} Lv.${count}"><span>${upgrade.icon}</span><b>${count}</b></div>`)
+      .join('')
+    this.runBuild.classList.toggle('show', visible.length > 0)
   }
 
   /** 특성 선택 (레벨업 / 보스 보상 공용) */

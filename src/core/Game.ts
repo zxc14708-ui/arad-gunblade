@@ -177,6 +177,7 @@ export class Game {
     this.clearWorld()
     this.kills = 0
     this.acquired.clear()
+    this.hud.setBuildSummary([])
     this.settingsOpen = false
     this.hud.closeSettings()
 
@@ -720,11 +721,17 @@ export class Game {
   private updateEnemies(dt: number) {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i]
-      const shootDir = e.update(dt, this.player.pos)
+      const attack = e.update(dt, this.player.pos)
 
-      if (shootDir) {
-        const origin = new THREE.Vector3(e.pos.x, 1.2, e.pos.z)
-        this.projectiles.spawnEnemyBullet(origin, shootDir, 14, e.damage)
+      if (attack) {
+        if (attack.telegraphRadius) this.effects.bossTelegraph(e.pos, attack.telegraphRadius)
+        if (attack.directions.length > 0) {
+          const origin = new THREE.Vector3(e.pos.x, e.kind === 'boss' ? 1.9 : 1.2, e.pos.z)
+          for (const direction of attack.directions) {
+            this.projectiles.spawnEnemyBullet(origin, direction, attack.speed, e.damage)
+          }
+          if (e.kind === 'boss') this.effects.burst(origin, 0xa65cff, 12, 3)
+        }
       }
 
       // 방 경계
@@ -859,6 +866,7 @@ export class Game {
     const cur = this.acquired.get(u.id)
     if (cur) cur.count++
     else this.acquired.set(u.id, { upgrade: u, count: 1 })
+    this.hud.setBuildSummary([...this.acquired.values()])
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setXp(this.player.xp, this.player.xpToNext)
   }

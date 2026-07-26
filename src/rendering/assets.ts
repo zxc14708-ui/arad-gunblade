@@ -135,9 +135,9 @@ export const ASSET = {
       attack: 'assets/stage1/stage1_goblins/fire_goblin_cast_4f.png',
     },
     boss: {
-      idle: 'assets/stage1/stage1_tau/tau_chief_idle_4f.png',
-      walk: 'assets/stage1/stage1_tau/tau_chief_move_6f.png',
-      attack: 'assets/stage1/stage1_tau/tau_chief_slam_6f.png',
+      idle: 'assets/monsters/stage1_boss_idle.png',
+      walk: 'assets/monsters/stage1_boss_move.png',
+      attack: 'assets/monsters/stage1_boss_attack.png',
     },
   },
   stage1: {
