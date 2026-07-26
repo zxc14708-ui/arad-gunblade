@@ -54,7 +54,9 @@ canvas.pixelated {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
 }
 
 .stat-row {
@@ -198,11 +200,19 @@ canvas.pixelated {
 /* 던전 진행 트랙 */
 .room-track {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
   justify-content: center;
-  margin-top: 4px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 22px;
+  overflow-x: auto;
+  padding: 1px 3px;
+  scrollbar-width: none;
 }
 .room-track i {
+  flex: 0 0 20px;
   width: 20px;
   height: 20px;
   border-radius: 4px;
@@ -241,6 +251,10 @@ canvas.pixelated {
   border-radius: 9px;
   background: rgba(8, 14, 23, 0.72);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+}
+.minimap[hidden],
+.room-track[hidden] {
+  display: none;
 }
 .minimap-room {
   width: 22px;

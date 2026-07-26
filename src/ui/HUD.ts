@@ -82,6 +82,7 @@ export class HUD {
           <span>처치 <b id="sKills">0</b></span>
           <span class="gold-stat">🪙 <b id="sGold">0</b></span>
         </div>
+        <div class="room-track" id="roomTrack" aria-label="던전 진행" hidden></div>
         <div class="minimap" id="miniMap" aria-label="던전 지도"></div>
       </div>
 
@@ -304,8 +305,10 @@ export class HUD {
     const t = this.q('#roomTrack')
     if (depth <= 0) {
       t.innerHTML = ''
+      t.hidden = true
       return
     }
+    t.hidden = false
     let html = ''
     for (let i = 1; i <= bossDepth; i++) {
       const cls = i < depth ? 'done' : i === depth ? 'now' : ''
@@ -320,8 +323,10 @@ export class HUD {
     const map = this.q('#miniMap')
     if (rooms.length === 0) {
       map.innerHTML = ''
+      map.hidden = true
       return
     }
+    map.hidden = false
     const visible = rooms.filter((room) => room.visible)
     const minX = Math.min(...visible.map((room) => room.x))
     const minY = Math.min(...visible.map((room) => room.y))

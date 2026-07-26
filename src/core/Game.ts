@@ -220,8 +220,8 @@ export class Game {
     this.shop = null
     this.shopRoomId = null
 
-    // 던전 포탈 (북쪽 중앙)
-    const p = this.room.doorPoints(1)[0]
+    // 상단 벽/HUD와 겹치지 않는 마을 안쪽 중앙에 배치한다.
+    const p = { x: 0, z: -2.5 }
     this.interactables.push(
       new Interactable('portal', p.x, p.z, `던전 입장 — ${this.run.cfg.name}`).addTo(this.scene),
     )
@@ -234,6 +234,7 @@ export class Game {
     this.player.pos.set(e.x, 0, e.z)
     this.player.heal(9999) // 마을 복귀 시 완전 회복
     this.hud.setMinimap([])
+    this.hud.setRoomTrack(0, 0, [])
     this.hud.banner_('아라드 마을')
     this.snapCamera()
     this.clock.getDelta()
@@ -287,6 +288,7 @@ export class Game {
 
     // 배너 / 진행 표시
     this.hud.setMinimap(this.run.minimap())
+    this.hud.setRoomTrack(this.run.depth, this.run.bossDepth, [plan.kind])
     if (plan.kind === 'boss') {
       this.audio.bossWarn()
       this.hud.banner_('⚠ 보스 ⚠')

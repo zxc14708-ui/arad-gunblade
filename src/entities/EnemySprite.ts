@@ -14,9 +14,6 @@ const FRAMES: Record<EnemyKind, Record<EnemyAnimState, number>> = {
 }
 const FPS: Record<EnemyAnimState, number> = { idle: 5, walk: 10, attack: 12 }
 const SCALE: Record<EnemyKind, number> = { imp: 2.7, brute: 3.8, shooter: 2.8, boss: 5.7 }
-// 원본 프레임의 투명 여백을 제외한 실제 실루엣 비율이다. 기존에는 모두 정사각형
-// 스프라이트로 그려져 가로형 고블린/타우가 세로로 늘어나 보였다.
-const ART_ASPECT: Record<EnemyKind, number> = { imp: 1.6, brute: 1.5, shooter: 1.58, boss: 1.0 }
 
 /** 사망 연출 등 외부에서 적 텍스처/크기 참조용 (대기 시트 첫 프레임 기준) */
 export function enemyTexture(kind: EnemyKind): THREE.Texture {
@@ -56,7 +53,7 @@ export class EnemySprite {
     this.sprite = new THREE.Sprite(this.mat)
     this.sprite.center.set(0.5, 0)
     const sc = SCALE[kind]
-    this.sprite.scale.set(sc * ART_ASPECT[kind], sc, 1)
+    this.sprite.scale.set(sc, sc, 1)
     this.group.add(this.sprite)
 
     // 발밑 그림자
@@ -66,7 +63,7 @@ export class EnemySprite {
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(sc * 0.22, 14), shadowMat)
     shadow.rotation.x = -Math.PI / 2
     shadow.position.y = 0.02
-    shadow.scale.set(ART_ASPECT[kind], 0.55, 1)
+    shadow.scale.set(1, 0.55, 1)
     this.group.add(shadow)
   }
 

@@ -5,6 +5,9 @@ import { ASSET, cloneTex } from '../rendering/assets'
 import type { Direction } from './RunState'
 
 const TORCH_FRAMES = 3
+// 카메라의 화면 비율과 기울기 때문에 벽 바깥까지 보이는 영역. 플레이 영역은 bounds로
+// 유지하고, 바닥만 넉넉하게 연장해 검은 공백과 공중에 뜬 프롭을 없앤다.
+const FLOOR_BLEED = 28
 
 export type RoomVisualKind = 'dungeon' | 'boss' | 'town'
 
@@ -56,9 +59,11 @@ export class Room {
     const ft = floorTex.clone()
     ft.needsUpdate = true
     ft.wrapS = ft.wrapT = THREE.RepeatWrapping
-    ft.repeat.set(this.w / 2, this.d / 2)
+    const floorW = this.w + FLOOR_BLEED * 2
+    const floorD = this.d + FLOOR_BLEED * 2
+    ft.repeat.set(floorW / 2, floorD / 2)
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(this.w, this.d),
+      new THREE.PlaneGeometry(floorW, floorD),
       noOutline(new THREE.MeshStandardMaterial({ map: ft, roughness: 1 })),
     )
     floor.rotation.x = -Math.PI / 2
@@ -84,15 +89,6 @@ export class Room {
     addWall(0, halfD + WT / 2, this.w + WT * 2, WT) // 남
     addWall(-halfW - WT / 2, 0, WT, this.d) // 서
     addWall(halfW + WT / 2, 0, WT, this.d) // 동
-
-    // ── 바깥 어둠 (방 밖 여백을 검게 채워 빈 공간이 보이지 않게) ──
-    const outer = new THREE.Mesh(
-      new THREE.PlaneGeometry(300, 300),
-      noOutline(new THREE.MeshBasicMaterial({ color: 0x05060a })),
-    )
-    outer.rotation.x = -Math.PI / 2
-    outer.position.y = -0.08
-    this.group.add(outer)
 
     // ── 장식: 벽면 횃불 (2프레임 애니메이션) ──
     if (visual !== 'town') {
