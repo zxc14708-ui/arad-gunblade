@@ -71,7 +71,6 @@ export function preloadAssets(): Promise<void> {
     ASSET.stage1.floor,
     ...Object.values(ASSET.stage1.foreground),
     ...Object.values(ASSET.stage1.effects),
-    ...Object.values(ASSET.player),
   ]
   return Promise.all(
     paths.map(
@@ -97,14 +96,6 @@ export function preloadAssets(): Promise<void> {
 }
 
 export const ASSET = {
-  /** 주인공 — 상태별 독립 시트, 전부 64x64 정사각 셀 (발끝 = 셀 하단) */
-  player: {
-    idle: 'assets/player/gunblade_idle_4f.png',
-    walk: 'assets/player/gunblade_walk_6f.png',
-    dash: 'assets/player/gunblade_dash_4f.png',
-    slash: 'assets/player/gunblade_katana_4f.png',
-    shoot: 'assets/player/gunblade_pistol_4f.png',
-  },
   tiles: {
     dungeonFloor: 'assets/tiles/dungeon_floor_01.png',
     dungeonWall: 'assets/tiles/dungeon_wall_01.png',
