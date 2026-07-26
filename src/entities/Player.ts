@@ -118,7 +118,7 @@ export class Player {
   private reloadTimer = 0
 
   constructor() {
-    this.char = new CharacterSprite(this.gun.id, this.sword.id)
+    this.char = new CharacterSprite()
     this.group = this.char.object
     this.stats = {} as PlayerStats
     this.recompute()
@@ -158,7 +158,7 @@ export class Player {
     if (this.hp > 0) this.hp = Math.min(this.hp, this.stats.maxHp)
   }
 
-  /** 무기 장착(총/검 자동 판별) — 캐릭터가 든 무기 스프라이트도 갱신 */
+  /** 무기 장착(총/검 자동 판별) — 스탯만 갱신. 캐릭터 아트는 무기별 스킨을 구분하지 않는다. */
   equip(w: GunDef | SwordDef) {
     if (w.kind === 'gun') {
       this.gun = w
@@ -169,7 +169,6 @@ export class Player {
       this.sword = w
       this.recompute()
     }
-    this.char.setWeapons(this.gun.id, this.sword.id)
   }
 
   get isDashing() {
