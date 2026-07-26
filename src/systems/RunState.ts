@@ -1,17 +1,59 @@
+import { CONFIG } from '../config'
 import { EnemyKind } from '../entities/Enemy'
 
 export type RoomKind = 'combat' | 'treasure' | 'shop' | 'boss'
+export type Direction = 'north' | 'east' | 'south' | 'west'
+
+export const DIRECTIONS: Direction[] = ['north', 'east', 'south', 'west']
+export const OPPOSITE: Record<Direction, Direction> = {
+  north: 'south',
+  east: 'west',
+  south: 'north',
+  west: 'east',
+}
+
+const DELTA: Record<Direction, { x: number; y: number }> = {
+  north: { x: 0, y: -1 },
+  east: { x: 1, y: 0 },
+  south: { x: 0, y: 1 },
+  west: { x: -1, y: 0 },
+}
 
 export interface RoomPlan {
+  id: string
   kind: RoomKind
-  /** 이 방에서 스폰할 적 목록 (전투/보스방) */
   enemies: EnemyKind[]
-  /** 보물상자 개수 */
   chests: number
-  /** 난이도 배수 */
   hpMul: number
   dmgMul: number
   speedMul: number
+  x: number
+  y: number
+  depth: number
+}
+
+interface RoomNode {
+  plan: RoomPlan
+  exits: Partial<Record<Direction, string>>
+  visited: boolean
+  cleared: boolean
+  usedObjects: Set<string>
+}
+
+export interface MapRoom {
+  id: string
+  kind: RoomKind
+  x: number
+  y: number
+  current: boolean
+  visited: boolean
+  cleared: boolean
+  visible: boolean
+}
+
+export interface RoomExit {
+  direction: Direction
+  plan: RoomPlan
 }
 
 export const ROOM_LABEL: Record<RoomKind, string> = {
@@ -21,17 +63,15 @@ export const ROOM_LABEL: Record<RoomKind, string> = {
   boss: '보스',
 }
 export const ROOM_ICON: Record<RoomKind, string> = {
-  combat: '⚔️',
-  treasure: '💰',
-  shop: '🛒',
-  boss: '💀',
+  combat: '⚔',
+  treasure: '◆',
+  shop: '¤',
+  boss: '☠',
 }
 
-/** 스테이지별 설정 (현재 1스테이지만) */
 const STAGES = [
   {
     name: '검은 숲 지하',
-    /** 보스 전까지 일반 방 수 */
     normalRooms: 6,
     baseHp: 1.0,
     baseDmg: 1.0,
@@ -39,30 +79,24 @@ const STAGES = [
 ]
 
 /**
- * 한 번의 던전 런 상태.
- * 방 구성은 매 판 랜덤 — 진행할 때마다 다음 방 후보(문 선택지)를 새로 뽑는다.
- * 구조: 일반 방 N개 → 상점/휴식 방 → 보스 방
+ * 한 스테이지의 모든 방을 시작할 때 생성한다. 방은 격자 위의 연결 그래프로
+ * 배치되며, 한 번 방문한 인접 방은 언제든 다시 이동할 수 있다.
  */
 export class RunState {
   stage = 1
-  /** 현재 방 깊이 (1부터). 0 = 아직 입장 전 */
   depth = 0
   gold = 0
   roomsCleared = 0
-  /** 현재 방 계획 */
   current: RoomPlan | null = null
-  /** 다음 방 후보 (문 선택지) */
-  choices: RoomPlan[] = []
+
+  private nodes = new Map<string, RoomNode>()
+  private currentId: string | null = null
 
   get cfg() {
     return STAGES[Math.min(this.stage - 1, STAGES.length - 1)]
   }
-  /** 보스 방 깊이 */
   get bossDepth() {
-    return this.cfg.normalRooms + 2 // 일반 N + 상점 1 + 보스
-  }
-  get shopDepth() {
-    return this.cfg.normalRooms + 1
+    return this.cfg.normalRooms + 2
   }
   get isBossRoom() {
     return this.current?.kind === 'boss'
@@ -74,10 +108,10 @@ export class RunState {
     this.gold = 0
     this.roomsCleared = 0
     this.current = null
-    this.choices = []
+    this.currentId = null
+    this.nodes.clear()
   }
 
-  /** 난이도 배수 (깊이에 따라 상승) */
   private muls(depth: number) {
     const c = this.cfg
     return {
@@ -87,67 +121,145 @@ export class RunState {
     }
   }
 
-  /** 지정 깊이의 방 계획 생성 (랜덤) */
-  private makePlan(depth: number, kind: RoomKind): RoomPlan {
+  private makePlan(id: string, depth: number, kind: RoomKind, x: number, y: number): RoomPlan {
     const m = this.muls(depth)
     if (kind === 'boss') {
-      const adds: EnemyKind[] = ['imp', 'imp', 'shooter']
-      return { kind, enemies: ['boss', ...adds], chests: 0, ...m }
+      const adds: EnemyKind[] = ['imp', 'imp', 'brute', 'shooter', 'shooter']
+      return { id, kind, enemies: ['boss', ...adds], chests: 0, x, y, depth, ...m }
     }
-    if (kind === 'shop') {
-      return { kind, enemies: [], chests: 0, ...m }
-    }
+    if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, ...m }
     if (kind === 'treasure') {
-      // 보물방: 적 소수 + 상자 2개
-      const n = 1 + Math.floor(Math.random() * 2)
+      const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))
       const enemies: EnemyKind[] = Array.from({ length: n }, () => (Math.random() < 0.5 ? 'imp' : 'shooter'))
-      return { kind, enemies, chests: 2, ...m }
+      return { id, kind, enemies, chests: 2, x, y, depth, ...m }
     }
-    // 전투방: 깊이에 따라 적 수/종류 증가
-    const count = 4 + Math.floor(depth * 1.2) + Math.floor(Math.random() * 3)
+
+    const count = Math.ceil((4 + Math.floor(depth * 1.2) + Math.floor(Math.random() * 3)) * CONFIG.spawn.roomDensity)
     const enemies: EnemyKind[] = []
     for (let i = 0; i < count; i++) {
       const r = Math.random()
-      if (depth >= 3 && r < 0.16) enemies.push('brute')
-      else if (depth >= 2 && r < 0.42) enemies.push('shooter')
+      if (depth >= 3 && r < 0.2) enemies.push('brute')
+      else if (depth >= 2 && r < 0.5) enemies.push('shooter')
       else enemies.push('imp')
     }
-    // 전투방도 낮은 확률로 상자 1개
-    const chests = Math.random() < 0.35 ? 1 : 0
-    return { kind, enemies, chests, ...m }
+    return { id, kind, enemies, chests: Math.random() < 0.4 ? 1 : 0, x, y, depth, ...m }
   }
 
-  /** 다음 방 후보(문 선택지) 생성. 상점/보스 깊이는 고정. */
-  rollChoices(): RoomPlan[] {
-    const next = this.depth + 1
-    if (next === this.bossDepth) {
-      this.choices = [this.makePlan(next, 'boss')]
-    } else if (next === this.shopDepth) {
-      this.choices = [this.makePlan(next, 'shop')]
-    } else {
-      // 2개 선택지: 전투 / 보물 랜덤 (하데스식 문 선택)
-      const kinds: RoomKind[] = Math.random() < 0.5 ? ['combat', 'treasure'] : ['treasure', 'combat']
-      if (Math.random() < 0.35) kinds[1] = 'combat' // 전투 2개인 경우도
-      this.choices = kinds.map((k) => this.makePlan(next, k))
+  private key(x: number, y: number) {
+    return `${x},${y}`
+  }
+
+  private addNode(plan: RoomPlan) {
+    this.nodes.set(plan.id, { plan, exits: {}, visited: false, cleared: false, usedObjects: new Set() })
+  }
+
+  private connect(a: RoomNode, direction: Direction, b: RoomNode) {
+    a.exits[direction] = b.plan.id
+    b.exits[OPPOSITE[direction]] = a.plan.id
+  }
+
+  /** 무작위 연결형 방 지도 생성. 인접한 방은 자동으로 이어져 가끔 순환 경로도 생긴다. */
+  private generateMap() {
+    const start = this.makePlan('room-0', 1, 'combat', 0, 0)
+    this.addNode(start)
+
+    const occupied = new Map<string, RoomNode>()
+    occupied.set(this.key(0, 0), this.nodes.get(start.id)!)
+    const roomCount = this.cfg.normalRooms + 2
+    const shopIndex = 2 + Math.floor(Math.random() * Math.max(1, this.cfg.normalRooms - 2))
+
+    for (let index = 1; index < roomCount; index++) {
+      const candidates: { parent: RoomNode; direction: Direction; x: number; y: number }[] = []
+      for (const node of occupied.values()) {
+        if (node.plan.kind === 'boss') continue
+        for (const direction of DIRECTIONS) {
+          const d = DELTA[direction]
+          const x = node.plan.x + d.x
+          const y = node.plan.y + d.y
+          if (!occupied.has(this.key(x, y))) candidates.push({ parent: node, direction, x, y })
+        }
+      }
+      const pick = candidates[Math.floor(Math.random() * candidates.length)]
+      const kind: RoomKind = index === roomCount - 1 ? 'boss' : index === shopIndex ? 'shop' : Math.random() < 0.28 ? 'treasure' : 'combat'
+      const plan = this.makePlan(`room-${index}`, index + 1, kind, pick.x, pick.y)
+      this.addNode(plan)
+      const node = this.nodes.get(plan.id)!
+      occupied.set(this.key(pick.x, pick.y), node)
+      this.connect(pick.parent, pick.direction, node)
+
+      // 새 방이 기존 방에 맞닿아 있으면 함께 연결해 지름길/순환 경로를 만든다.
+      for (const direction of DIRECTIONS) {
+        const d = DELTA[direction]
+        const neighbor = occupied.get(this.key(pick.x + d.x, pick.y + d.y))
+        if (neighbor && neighbor !== node && !node.exits[direction]) this.connect(node, direction, neighbor)
+      }
     }
-    return this.choices
   }
 
-  /** 선택지 중 하나로 입장 */
-  enter(index: number): RoomPlan {
-    const plan = this.choices[index] ?? this.choices[0]
-    this.depth += 1
-    this.current = plan
-    this.choices = []
-    return plan
-  }
-
-  /** 첫 방 입장 (전투방 고정) */
+  /** 새 스테이지 지도 생성 후 시작 방으로 진입 */
   enterFirst(): RoomPlan {
-    this.depth = 1
-    this.current = this.makePlan(1, 'combat')
-    this.choices = []
-    return this.current
+    this.generateMap()
+    return this.enter('room-0')
+  }
+
+  /** 현재 방과 연결된 방으로 이동 */
+  enter(id: string): RoomPlan {
+    const node = this.nodes.get(id)
+    if (!node) throw new Error(`Unknown room: ${id}`)
+    node.visited = true
+    this.currentId = id
+    this.current = node.plan
+    this.depth = node.plan.depth
+    return node.plan
+  }
+
+  get exits(): RoomExit[] {
+    const current = this.currentId ? this.nodes.get(this.currentId) : null
+    if (!current) return []
+    return DIRECTIONS.flatMap((direction) => {
+      const id = current.exits[direction]
+      const node = id ? this.nodes.get(id) : undefined
+      return node ? [{ direction, plan: node.plan }] : []
+    })
+  }
+
+  isCurrentCleared() {
+    return this.currentId ? this.nodes.get(this.currentId)?.cleared === true : false
+  }
+
+  markCurrentCleared() {
+    const node = this.currentId ? this.nodes.get(this.currentId) : null
+    if (!node || node.cleared) return false
+    node.cleared = true
+    this.roomsCleared++
+    return true
+  }
+
+  isObjectUsed(key: string) {
+    return this.currentId ? this.nodes.get(this.currentId)?.usedObjects.has(key) === true : false
+  }
+
+  markObjectUsed(key: string) {
+    if (this.currentId) this.nodes.get(this.currentId)?.usedObjects.add(key)
+  }
+
+  minimap(): MapRoom[] {
+    const visibleIds = new Set<string>()
+    for (const node of this.nodes.values()) {
+      if (!node.visited) continue
+      visibleIds.add(node.plan.id)
+      Object.values(node.exits).forEach((id) => id && visibleIds.add(id))
+    }
+    return [...this.nodes.values()].map((node) => ({
+      id: node.plan.id,
+      kind: node.plan.kind,
+      x: node.plan.x,
+      y: node.plan.y,
+      current: node.plan.id === this.currentId,
+      visited: node.visited,
+      cleared: node.cleared,
+      visible: visibleIds.has(node.plan.id),
+    }))
   }
 
   addGold(n: number) {

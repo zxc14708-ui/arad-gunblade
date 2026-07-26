@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { dungeonFloorTex, dungeonWallTex, townFloorTex, townWallTex, bossFloorTex } from '../rendering/tiles'
 import { ASSET, cloneTex } from '../rendering/assets'
+import type { Direction } from './RunState'
 
 const TORCH_FRAMES = 2
 
@@ -134,14 +135,30 @@ export class Room {
   }
 
   /** 플레이어 진입 위치 (남쪽 중앙) */
-  entryPoint() {
-    return { x: 0, z: this.bounds.maxZ - 3 }
+  entryPoint(from: Direction = 'south') {
+    const inset = 3
+    switch (from) {
+      case 'north': return { x: 0, z: this.bounds.minZ + inset }
+      case 'east': return { x: this.bounds.maxX - inset, z: 0 }
+      case 'west': return { x: this.bounds.minX + inset, z: 0 }
+      default: return { x: 0, z: this.bounds.maxZ - inset }
+    }
   }
 
   /** 북쪽 벽 앞 문 위치들 (개수에 따라 균등 배치) */
+  doorPoint(direction: Direction): { x: number; z: number } {
+    const inset = 1.2
+    switch (direction) {
+      case 'north': return { x: 0, z: this.bounds.minZ + inset }
+      case 'east': return { x: this.bounds.maxX - inset, z: 0 }
+      case 'south': return { x: 0, z: this.bounds.maxZ - inset }
+      case 'west': return { x: this.bounds.minX + inset, z: 0 }
+    }
+  }
+
   doorPoints(count: number): { x: number; z: number }[] {
     const z = this.bounds.minZ + 1.2
-    if (count <= 1) return [{ x: 0, z }]
+    if (count <= 1) return [this.doorPoint('north')]
     const span = this.w * 0.5
     return Array.from({ length: count }, (_, i) => ({
       x: -span / 2 + (span / (count - 1)) * i,

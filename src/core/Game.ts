@@ -3,7 +3,7 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { CONFIG, COLORS } from '../config'
 import { Input } from './Input'
 import { Room, RoomVisualKind } from '../systems/Room'
-import { RunState, RoomPlan, ROOM_ICON, ROOM_LABEL } from '../systems/RunState'
+import { RunState, RoomPlan, ROOM_ICON, ROOM_LABEL, Direction, OPPOSITE } from '../systems/RunState'
 import { Player } from '../entities/Player'
 import { Enemy, EnemyKind } from '../entities/Enemy'
 import { enemyTexture, ENEMY_SCALE } from '../entities/EnemySprite'
@@ -41,6 +41,7 @@ export class Game {
 
   private run = new RunState()
   private shop: Shop | null = null
+  private shopRoomId: string | null = null
   private mode: Mode = 'town'
   private state: State = 'start'
   private roomCleared = false
@@ -215,6 +216,8 @@ export class Game {
     this.roomCleared = true
     this.curPlan = null
     this.run.reset()
+    this.shop = null
+    this.shopRoomId = null
 
     // 던전 포탈 (북쪽 중앙)
     const p = this.room.doorPoints(1)[0]
@@ -229,7 +232,7 @@ export class Game {
     const e = this.room.entryPoint()
     this.player.pos.set(e.x, 0, e.z)
     this.player.heal(9999) // 마을 복귀 시 완전 회복
-    this.hud.setRoomTrack(0, 0, [])
+    this.hud.setMinimap([])
     this.hud.banner_('아라드 마을')
     this.snapCamera()
     this.clock.getDelta()
@@ -245,7 +248,7 @@ export class Game {
   }
 
   /** 방 하나 구성 */
-  private loadRoom(plan: RoomPlan) {
+  private loadRoom(plan: RoomPlan, enteredFrom: Direction = 'south') {
     this.clearWorld()
     this.room?.dispose()
     const visual: RoomVisualKind = plan.kind === 'boss' ? 'boss' : 'dungeon'
@@ -254,29 +257,35 @@ export class Game {
     this.state = 'play'
 
     // 적 스폰 대기열
-    this.spawnQueue = [...plan.enemies]
+    const alreadyCleared = this.run.isCurrentCleared()
+    this.spawnQueue = alreadyCleared ? [] : [...plan.enemies]
     this.spawnTimer = 0.25
-    this.roomCleared = plan.enemies.length === 0
+    if (plan.enemies.length === 0) this.run.markCurrentCleared()
+    this.roomCleared = this.run.isCurrentCleared()
 
     // 보물상자
     for (let i = 0; i < plan.chests; i++) {
+      if (this.run.isObjectUsed('chests-opened')) break
       const p = this.room.randomPoint(5)
       this.interactables.push(new Interactable('chest', p.x, p.z, '상자 열기').addTo(this.scene))
     }
 
     // 상점 방: 상인 + 회복 분수 (보스 입구)
     if (plan.kind === 'shop') {
-      this.shop = new Shop([this.player.gun.id, this.player.sword.id])
+      if (this.shopRoomId !== plan.id) {
+        this.shop = new Shop([this.player.gun.id, this.player.sword.id])
+        this.shopRoomId = plan.id
+      }
       this.interactables.push(new Interactable('merchant', -6, -1, '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('fountain', 6, -1, '분수에서 회복').addTo(this.scene))
     }
 
     // 플레이어 진입 위치
-    const e = this.room.entryPoint()
+    const e = this.room.entryPoint(enteredFrom)
     this.player.pos.set(e.x, 0, e.z)
 
     // 배너 / 진행 표시
-    this.hud.setRoomTrack(this.run.depth, this.run.bossDepth, [ROOM_ICON[plan.kind]])
+    this.hud.setMinimap(this.run.minimap())
     if (plan.kind === 'boss') {
       this.audio.bossWarn()
       this.hud.banner_('⚠ 보스 ⚠')
@@ -294,12 +303,12 @@ export class Game {
   /** 방 클리어 → 다음 방 문 생성 */
   private openDoors() {
     if (this.curPlan?.kind === 'boss') return
-    const choices = this.run.rollChoices()
-    const pts = this.room.doorPoints(choices.length)
-    choices.forEach((plan, i) => {
+    this.run.exits.forEach(({ direction, plan }) => {
+      const p = this.room.doorPoint(direction)
       const label = `${ROOM_LABEL[plan.kind]} 방으로 (${ROOM_ICON[plan.kind]})`
-      const door = new Interactable('door', pts[i].x, pts[i].z, label)
-      door.choiceIndex = i
+      const door = new Interactable('door', p.x, p.z, label)
+      door.targetRoomId = plan.id
+      door.direction = direction
       this.interactables.push(door.addTo(this.scene))
     })
   }
@@ -307,7 +316,8 @@ export class Game {
   private onRoomClear() {
     if (this.roomCleared) return
     this.roomCleared = true
-    this.run.roomsCleared++
+    this.run.markCurrentCleared()
+    this.hud.setMinimap(this.run.minimap())
     if (this.curPlan?.kind === 'boss') {
       this.onStageClear()
     } else {
@@ -380,7 +390,9 @@ export class Game {
         this.enterDungeon()
         break
       case 'door':
-        this.loadRoom(this.run.enter(target.choiceIndex))
+        if (target.targetRoomId && target.direction) {
+          this.loadRoom(this.run.enter(target.targetRoomId), OPPOSITE[target.direction])
+        }
         break
       case 'chest':
         this.openChest(target)
@@ -396,6 +408,7 @@ export class Game {
 
   private openChest(chest: Interactable) {
     chest.markUsed()
+    this.run.markObjectUsed('chests-opened')
     this.audio.pick()
     this.effects.burst(new THREE.Vector3(chest.pos.x, 1.2, chest.pos.z), 0xffd870, 16, 7)
     // 60% 특성, 40% 골드
@@ -415,9 +428,11 @@ export class Game {
   }
 
   private useFountain(f: Interactable) {
+    if (this.run.isObjectUsed('fountain')) return
     const heal = Math.round(this.player.stats.maxHp * 0.45)
     this.player.heal(heal)
     f.markUsed()
+    this.run.markObjectUsed('fountain')
     this.audio.pick()
     this.effects.burst(new THREE.Vector3(this.player.pos.x, 1.2, this.player.pos.z), 0x7fd8f0, 18, 6)
     this.hud.banner_(`체력 +${heal} 회복`)

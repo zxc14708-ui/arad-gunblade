@@ -1,6 +1,17 @@
 import { Upgrade } from '../systems/Upgrades'
 import { WeaponDef } from '../systems/Weapons'
 
+export interface MiniMapRoom {
+  id: string
+  kind: 'combat' | 'treasure' | 'shop' | 'boss'
+  x: number
+  y: number
+  current: boolean
+  visited: boolean
+  cleared: boolean
+  visible: boolean
+}
+
 /** DOM 기반 HUD / 오버레이 관리 */
 export class HUD {
   root: HTMLDivElement
@@ -68,7 +79,7 @@ export class HUD {
           <span>처치 <b id="sKills">0</b></span>
           <span class="gold-stat">🪙 <b id="sGold">0</b></span>
         </div>
-        <div class="room-track" id="roomTrack"></div>
+        <div class="minimap" id="miniMap" aria-label="던전 지도"></div>
       </div>
 
       <button class="icon-btn" id="settingsBtn" title="설정 (Tab)">⚙️</button>
@@ -298,6 +309,31 @@ export class HUD {
       html += `<i class="${cls}">${i === depth ? (kinds[0] ?? '●') : icon}</i>`
     }
     t.innerHTML = html
+  }
+
+  /** 현재까지 탐험한 방과 인접한 미발견 방을 격자 미니맵으로 표시한다. */
+  setMinimap(rooms: MiniMapRoom[]) {
+    const map = this.q('#miniMap')
+    if (rooms.length === 0) {
+      map.innerHTML = ''
+      return
+    }
+    const visible = rooms.filter((room) => room.visible)
+    const minX = Math.min(...visible.map((room) => room.x))
+    const minY = Math.min(...visible.map((room) => room.y))
+    const icon: Record<MiniMapRoom['kind'], string> = { combat: '⚔', treasure: '◆', shop: '¤', boss: '☠' }
+    map.innerHTML = visible
+      .map((room) => {
+        const cls = [
+          'minimap-room',
+          room.current ? 'current' : '',
+          room.visited ? 'visited' : 'unknown',
+          room.cleared ? 'cleared' : '',
+        ].filter(Boolean).join(' ')
+        const label = room.visited ? icon[room.kind] : '?'
+        return `<i class="${cls}" style="grid-column:${room.x - minX + 1};grid-row:${room.y - minY + 1}" title="${room.visited ? room.kind : '미발견 방'}">${label}</i>`
+      })
+      .join('')
   }
 
   /** 상호작용 프롬프트 */
