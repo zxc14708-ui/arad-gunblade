@@ -221,11 +221,14 @@ if (!url) {
   // Windows 의 spawn()은 셸을 거치지 않아 확장자 없는 'npx'를 ENOENT로 못 찾는다
   // (npm이 깔아둔 실제 실행 파일은 npx.cmd) — execSync는 항상 셸을 거쳐 괜찮지만
   // 이 spawn은 그렇지 않으므로 플랫폼별로 분기한다.
+  // npx.cmd는 배치 파일이라 shell:false로 직접 spawn하면 Windows에서 EINVAL이
+  // 난다 — .cmd/.bat 실행은 cmd.exe를 통해야 하므로 win32에서는 shell:true.
   const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
   server = spawn(npxCmd, ['vite', 'preview', '--port', String(port), '--strictPort'], {
     cwd: ROOT,
     stdio: 'ignore',
     detached: true,
+    shell: process.platform === 'win32',
   })
   // 'error' 이벤트를 안 받으면 Node가 처리되지 않은 예외로 던져 QC가 그대로
   // 멈추거나 비정상 종료한다 — spawn 실패(ENOENT 등)를 리포트로 흡수한다.
