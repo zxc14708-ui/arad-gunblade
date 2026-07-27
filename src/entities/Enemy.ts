@@ -5,6 +5,12 @@ import { noOutline } from '../rendering/toon'
 
 export type EnemyKind = 'imp' | 'brute' | 'shooter' | 'boss'
 
+export type EnemyAction =
+  | { type: 'shoot'; direction: THREE.Vector3 }
+  | { type: 'bossGroundFx'; effect: 'warning' | 'shockwave' | 'tealMagic'; position: THREE.Vector3; radius: number; duration: number }
+  | { type: 'bossSlam'; position: THREE.Vector3; radius: number; damageMultiplier: number; effectDuration: number; phaseEntry: boolean }
+type BossSlamAction = Extract<EnemyAction, { type: 'bossSlam' }>
+
 interface KindDef {
   hp: number
   speed: number
@@ -21,6 +27,33 @@ const DEFS: Record<EnemyKind, KindDef> = {
   shooter: { hp: 1.4, speed: 0.7, damage: 1.4, xp: 2.2, radius: 0.6, ranged: true, shootCd: 2.2 },
   boss: { hp: 34, speed: 0.85, damage: 3, xp: 30, radius: 1.9, ranged: true, shootCd: 1.6 },
 }
+
+// 보스 패턴 수치는 이후 config로 옮기기 쉽도록 이 파일 한 곳에 모아 둔다.
+const BOSS_PATTERN = {
+  range: 6,
+  shootChance: 0.3,
+  charge: {
+    telegraph: 0.7,
+    phaseTwoTelegraph: 0.5,
+    duration: 1.0,
+    speedMultiplier: 3.5,
+    contactDamageMultiplier: 1.5,
+    stagger: 1.2,
+    phaseTwoStagger: 0.9,
+  },
+  slam: {
+    telegraph: 0.9,
+    phaseTwoTelegraph: 0.65,
+    radius: 7,
+    damageMultiplier: 2.0,
+    stagger: 1.0,
+    phaseTwoStagger: 0.75,
+  },
+  staggerDamageMultiplier: 1.3,
+} as const
+
+type BossState = 'idle' | 'chargeWarning' | 'charge' | 'slamWarning' | 'stagger'
+type BossPattern = 'charge' | 'slam' | 'shoot'
 
 let NEXT_ID = 1
 
@@ -48,6 +81,14 @@ export class Enemy {
   private sprite: EnemySprite
   private eliteBarFill: THREE.Sprite | null = null
 
+  private bossState: BossState = 'idle'
+  private bossTimer = 0
+  private bossFacing = new THREE.Vector3(0, 0, 1)
+  private bossAnchor = new THREE.Vector3()
+  private bossPhaseTwo = false
+  private bossStaggerVulnerable = false
+  private bossHistory: BossPattern[] = []
+
   constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number, elite = false) {
     this.kind = kind
     this.def = DEFS[kind]
@@ -62,12 +103,26 @@ export class Enemy {
     this.xp = CONFIG.enemy.baseXp * this.def.xp
     this.radius = this.def.radius
     this.elite = elite
-    this.shootTimer = (this.def.shootCd ?? 0) * Math.random()
+    this.shootTimer = kind === 'boss' ? 0 : (this.def.shootCd ?? 0) * Math.random()
     if (elite) this.createEliteMarker()
   }
 
-  /** 반환: 발사할 적 투사체 방향(있으면) */
-  update(dt: number, target: THREE.Vector3): THREE.Vector3 | null {
+  get isBossCharging() {
+    return this.kind === 'boss' && this.bossState === 'charge'
+  }
+
+  get contactDamage() {
+    return this.damage * (this.isBossCharging ? BOSS_PATTERN.charge.contactDamageMultiplier : 1)
+  }
+
+  /** 방 벽에 닿은 돌진 보스를 즉시 경직 상태로 전환한다. */
+  stopBossChargeAtWall() {
+    if (!this.isBossCharging) return
+    this.beginBossStagger(this.chargeStaggerDuration(), true)
+  }
+
+  /** 반환: 적이 이번 프레임에 실행한 행동. */
+  update(dt: number, target: THREE.Vector3): EnemyAction[] {
     if (this.hitFlash > 0) this.hitFlash -= dt
     if (this.contactTimer > 0) this.contactTimer -= dt
 
@@ -75,16 +130,19 @@ export class Enemy {
     const dist = dir.length()
     if (dist > 0.001) dir.divideScalar(dist)
 
-    let shoot: THREE.Vector3 | null = null
     let moving = false
+    let actions: EnemyAction[] = []
 
     if (this.knockTimer > 0) {
-      // 넉백 중
       this.knockTimer -= dt
       this.pos.addScaledVector(this.vel, dt)
       this.vel.multiplyScalar(0.86)
+      moving = true
+    } else if (this.kind === 'boss') {
+      const result = this.updateBoss(dt, dir, dist)
+      actions = result.actions
+      moving = result.moving
     } else if (this.def.ranged) {
-      // 원거리: 일정 거리 유지하며 사격
       const desired = 12
       if (dist > desired + 1.5) {
         this.pos.addScaledVector(dir, this.speed * dt)
@@ -96,29 +154,162 @@ export class Enemy {
       this.shootTimer -= dt
       if (this.shootTimer <= 0) {
         this.shootTimer = this.def.shootCd ?? 2
-        shoot = dir.clone()
-        this.sprite.playAttack(0.5) // 시전 모션
+        actions.push({ type: 'shoot', direction: dir.clone() })
+        this.sprite.playAttack(0.5)
       }
     } else {
-      // 근접: 추격
       this.pos.addScaledVector(dir, this.speed * dt)
       moving = true
-      // 접촉 사거리에 들어오면 공격 모션
       if (dist < this.radius + 1.4) this.sprite.playAttack(0.4)
     }
 
-    // 스프라이트 동기화 (빌보드 — 프레임 애니메이션 + 좌우 플립)
     this.bob += dt * (this.def.ranged ? 2 : 8)
     this.group.position.set(this.pos.x, 0, this.pos.z)
     const bobY = moving ? Math.abs(Math.sin(this.bob)) * 0.12 : 0
-    this.sprite.update(dt, moving, dir.x < -0.05, this.hitFlash, bobY)
+    const facing = this.kind === 'boss' && (this.bossState === 'chargeWarning' || this.bossState === 'charge')
+      ? this.bossFacing
+      : dir
+    this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, bobY)
     if (this.eliteBarFill) this.eliteBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.hp / this.maxHp))
 
-    return shoot
+    return actions
+  }
+
+  private updateBoss(dt: number, dir: THREE.Vector3, dist: number) {
+    const actions: EnemyAction[] = []
+    let moving = false
+
+    if (!this.bossPhaseTwo && this.hp <= this.maxHp * 0.5) {
+      this.bossPhaseTwo = true
+      const phaseShockwave = this.createBossSlamAction(true)
+      actions.push({
+        type: 'bossGroundFx',
+        effect: 'tealMagic',
+        position: this.pos.clone(),
+        radius: BOSS_PATTERN.slam.radius,
+        duration: phaseShockwave.effectDuration,
+      }, phaseShockwave)
+    }
+
+    switch (this.bossState) {
+      case 'idle':
+        if (this.shootTimer > 0) {
+          this.shootTimer -= dt
+          break
+        }
+        actions.push(...this.chooseBossPattern(dir, dist))
+        break
+      case 'chargeWarning':
+        this.bossTimer -= dt
+        this.sprite.playCharge(Math.max(this.bossTimer, dt))
+        if (this.bossTimer <= 0) {
+          this.bossState = 'charge'
+          this.bossTimer = BOSS_PATTERN.charge.duration
+        }
+        break
+      case 'charge':
+        this.pos.addScaledVector(this.bossFacing, this.speed * BOSS_PATTERN.charge.speedMultiplier * dt)
+        moving = true
+        this.bossTimer -= dt
+        this.sprite.playCharge(Math.max(this.bossTimer, dt))
+        if (this.bossTimer <= 0) this.beginBossStagger(this.chargeStaggerDuration(), true)
+        break
+      case 'slamWarning':
+        this.bossTimer -= dt
+        this.sprite.playAttack(Math.max(this.bossTimer, dt))
+        if (this.bossTimer <= 0) {
+          actions.push(this.createBossSlamAction(false))
+          this.beginBossStagger(this.slamStaggerDuration(), true)
+        }
+        break
+      case 'stagger':
+        this.bossTimer -= dt
+        if (this.bossTimer <= 0) {
+          this.bossState = 'idle'
+          this.bossStaggerVulnerable = false
+        }
+        break
+    }
+
+    return { actions, moving }
+  }
+
+  private chooseBossPattern(dir: THREE.Vector3, dist: number): EnemyAction[] {
+    let pattern: BossPattern = Math.random() < BOSS_PATTERN.shootChance
+      ? 'shoot'
+      : dist >= BOSS_PATTERN.range ? 'charge' : 'slam'
+
+    if (this.bossHistory.length >= 2 && this.bossHistory[0] === pattern && this.bossHistory[1] === pattern) {
+      pattern = pattern === 'shoot' ? (dist >= BOSS_PATTERN.range ? 'charge' : 'slam') : 'shoot'
+    }
+    this.bossHistory.push(pattern)
+    if (this.bossHistory.length > 2) this.bossHistory.shift()
+
+    if (pattern === 'charge') {
+      this.bossFacing.copy(dir)
+      this.bossState = 'chargeWarning'
+      this.bossTimer = this.chargeTelegraphDuration()
+      this.sprite.playCharge(this.bossTimer)
+      return []
+    }
+
+    if (pattern === 'slam') {
+      this.bossAnchor.copy(this.pos)
+      this.bossState = 'slamWarning'
+      this.bossTimer = this.slamTelegraphDuration()
+      this.sprite.playAttack(this.bossTimer)
+      return [{
+        type: 'bossGroundFx',
+        effect: 'warning',
+        position: this.bossAnchor.clone(),
+        radius: BOSS_PATTERN.slam.radius,
+        duration: this.bossTimer,
+      }]
+    }
+
+    this.shootTimer = this.def.shootCd ?? 0
+    this.sprite.playAttack(0.5)
+    return [{ type: 'shoot', direction: dir.clone() }]
+  }
+
+  private createBossSlamAction(phaseEntry: boolean): BossSlamAction {
+    return {
+      type: 'bossSlam',
+      position: (phaseEntry ? this.pos : this.bossAnchor).clone(),
+      radius: BOSS_PATTERN.slam.radius,
+      damageMultiplier: BOSS_PATTERN.slam.damageMultiplier,
+      effectDuration: this.slamStaggerDuration(),
+      phaseEntry,
+    }
+  }
+
+  private chargeTelegraphDuration() {
+    return this.bossPhaseTwo ? BOSS_PATTERN.charge.phaseTwoTelegraph : BOSS_PATTERN.charge.telegraph
+  }
+
+  private slamTelegraphDuration() {
+    return this.bossPhaseTwo ? BOSS_PATTERN.slam.phaseTwoTelegraph : BOSS_PATTERN.slam.telegraph
+  }
+
+  private chargeStaggerDuration() {
+    return this.bossPhaseTwo ? BOSS_PATTERN.charge.phaseTwoStagger : BOSS_PATTERN.charge.stagger
+  }
+
+  private slamStaggerDuration() {
+    return this.bossPhaseTwo ? BOSS_PATTERN.slam.phaseTwoStagger : BOSS_PATTERN.slam.stagger
+  }
+
+  private beginBossStagger(duration: number, vulnerable: boolean) {
+    this.bossState = 'stagger'
+    this.bossTimer = duration
+    this.bossStaggerVulnerable = vulnerable
   }
 
   takeDamage(amount: number) {
-    this.hp -= amount
+    const effective = this.kind === 'boss' && this.bossState === 'stagger' && this.bossStaggerVulnerable
+      ? amount * BOSS_PATTERN.staggerDamageMultiplier
+      : amount
+    this.hp -= effective
     this.hitFlash = 0.12
     if (this.hp <= 0) this.alive = false
   }
@@ -132,7 +323,6 @@ export class Enemy {
     this.knockTimer = 0.2
   }
 
-  /** 엘리트는 일반 적과 즉시 구분되도록 체력 바와 표식을 띄운다. */
   private createEliteMarker() {
     const y = this.kind === 'brute' ? 4.4 : 3.4
     const bg = new THREE.Sprite(
@@ -145,7 +335,7 @@ export class Enemy {
     const fill = new THREE.Sprite(
       new THREE.SpriteMaterial({ color: 0xd996ff, transparent: true, opacity: 0.98, depthWrite: false }),
     )
-    fill.center.set(0, 0.5) // 왼쪽 기준 — 체력이 줄면 오른쪽부터 깎인다
+    fill.center.set(0, 0.5)
     fill.position.set(-1.25, y, 0.02)
     fill.scale.set(2.5, 0.16, 1)
     this.group.add(fill)

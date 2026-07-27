@@ -143,6 +143,7 @@ export const ASSET = {
       idle: 'assets/stage1/stage1_tau/tau_chief_idle_4f.png',
       walk: 'assets/stage1/stage1_tau/tau_chief_move_6f.png',
       attack: 'assets/stage1/stage1_tau/tau_chief_slam_6f.png',
+      charge: 'assets/stage1/stage1_tau/tau_chief_charge_6f.png',
     },
   },
   stage1: {

@@ -3,20 +3,22 @@ import type { EnemyKind } from './Enemy'
 import { noOutline } from '../rendering/toon'
 import { ASSET, cloneTex } from '../rendering/assets'
 
-export type EnemyAnimState = 'idle' | 'walk' | 'attack'
+export type EnemyAnimState = 'idle' | 'walk' | 'attack' | 'charge'
+type StandardEnemyAnimState = Exclude<EnemyAnimState, 'charge'>
+type EnemyFrames = Record<StandardEnemyAnimState, number> & Partial<Record<'charge', number>>
 
 /**
  * 각 애니메이션의 프레임 수 (시트 = 가로 스트립, 정사각 셀)
  * 시트 규격은 tools/measure_sprites.py 로 검사한다 — 셀 크기·프레임 수가 맞고
  * 모든 프레임의 발이 셀 아래변에 닿아 있어야 이 단순한 렌더링이 성립한다.
  */
-const FRAMES: Record<EnemyKind, Record<EnemyAnimState, number>> = {
+const FRAMES: Record<EnemyKind, EnemyFrames> = {
   imp: { idle: 4, walk: 6, attack: 4 },
   brute: { idle: 4, walk: 6, attack: 4 },
   shooter: { idle: 4, walk: 6, attack: 4 },
-  boss: { idle: 4, walk: 6, attack: 6 },
+  boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
 }
-const FPS: Record<EnemyAnimState, number> = { idle: 5, walk: 10, attack: 12 }
+const FPS: Record<EnemyAnimState, number> = { idle: 5, walk: 10, attack: 12, charge: 12 }
 
 /** 셀(=캐릭터) 월드 높이 */
 const SCALE: Record<EnemyKind, number> = { imp: 2.2, brute: 3.5, shooter: 2.4, boss: 5.4 }
@@ -40,13 +42,14 @@ export class EnemySprite {
   group = new THREE.Group()
   private sprite: THREE.Sprite
   private mat: THREE.SpriteMaterial
-  private texes: Record<EnemyAnimState, THREE.Texture>
+  private texes: Record<StandardEnemyAnimState, THREE.Texture> & Partial<Record<'charge', THREE.Texture>>
   private kind: EnemyKind
   private state: EnemyAnimState = 'idle'
   private time = 0
   private flip = 1
   /** 공격 모션 잔여 시간 */
   private attackTimer = 0
+  private chargeTimer = 0
 
   constructor(kind: EnemyKind) {
     this.kind = kind
@@ -56,8 +59,12 @@ export class EnemySprite {
       walk: cloneTex(src.walk),
       attack: cloneTex(src.attack),
     }
-    for (const k of ['idle', 'walk', 'attack'] as EnemyAnimState[]) {
+    for (const k of ['idle', 'walk', 'attack'] as StandardEnemyAnimState[]) {
       this.texes[k].repeat.set(1 / FRAMES[kind][k], 1)
+    }
+    if ('charge' in src) {
+      this.texes.charge = cloneTex(src.charge)
+      this.texes.charge.repeat.set(1 / (FRAMES[kind].charge ?? 1), 1)
     }
 
     this.mat = new THREE.SpriteMaterial({ map: this.texes.idle, transparent: true, depthWrite: false })
@@ -83,23 +90,31 @@ export class EnemySprite {
     this.attackTimer = duration
   }
 
+  /** 보스 돌진 예고/실행 모션. charge 시트가 없는 적은 무시한다. */
+  playCharge(duration: number) {
+    if (this.texes.charge) this.chargeTimer = duration
+  }
+
   /**
    * @param moving 이동 중인지
    * @param faceLeft 왼쪽을 보는지
    */
   update(dt: number, moving: boolean, faceLeft: boolean, hitFlash: number, bobY: number) {
     if (this.attackTimer > 0) this.attackTimer -= dt
+    if (this.chargeTimer > 0) this.chargeTimer -= dt
 
-    const next: EnemyAnimState = this.attackTimer > 0 ? 'attack' : moving ? 'walk' : 'idle'
+    const next: EnemyAnimState = this.chargeTimer > 0 && this.texes.charge
+      ? 'charge'
+      : this.attackTimer > 0 ? 'attack' : moving ? 'walk' : 'idle'
     if (next !== this.state) {
       this.state = next
       this.time = 0
-      this.mat.map = this.texes[next]
+      this.mat.map = this.texes[next] ?? this.texes.idle
       this.mat.needsUpdate = true
     }
     this.time += dt
 
-    const n = FRAMES[this.kind][this.state]
+    const n = FRAMES[this.kind][this.state] ?? FRAMES[this.kind].idle
     const idx = Math.floor(this.time * FPS[this.state]) % n
     const fw = 1 / n
     const map = this.mat.map!

@@ -5,7 +5,7 @@ import { Input } from './Input'
 import { Room, RoomVisualKind } from '../systems/Room'
 import { RunState, RoomPlan, ROOM_ICON, ROOM_LABEL, Direction, OPPOSITE } from '../systems/RunState'
 import { Player } from '../entities/Player'
-import { Enemy, EnemyKind } from '../entities/Enemy'
+import { Enemy, EnemyAction, EnemyKind } from '../entities/Enemy'
 import { enemyDeathArt, ENEMY_SCALE } from '../entities/EnemySprite'
 import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
@@ -789,25 +789,25 @@ export class Game {
   private updateEnemies(dt: number) {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i]
-      const shootDir = e.update(dt, this.player.pos)
-
-      if (shootDir) {
-        const origin = new THREE.Vector3(e.pos.x, 1.2, e.pos.z)
-        this.projectiles.spawnEnemyBullet(origin, shootDir, 14, e.damage)
-      }
+      const actions = e.update(dt, this.player.pos)
+      for (const action of actions) this.resolveEnemyAction(e, action)
 
       // 방 경계
+      const beforeClampX = e.pos.x
+      const beforeClampZ = e.pos.z
       this.room.clamp(e.pos, e.radius * 0.6)
+      if (e.isBossCharging && (e.pos.x !== beforeClampX || e.pos.z !== beforeClampZ)) e.stopBossChargeAtWall()
 
       const dx = e.pos.x - this.player.pos.x
       const dz = e.pos.z - this.player.pos.z
       const d = Math.hypot(dx, dz)
       if (d < e.radius + CONFIG.player.radius && e.contactTimer <= 0) {
-        if (this.player.takeDamage(e.damage)) {
+        if (this.player.takeDamage(e.contactDamage)) {
           e.contactTimer = CONFIG.enemy.contactCooldown
           this.audio.hurt()
           this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
         }
+        if (e.isBossCharging) this.pushPlayerAway(e.pos.x, e.pos.z, e.radius + CONFIG.player.radius)
       }
       if (d < e.radius + CONFIG.player.radius && !this.player.isDashing) {
         const push = (e.radius + CONFIG.player.radius - d) * 0.5
@@ -824,6 +824,45 @@ export class Game {
     }
 
     this.separateEnemies()
+  }
+
+  private resolveEnemyAction(enemy: Enemy, action: EnemyAction) {
+    if (action.type === 'shoot') {
+      const origin = new THREE.Vector3(enemy.pos.x, 1.2, enemy.pos.z)
+      this.projectiles.spawnEnemyBullet(origin, action.direction, 14, enemy.damage)
+      return
+    }
+
+    if (action.type === 'bossGroundFx') {
+      this.effects.playGroundFx(action.effect, action.position.x, action.position.z, action.radius * 2, action.duration)
+      return
+    }
+
+    this.effects.playGroundFx('shockwave', action.position.x, action.position.z, action.radius * 2, action.effectDuration)
+    if (action.phaseEntry) this.hud.banner_('⚠ 보스 2페이즈 ⚠')
+
+    const dx = this.player.pos.x - action.position.x
+    const dz = this.player.pos.z - action.position.z
+    const distance = Math.hypot(dx, dz)
+    if (distance > action.radius + CONFIG.player.radius) return
+    if (this.player.takeDamage(enemy.damage * action.damageMultiplier)) {
+      this.audio.hurt()
+      this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
+    }
+    this.pushPlayerAway(action.position.x, action.position.z, action.radius + CONFIG.player.radius)
+  }
+
+  /** 보스 돌진·슬램에 맞은 플레이어를 공격 중심의 바깥까지 밀어낸다. */
+  private pushPlayerAway(fromX: number, fromZ: number, targetDistance: number) {
+    const dx = this.player.pos.x - fromX
+    const dz = this.player.pos.z - fromZ
+    const distance = Math.hypot(dx, dz)
+    const nx = distance > 0.001 ? dx / distance : 1
+    const nz = distance > 0.001 ? dz / distance : 0
+    const push = Math.max(0, targetDistance - distance)
+    this.player.pos.x += nx * push
+    this.player.pos.z += nz * push
+    this.room.clamp(this.player.pos, CONFIG.player.radius)
   }
 
   /**

@@ -4,6 +4,7 @@ import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
 
 export type FxKind = 'slash' | 'death' | 'muzzle' | 'hit'
+export type GroundFxKind = 'warning' | 'shockwave' | 'tealMagic'
 
 /** 이펙트별 재생 속도(fps) */
 const FX_FPS: Record<FxKind, number> = { slash: 26, death: 16, muzzle: 26, hit: 22 }
@@ -22,6 +23,13 @@ type Floater = {
   vy: number
 }
 
+type GroundFx = {
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
+  time: number
+  duration: number
+  frames: THREE.Texture[]
+}
+
 /** 파티클 / 베기 궤적 / 데미지 숫자 / XP 오브 관리 */
 export class Effects {
   private scene: THREE.Scene
@@ -30,6 +38,7 @@ export class Effects {
   private floaters: Floater[] = []
   private deaths: { sp: THREE.Sprite; life: number; max: number; base: number }[] = []
   private ghosts: { sp: THREE.Sprite; life: number; max: number }[] = []
+  private groundFx: GroundFx[] = []
   /** 스프라이트 시트 이펙트 (베기/사망/총구화염/타격) */
   private fx: { sp: THREE.Sprite; kind: FxKind; time: number; frames: THREE.Texture[]; fps: number }[] = []
   private layer: HTMLDivElement
@@ -127,6 +136,18 @@ export class Effects {
     this.playFx('hit', x, 1.2, z, scale)
   }
 
+  /** 보스 예고와 충격파처럼 바닥에 붙는 프레임 이펙트. */
+  playGroundFx(kind: GroundFxKind, x: number, z: number, diameter: number, duration: number) {
+    const frames = frameTextures(ASSET.stage1.effects[kind], kind === 'shockwave' ? 6 : 4)
+    const mat = new THREE.MeshBasicMaterial({ map: frames[0], transparent: true, depthWrite: false })
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
+    mesh.rotation.x = -Math.PI / 2
+    mesh.position.set(x, 0.03, z)
+    mesh.scale.set(diameter, diameter, 1)
+    this.scene.add(mesh)
+    this.groundFx.push({ mesh, time: 0, duration, frames })
+  }
+
   /** 데미지 숫자 (크리티컬이면 강조) */
   damageNumber(world: THREE.Vector3, amount: number, crit = false) {
     const el = document.createElement('div')
@@ -175,6 +196,24 @@ export class Effects {
       m.needsUpdate = true
       // 끝으로 갈수록 페이드
       m.opacity = 1 - (idx / f.frames.length) * 0.35
+    }
+
+    // 바닥 이펙트 (예고/충격파)
+    for (let i = this.groundFx.length - 1; i >= 0; i--) {
+      const effect = this.groundFx[i]
+      effect.time += dt
+      const progress = Math.min(1, effect.time / effect.duration)
+      const index = Math.min(effect.frames.length - 1, Math.floor(progress * effect.frames.length))
+      const mat = effect.mesh.material
+      mat.map = effect.frames[index]
+      mat.needsUpdate = true
+      mat.opacity = 1 - progress * 0.25
+      if (effect.time >= effect.duration) {
+        this.scene.remove(effect.mesh)
+        effect.mesh.geometry.dispose()
+        mat.dispose()
+        this.groundFx.splice(i, 1)
+      }
     }
 
     // 사망 산화
@@ -253,11 +292,17 @@ export class Effects {
     for (const d of this.deaths) this.scene.remove(d.sp)
     for (const g of this.ghosts) this.scene.remove(g.sp)
     for (const f of this.fx) this.scene.remove(f.sp)
+    for (const effect of this.groundFx) {
+      this.scene.remove(effect.mesh)
+      effect.mesh.geometry.dispose()
+      effect.mesh.material.dispose()
+    }
     this.particles = []
     this.slashes = []
     this.floaters = []
     this.deaths = []
     this.ghosts = []
     this.fx = []
+    this.groundFx = []
   }
 }
