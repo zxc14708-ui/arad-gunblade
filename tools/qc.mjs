@@ -37,7 +37,23 @@ const only = arg('--only')
 const url = arg('--url')
 
 // ── 브라우저 실행 파일 찾기 ────────────────────────────────────────────
+/**
+ * /opt/pw-browsers 는 이 프로젝트의 Linux 샌드박스에서만 존재하는 경로다.
+ * Windows에는 Playwright 브라우저를 따로 내려받지 않고, 이미 설치돼 있는
+ * 시스템 Chrome을 그대로 몰아 쓴다(플레이어 환경과 동일한 렌더러라 오히려
+ * 낫다). QC_CHROME_PATH 환경변수가 있으면 무조건 그것을 최우선으로 쓴다 —
+ * CI나 특수 설치 경로처럼 아래 후보로 못 잡는 경우의 탈출구.
+ */
 function chromePath() {
+  if (process.env.QC_CHROME_PATH) {
+    if (!existsSync(process.env.QC_CHROME_PATH)) {
+      throw new Error(`QC_CHROME_PATH 로 지정된 경로가 없음: ${process.env.QC_CHROME_PATH}`)
+    }
+    return process.env.QC_CHROME_PATH
+  }
+
+  if (process.platform === 'win32') return chromePathWindows()
+
   const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers'
   if (!existsSync(base)) throw new Error(`브라우저 경로 없음: ${base}`)
   const dir = readdirSync(base)
@@ -46,6 +62,20 @@ function chromePath() {
     .pop()
   if (!dir) throw new Error(`${base} 에 chromium-* 없음`)
   return join(base, dir, 'chrome-linux', 'chrome')
+}
+
+function chromePathWindows() {
+  const candidates = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  ].filter(Boolean)
+  const found = candidates.find((p) => existsSync(p))
+  if (found) return found
+  throw new Error(
+    ['Windows 에서 Chrome 실행 파일을 찾지 못함. 다음 경로를 확인했음:', ...candidates.map((p) => `  ${p}`),
+      '설치 위치가 다르면 QC_CHROME_PATH 환경변수로 직접 지정할 것 (예: set QC_CHROME_PATH=C:\\...\\chrome.exe)'].join('\n'),
+  )
 }
 
 // ── 시나리오 ──────────────────────────────────────────────────────────
