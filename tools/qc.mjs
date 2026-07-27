@@ -218,10 +218,19 @@ if (!url) {
   execSync('npm run build', { cwd: ROOT, stdio: 'inherit' })
   port = await freePort(PORT)
   console.log(`· 프리뷰 :${port}`)
-  server = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], {
+  // Windows 의 spawn()은 셸을 거치지 않아 확장자 없는 'npx'를 ENOENT로 못 찾는다
+  // (npm이 깔아둔 실제 실행 파일은 npx.cmd) — execSync는 항상 셸을 거쳐 괜찮지만
+  // 이 spawn은 그렇지 않으므로 플랫폼별로 분기한다.
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+  server = spawn(npxCmd, ['vite', 'preview', '--port', String(port), '--strictPort'], {
     cwd: ROOT,
     stdio: 'ignore',
     detached: true,
+  })
+  // 'error' 이벤트를 안 받으면 Node가 처리되지 않은 예외로 던져 QC가 그대로
+  // 멈추거나 비정상 종료한다 — spawn 실패(ENOENT 등)를 리포트로 흡수한다.
+  server.on('error', (e) => {
+    errors.push(`프리뷰 서버 실행 실패 (${npxCmd}): ${e.message}`)
   })
   await waitFor(`http://localhost:${port}/`)
   await assertServesLocalBuild(`http://localhost:${port}/`)
