@@ -91,6 +91,8 @@ export class Player {
   hp = 0
   stats: PlayerStats
   mods: Mods = freshMods()
+  /** 런 동안 획득한 특성별 스택 수. 선택지와 획득 검증의 단일 기준이다. */
+  traitStacks = new Map<string, number>()
   gun: GunDef = START_GUN
   sword: SwordDef = START_SWORD
 
@@ -134,9 +136,9 @@ export class Player {
     this.stats = {
       maxHp: CONFIG.player.maxHp + m.maxHp,
       moveSpeed: CONFIG.player.speed * m.moveSpeed,
-      dashCooldown: CONFIG.player.dashCooldown * m.dashCooldown,
+      dashCooldown: Math.max(CONFIG.player.dashCooldown * 0.45, CONFIG.player.dashCooldown * m.dashCooldown),
       gunDamage: g.damage * m.gunDamage,
-      gunCooldown: g.cooldown * m.gunCooldown,
+      gunCooldown: Math.max(CONFIG.gun.cooldown * 0.35, g.cooldown * m.gunCooldown),
       bulletSpeed: g.bulletSpeed * m.bulletSpeed,
       pierce: g.pierce + m.pierce,
       multishot: g.pellets + m.multishot,
@@ -145,7 +147,7 @@ export class Player {
       reloadTime: g.reloadTime * m.reloadTime,
       swordDamage: s.damage * m.swordDamage,
       swordRange: s.range * m.swordRange,
-      swordCooldown: s.cooldown * m.swordCooldown,
+      swordCooldown: Math.max(CONFIG.sword.cooldown * 0.4, s.cooldown * m.swordCooldown),
       swordArc: s.arc,
       knockback: s.knockback,
       lunge: s.lunge,
@@ -156,6 +158,20 @@ export class Player {
     }
     this.magSize = this.stats.magSize
     if (this.hp > 0) this.hp = Math.min(this.hp, this.stats.maxHp)
+  }
+
+  traitStackCount(id: string) {
+    return this.traitStacks.get(id) ?? 0
+  }
+
+  canAcquireTrait(id: string, maxStacks: number) {
+    return this.traitStackCount(id) < maxStacks
+  }
+
+  recordTrait(id: string) {
+    const next = this.traitStackCount(id) + 1
+    this.traitStacks.set(id, next)
+    return next
   }
 
   /** 무기 장착(총/검 자동 판별) — 캐릭터가 든 무기 스프라이트도 갱신 */

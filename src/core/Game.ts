@@ -347,7 +347,7 @@ export class Game {
     this.audio.levelup()
     const gold = 35 + this.run.depth * 12
     this.run.addGold(gold)
-    this.hud.showLevelUp('ELITE CLEAR!', `고급 특성을 선택하세요 · 골드 +${gold}`, rollChoices(3), (u) => {
+    this.hud.showLevelUp('ELITE CLEAR!', `고급 특성을 선택하세요 · 골드 +${gold}`, rollChoices(3, false, this.player.traitStacks), (u) => {
       this.applyTrait(u)
       this.audio.pick()
       this.state = 'play'
@@ -451,7 +451,7 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    this.hud.showLevelUp('첫 번째 특성', '이번 런을 이끌 특성 하나를 선택하세요', rollChoices(3), (u) => {
+    this.hud.showLevelUp('첫 번째 특성', '이번 런을 이끌 특성 하나를 선택하세요', rollChoices(3, false, this.player.traitStacks), (u) => {
       this.applyTrait(u)
       this.startingTraitTaken = true
       altar.markUsed()
@@ -467,7 +467,9 @@ export class Game {
       this.hud.banner_('특성 제련은 이번 런에서 이미 사용했습니다')
       return
     }
-    const owned = [...this.acquired.values()].map((a) => a.upgrade)
+    const owned = [...this.acquired.values()]
+      .map((a) => a.upgrade)
+      .filter((u) => this.player.canAcquireTrait(u.id, u.maxStacks))
     if (owned.length === 0) {
       this.hud.banner_('강화할 특성이 없습니다 — 먼저 특성을 획득하세요')
       return
@@ -496,7 +498,7 @@ export class Game {
     if (Math.random() < 0.6) {
       this.state = 'levelup'
       this.input.clearAll()
-      this.hud.showLevelUp('보물 발견!', '특성 하나를 선택하세요', rollChoices(3), (u) => {
+      this.hud.showLevelUp('보물 발견!', '특성 하나를 선택하세요', rollChoices(3, false, this.player.traitStacks), (u) => {
         this.applyTrait(u)
         this.state = 'play'
         this.clock.getDelta()
@@ -522,7 +524,7 @@ export class Game {
   // ══════════════════ 상점 ══════════════════
 
   private openShop() {
-    if (!this.shop) this.shop = new Shop([this.player.gun.id, this.player.sword.id])
+    if (!this.shop) this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
     this.state = 'shop'
     this.input.clearAll()
     this.renderShop()
@@ -573,6 +575,10 @@ export class Game {
     if (!shop) return
     const it = shop.items[index]
     if (!it || it.sold) return
+    if (it.type === 'trait' && !this.player.canAcquireTrait(it.def.id, it.def.maxStacks)) {
+      this.hud.banner_('이 특성은 최대 스택에 도달했습니다')
+      return
+    }
     if (!this.run.spendGold(it.price)) return
     it.sold = true
     this.audio.pick()
@@ -595,7 +601,7 @@ export class Game {
     const shop = this.shop
     if (!shop) return
     if (!this.run.spendGold(shop.rerollPrice)) return
-    shop.reroll([this.player.gun.id, this.player.sword.id])
+    shop.reroll([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
     this.audio.reload()
     this.renderShop()
   }
@@ -986,13 +992,19 @@ export class Game {
   }
 
   private applyTrait(u: Upgrade) {
+    if (!this.player.canAcquireTrait(u.id, u.maxStacks)) {
+      this.hud.banner_('이 특성은 최대 스택에 도달했습니다')
+      return false
+    }
     this.audio.pick()
     u.apply(this.player)
+    this.player.recordTrait(u.id)
     const cur = this.acquired.get(u.id)
     if (cur) cur.count++
     else this.acquired.set(u.id, { upgrade: u, count: 1 })
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setXp(this.player.xp, this.player.xpToNext)
+    return true
   }
 
   private gainXp(amount: number) {
@@ -1005,7 +1017,7 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', rollChoices(3), (u) => {
+    this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', rollChoices(3, false, this.player.traitStacks), (u) => {
       this.applyTrait(u)
       // 레벨이 더 쌓였으면 연속 처리
       if (this.player.gainXp(0)) {

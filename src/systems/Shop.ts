@@ -21,14 +21,16 @@ function jitter(base: number) {
 export class Shop {
   items: ShopItem[] = []
   rerollCount = 0
+  private traitStacks: ReadonlyMap<string, number>
 
-  constructor(excludeWeaponIds: string[] = []) {
-    this.restock(excludeWeaponIds)
+  constructor(excludeWeaponIds: string[] = [], traitStacks: ReadonlyMap<string, number> = new Map()) {
+    this.traitStacks = traitStacks
+    this.restock(excludeWeaponIds, traitStacks)
   }
 
-  restock(excludeWeaponIds: string[] = []) {
+  restock(excludeWeaponIds: string[] = [], traitStacks = this.traitStacks) {
     const weapons = rollWeapons(2, excludeWeaponIds)
-    const traits = rollChoices(2)
+    const traits = rollChoices(2, false, traitStacks)
     this.items = [
       ...weapons.map<ShopItem>((w) => ({ type: 'weapon', def: w, price: jitter(PRICE[w.rarity]), sold: false })),
       ...traits.map<ShopItem>((t) => ({ type: 'trait', def: t, price: jitter(PRICE[t.rarity]), sold: false })),
@@ -41,8 +43,8 @@ export class Shop {
     return REROLL_COST + this.rerollCount * 15
   }
 
-  reroll(excludeWeaponIds: string[] = []) {
+  reroll(excludeWeaponIds: string[] = [], traitStacks = this.traitStacks) {
     this.rerollCount++
-    this.restock(excludeWeaponIds)
+    this.restock(excludeWeaponIds, traitStacks)
   }
 }

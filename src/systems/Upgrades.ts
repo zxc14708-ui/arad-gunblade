@@ -7,11 +7,19 @@ export interface Upgrade {
   desc: string
   icon: string
   rarity: Rarity
+  maxStacks: number
   apply: (p: Player) => void
 }
 
+const DEFAULT_MAX_STACKS: Record<Rarity, number> = {
+  common: 5,
+  rare: 5,
+  epic: 3,
+  legendary: 1,
+}
+
 /** 특성 전체 풀 (mods를 수정하고 recompute) */
-const POOL: Upgrade[] = [
+const RAW_POOL: Array<Omit<Upgrade, 'maxStacks'>> = [
   // ── Common ──
   { id: 'gun_dmg', name: '강선 탄환', desc: '총 데미지 +25%', icon: '🔫', rarity: 'common',
     apply: (p) => { p.mods.gunDamage *= 1.25; p.recompute() } },
@@ -73,23 +81,34 @@ const POOL: Upgrade[] = [
     apply: (p) => { p.mods.gunDamage *= 1.25; p.mods.swordDamage *= 1.25; p.mods.swordReloads = true; p.recompute() } },
 ]
 
+const POOL: Upgrade[] = RAW_POOL.map((upgrade) => ({
+  ...upgrade,
+  maxStacks: DEFAULT_MAX_STACKS[upgrade.rarity],
+}))
+
 const WEIGHTS: Record<Rarity, number> = { common: 5, rare: 2.5, epic: 1, legendary: 0.4 }
 const BOSS_WEIGHTS: Record<Rarity, number> = { common: 0, rare: 1.5, epic: 3, legendary: 2 }
 
 function weightedPick(pool: Upgrade[], w: Record<Rarity, number>): Upgrade {
-  const total = pool.reduce((s, u) => s + w[u.rarity], 0)
+  const rarities = [...new Set(pool.map((u) => u.rarity))].filter((rarity) => w[rarity] > 0)
+  const total = rarities.reduce((sum, rarity) => sum + w[rarity], 0)
   let r = Math.random() * total
-  for (const u of pool) {
-    r -= w[u.rarity]
-    if (r <= 0) return u
+  let chosenRarity = rarities[rarities.length - 1]
+  for (const rarity of rarities) {
+    r -= w[rarity]
+    if (r <= 0) {
+      chosenRarity = rarity
+      break
+    }
   }
-  return pool[pool.length - 1]
+  const candidates = pool.filter((u) => u.rarity === chosenRarity)
+  return candidates[Math.floor(Math.random() * candidates.length)]
 }
 
 /** 랜덤 특성 선택지 (boss=true면 고희귀 편향) */
-export function rollChoices(count = 3, boss = false): Upgrade[] {
+export function rollChoices(count = 3, boss = false, traitStacks: ReadonlyMap<string, number> = new Map()): Upgrade[] {
   const w = boss ? BOSS_WEIGHTS : WEIGHTS
-  const pool = POOL.filter((u) => w[u.rarity] > 0)
+  const pool = POOL.filter((u) => w[u.rarity] > 0 && (traitStacks.get(u.id) ?? 0) < u.maxStacks)
   const chosen: Upgrade[] = []
   while (chosen.length < count && pool.length > 0) {
     const u = weightedPick(pool, w)
