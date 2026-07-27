@@ -41,6 +41,9 @@ export class Game {
   private audio = new AudioManager()
 
   private run = new RunState()
+  /** 마을 상인 전용 재고. 런 시작부터 런 종료까지 유지한다. */
+  private townShop: Shop | null = null
+  /** 던전 상점방 전용 재고. 방 id 기준으로 재방문 시 유지한다. */
   private shop: Shop | null = null
   private shopRoomId: string | null = null
   private mode: Mode = 'town'
@@ -224,6 +227,7 @@ export class Game {
     this.roomCleared = true
     this.curPlan = null
     this.run.reset()
+    this.townShop = null
     this.shop = null
     this.shopRoomId = null
 
@@ -252,6 +256,7 @@ export class Game {
   /** 던전 1스테이지 시작 */
   private enterDungeon() {
     this.run.reset(1)
+    if (!this.townShop) this.townShop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
     this.mode = 'dungeon'
     const plan = this.run.enterFirst()
     this.loadRoom(plan)
@@ -285,7 +290,7 @@ export class Game {
     // 상점 방: 상인 + 회복 분수 (보스 입구)
     if (plan.kind === 'shop') {
       if (this.shopRoomId !== plan.id) {
-        this.shop = new Shop([this.player.gun.id, this.player.sword.id])
+        this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
         this.shopRoomId = plan.id
       }
       this.interactables.push(new Interactable('merchant', -6, -1, '상인과 거래').addTo(this.scene))
@@ -525,16 +530,25 @@ export class Game {
   // ══════════════════ 상점 ══════════════════
 
   private openShop() {
-    if (!this.shop) this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
+    if (this.mode === 'town') {
+      if (!this.townShop) this.townShop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
+    } else if (!this.shop) {
+      this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
+    }
     this.state = 'shop'
     this.input.clearAll()
     this.renderShop()
   }
 
+  private activeShop() {
+    return this.mode === 'town' ? this.townShop : this.shop
+  }
+
   private renderShop() {
-    if (!this.shop) return
-    const items = this.shop.items.map((it) => this.shopItemView(it))
-    this.hud.renderShop(items, this.run.gold, this.shop.rerollPrice)
+    const shop = this.activeShop()
+    if (!shop) return
+    const items = shop.items.map((it) => this.shopItemView(it))
+    this.hud.renderShop(items, this.run.gold, shop.rerollPrice)
   }
 
   private shopItemView(it: ShopItem) {
@@ -572,7 +586,7 @@ export class Game {
   }
 
   private buyShopItem(index: number) {
-    const shop = this.shop
+    const shop = this.activeShop()
     if (!shop) return
     const it = shop.items[index]
     if (!it || it.sold) return
@@ -599,7 +613,7 @@ export class Game {
   }
 
   private rerollShop() {
-    const shop = this.shop
+    const shop = this.activeShop()
     if (!shop) return
     if (!this.run.spendGold(shop.rerollPrice)) return
     shop.reroll([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
