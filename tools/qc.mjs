@@ -279,7 +279,7 @@ for (const s of STEPS) {
 
 await contactSheet(page)
 await browser.close()
-if (server) try { process.kill(-server.pid) } catch {}
+if (server) killServerTree(server)
 
 // ── 리포트 ────────────────────────────────────────────────────────────
 const failed = results.filter((r) => r.fail)
@@ -325,6 +325,24 @@ function checkAssetIntegrity() {
     errors.push('에셋 무결성 검사 실패 (tools/measure_sprites.py) — 위 출력의 "위반" 항목 참조')
     return { ok: false, output: out }
   }
+}
+
+/**
+ * 프리뷰 서버(및 그 자식들)를 정리한다.
+ * POSIX: detached spawn이 만든 프로세스 그룹을 음수 PID로 통째로 죽인다.
+ * Windows: shell:true 로 띄웠으므로 server.pid는 cmd.exe 이고 그 아래에
+ * npx.cmd -> node -> vite 가 자식으로 매달려 있다 — 음수 PID kill은 의미가
+ * 없으므로 taskkill /T(트리) /F로 그 자식들까지 통째로 정리해야 한다.
+ * 안 하면 QC 종료 후에도 vite preview가 포트를 물고 남는다.
+ */
+function killServerTree(server) {
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /pid ${server.pid} /T /F`, { stdio: 'ignore' })
+    } else {
+      process.kill(-server.pid)
+    }
+  } catch {}
 }
 
 async function waitFor(u, tries = 40) {
