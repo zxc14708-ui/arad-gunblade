@@ -209,6 +209,7 @@ async function walkTo(p, kind, ms = 6000) {
 // ── 주행 ──────────────────────────────────────────────────────────────
 const errors = []
 const results = []
+const assetReport = checkAssetIntegrity()
 
 let server = null
 let port = PORT
@@ -274,6 +275,9 @@ const report = [
   `대상: ${target}`,
   `시각: ${new Date().toISOString()}`,
   '',
+  `에셋 무결성 검사: ${assetReport.ok ? '통과' : '위반'}`,
+  ...assetReport.output.split('\n').map((l) => `  ${l}`),
+  '',
   '단계',
   ...results.map((r) => `  ${r.fail ? '✗' : '✓'} ${r.tag}  ${r.what}${r.fail ? `  → ${r.fail}` : ''}`),
   '',
@@ -290,6 +294,26 @@ console.log(`\n${report}\n\n산출물: ${OUT}/contact.png`)
 process.exit(failed.length || errors.length ? 1 : 0)
 
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
+
+/**
+ * FRAMES/ASPECT/에셋 경로 같은, 스크립트로 판정 가능한 것들은 사람 눈이 아니라
+ * tools/measure_sprites.py 가 본다 (몬스터 시트 규격, assets.ts 경로 실존,
+ * 모서리 알파, Interactable ASPECT 대조). 브라우저 없이 도는 정적 검사라
+ * 빌드/서버 기동보다 먼저, 항상 돌린다.
+ */
+function checkAssetIntegrity() {
+  console.log('· 에셋 무결성 검사 (tools/measure_sprites.py)')
+  try {
+    const out = execSync('python3 tools/measure_sprites.py', { cwd: ROOT, encoding: 'utf-8' })
+    console.log(out)
+    return { ok: true, output: out }
+  } catch (e) {
+    const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
+    console.log(out)
+    errors.push('에셋 무결성 검사 실패 (tools/measure_sprites.py) — 위 출력의 "위반" 항목 참조')
+    return { ok: false, output: out }
+  }
+}
 
 async function waitFor(u, tries = 40) {
   for (let n = 0; n < tries; n++) {

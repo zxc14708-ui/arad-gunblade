@@ -142,20 +142,111 @@ B1과 원인이 같으므로 함께 처리하는 편이 낫다.
 저주를 감수하고 강해지는 계약 방, 페널티 조건부 도전 방 등
 위험-보상 판단 지점이 없다.
 
+### B5. 골드가 상점 용량을 크게 초과해 후반부엔 쓸 곳이 없다 (실측 완료 2026-07-27)
+
+`Room.ts`/`Pickups.ts`/`Game.ts`의 골드 지급식을 그대로 시뮬레이션(2만 회 몬테카를로)한 결과:
+
+- 방 1개 클리어 평균 골드 — 전투 273.5 / 엘리트 700.0 / 보물 136.9 / 보스 282.5
+- 스테이지 1회 완주(전 방 클리어 가정) 평균 총 골드 **약 2088**
+
+반면 상점(`Shop.ts`)은 **무기 2 + 특성 2 + 회복 1, 고정 5칸**이고,
+자동 리롤이 없으며(유료 리롤만 가능), 마을 상인과 던전 상점방이 **런당 단
+하나의 인스턴스를 공유**한다(`Game.ts` — `shopRoomId`가 같으면 재입장해도
+재고 유지, `this.shop`이 null일 때만 새로 생성).
+
+가격은 커먼35/레어60/에픽95/레전더리150(지터 ±10~15%, 5원 단위) + 리롤 25+15n.
+최악의 경우(4칸 전부 레전더리+회복)도 약 720골드로, 평균 총 골드의 3분의 1
+수준 — 초기 재고를 통째로 사고 리롤을 여러 번 해도 대부분의 골드가 런 후반
+쓸 곳 없이 남는다. 코드 버그는 아니고 밸런스 판단 대상:
+
+1. 상점 슬롯을 늘리거나 재방문 시 일부 재고를 자동 교체
+2. 골드 소모처 추가 (예: 특성 제련소 유료화, 인벤토리 확장, 영구 강화)
+3. 골드 지급량 자체를 줄임 (다른 이슈보다 후순위 — 위 둘보다 재미를 깎는 방향)
+
+### D1. 사용되지 않는 에셋 31개, 131.5KB (실측 완료 2026-07-27)
+
+`assets.ts`/`EnemySprite.ts`/`Interactable.ts` 어디에서도 참조하지 않는 파일:
+
+- `public/assets/monsters/*` 구버전 12개 (imp_*, brute_*, shooter_*, stage1_boss_*) —
+  `stage1_goblins`/`stage1_tau` 체계로 교체되기 전 잔재
+- `public/assets/props/coin_0~3.png`, `torch_0~2.png` — `coin_strip.png`/`torch_strip.png`
+  프레임 분리 시스템 도입 전 개별 프레임 파일
+- `public/assets/props/dungeon_portal.png`(26x34) — `arcane_portal_v1.png`(128x192)로 교체된 구버전
+- `public/assets/fx/hit_impact_strip.png` — `stage1_combat_effects/goblin_hit_impact_4f.png`로 교체됨
+- `stage1_forest_foreground/dark_bush_c.png`, `great_tree_c.png`,
+  `root_vine_bottom/left/right.png` — 배경 배치 코드가 a/b 변형과 `vineTop`만 사용
+- `stage1_interactive_objects/wildflower_*.png`, `wooden_crate.png` — 장식 프롭 아트는
+  받았지만 스폰 코드에 연결된 적이 없음
+- `stage1_tau/tau_chief_charge_6f.png`(92.9KB) — `ASSET.monsters.boss`는
+  idle/move(walk)/slam(attack)만 등록, 돌진 시트는 애초에 다운로드도 안 됨
+
+삭제는 하지 않음(요청 범위 밖). `tools/measure_sprites.py`가 `assets.ts` 참조
+경로만 검사하므로 이 파일들은 자동 검사로는 못 잡음 — 여기 기록만 남긴다.
+
+### D2. 등록만 되고 실제로 렌더링되지 않는 이펙트 3종 (실측 완료 2026-07-27)
+
+`ASSET.stage1.effects`의 `warning`(`boss_ground_warning_4f.png`, 9.1KB),
+`shockwave`(`tau_slam_shockwave_6f.png`, 5.7KB), `tealMagic`(`teal_magic_4f.png`, 5.3KB)는
+`preloadAssets()`가 매 플레이마다 다운로드하지만, `effects.warning`/`effects.shockwave`/
+`effects.tealMagic`를 실제로 사용하는 코드는 없음(`campfire`와 `fireball`만 소비됨).
+
+D1과 달리 이건 **매번 다운로드되는 순수 낭비**이며, 보스 슬램에 텔레그래프·충격파가
+없다는 사실은 C1(보스가 슈터와 동일한 AI)과 정확히 맞물린다 — 아트는 이미 있으니
+C1을 해결할 때 코드만 연결하면 됨.
+
 ---
 
 ## 미검증 영역
 
-아래는 아직 읽지 않아 판단을 보류한 부분. 위 이슈 중 일부가
-여기서 이미 해결돼 있을 수 있다.
-
-- `src/core/Game.ts` — 데미지 적용, 치명타·흡혈 실계산
-- `src/systems/Room.ts`, `src/systems/Pickups.ts` — 골드 획득량.
-  상점 가격이 적정한지 판단하려면 필요
+(현재 없음 — 2026-07-27 실측으로 아래 두 항목 해소, 변경 이력 참조)
 
 ---
 
 ## 변경 이력
+
+### 2026-07-27 — 문서 체계 개편(AGENTS.md 도입) + 사실 검증 일괄 + qc.mjs 자동 검사 확장
+- **대상**: `AGENTS.md`(신규, 정본) · `CLAUDE.md`(Claude Code 전용 축소판으로 교체) ·
+  `DESIGN_LOG.md` · `tools/measure_sprites.py` · `tools/qc.mjs` — 게임 코드 변경 없음
+- **의도**: 4인 협업 체제(Claude 기획 / Codex / GPT / Claude Code) 확정에 따라
+  규칙 문서를 코덱스가 자동으로 읽는 `AGENTS.md` 하나로 통합하고, "미검증 영역"에
+  남아있던 사실들을 코드를 직접 읽어 확정한다. 사람 눈으로만 판정하던 것 중
+  스크립트로 판정 가능한 항목은 `qc.mjs`에 자동 검사로 옮긴다.
+- **결과**:
+  - `AGENTS.md` 배치 중 자체 오류 발견 및 수정: Asset rules 항목이
+    `public/assets/player/gunblade_*.png` 5장 체계를 언급했으나, 실제 코드
+    (`CharacterSprite.ts`)는 이 경로 자체가 디스크에 없고 단일 시트
+    `public/gunblader.png`(SD 일러스트, 112x64 셀 × 27프레임) + 로드 전 절차
+    생성 폴백만 사용 중임을 확인 — 5장 체계는 과거에 시도했다가 되돌려진 것
+    (git 이력상 "주인공 캐릭터를 원본 SD 일러스트 시트로 되돌림" 커밋 존재).
+    문서를 실제 코드에 맞게 정정.
+  - `Game.ts` 데미지 경로 전수 확인: `Player.Mods`/`PlayerStats`에 선언된
+    모든 필드(치명타·치명타배율·흡혈·관통·멀티샷·자력범위·폭심·섬광강타·
+    발도장전 포함)가 실제로 소비되는 코드를 확인 — **선언만 되고 미사용인
+    mod 없음**.
+  - 골드 경제 실측 → 새 이슈 B5로 기록(상점 용량 대비 골드 과잉).
+  - 에셋 감사 → 새 이슈 D1(고아 파일 31개, 131.5KB)/D2(등록됐지만 미사용인
+    이펙트 3종, C1과 연관)로 기록.
+  - 시각 판정(`contact.png` 육안 확인):
+    - 구 CLAUDE.md UI Rules의 "분수와 포탈이 같은 청록 구슬로 보인다"는
+      **더 이상 해당 없음** — 포탈은 큰 파랑 소용돌이, 분수는 작은 청록
+      결정체로 실루엣·색 모두 뚜렷이 구분됨. 리소스 교체 과정에서 이미 해결.
+    - 몬스터 픽셀 밀도 편차(임프 29.1 ~ 보스 11.9 px/유닛)는 **결함 아님** —
+      네 종 모두 원본 셀 높이가 64px로 동일하고(`SCALE × 밀도 ≈ 64` 확인),
+      차이는 종족별 `SCALE`(월드 크기)만 다르기 때문. 니어리스트 스케일링이라
+      스타일 자체는 크기와 무관하게 일관됨.
+    - 반면 포탈(39.2 px/유닛, 원본 128x192)은 다른 마을 프롭(7~11 px/유닛,
+      원본 24~34px)보다 훨씬 고해상도로 그려져 있어 **육안으로도 이질적으로
+      매끄럽게 보임** — 프롭들 사이의 실제 시각적 불일치로 확인됨.
+    - `traitAltar`/`traitForge`는 여전히 동일한 룬석 아트(`guardian_stone_a/b`)를
+      색만 다르게 써서 실루엣이 같음 — 전용 아트 도착 전까지는 미해결로 유지.
+  - `tools/measure_sprites.py`를 몬스터 전용 검사기에서 에셋 전반 무결성
+    검사기로 확장: `FRAMES`/`ASSET.monsters` 경로를 소스에서 직접 파싱(하드코딩
+    제거로 이중 관리 방지), `assets.ts`가 참조하는 43개 경로 실존 + 모서리
+    알파(검은 후광) 검사, `Interactable.ts`의 `ASPECT` 7건을 실제 PNG 비율과
+    대조하는 기능 추가. `tools/qc.mjs`가 빌드 전 이 검사를 항상 실행하고
+    실패 시 QC 전체를 반려하도록 연결.
+- **남은 문제**: B5(상점 경제)·D1/D2(에셋 정리)는 판단·결정 대기 — 방식 결정은
+  사용자 승인 필요. `traitAltar`/`traitForge` 전용 아트는 GPT 작업 대기 중.
 
 ### 2026-07-27 — B1·B2 실측 검증
 - **대상**: `src/entities/Player.ts` (`recompute()`, `invulnerable`) — 코드 변경 없음, 확인만
