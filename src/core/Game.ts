@@ -3,7 +3,7 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { CONFIG, COLORS } from '../config'
 import { Input } from './Input'
 import { Room, RoomVisualKind } from '../systems/Room'
-import { RunState, RoomPlan, ROOM_ICON, ROOM_LABEL, Direction, OPPOSITE } from '../systems/RunState'
+import { RunState, RoomPlan, ROOM_ICON, roomLabel, Direction, OPPOSITE } from '../systems/RunState'
 import { Player } from '../entities/Player'
 import { Enemy, EnemyAction, EnemyKind } from '../entities/Enemy'
 import { enemyDeathArt, ENEMY_SCALE } from '../entities/EnemySprite'
@@ -301,7 +301,7 @@ export class Game {
       this.audio.bossWarn()
       this.hud.banner_('⚠ 보스 ⚠')
     } else {
-      this.hud.banner_(`${this.run.depth}번째 방 · ${ROOM_LABEL[plan.kind]}`)
+      this.hud.banner_(`${this.run.depth}번째 방 · ${roomLabel(plan)}`)
     }
 
     // 적 없는 방(상점)은 즉시 문 개방
@@ -316,7 +316,7 @@ export class Game {
     if (this.curPlan?.kind === 'boss') return
     this.run.exits.forEach(({ direction, plan }) => {
       const p = this.room.doorPoint(direction)
-      const label = `${ROOM_LABEL[plan.kind]} 방으로 (${ROOM_ICON[plan.kind]})`
+      const label = `${roomLabel(plan)} 방으로 (${ROOM_ICON[plan.kind]})`
       const door = new Interactable('door', p.x, p.z, label)
       door.targetRoomId = plan.id
       door.direction = direction
@@ -724,7 +724,7 @@ export class Game {
         const kind = this.spawnQueue.shift()!
         const p = this.safeSpawnPoint()
         const plan = this.curPlan!
-        const e = new Enemy(kind, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.kind === 'elite')
+        const e = new Enemy(kind, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.kind === 'elite', plan.affix)
         this.enemies.push(e)
         this.scene.add(e.group)
         this.effects.burst(new THREE.Vector3(p.x, 1, p.z), 0x8a4a6a, 8, 5)
@@ -835,6 +835,11 @@ export class Game {
 
     if (action.type === 'bossGroundFx') {
       this.effects.playGroundFx(action.effect, action.position.x, action.position.z, action.radius * 2, action.duration)
+      return
+    }
+
+    if (action.type === 'eliteRegenFx') {
+      this.effects.playGroundFx('tealMagic', action.position.x, action.position.z, action.radius * 2, action.duration)
       return
     }
 
@@ -992,12 +997,16 @@ export class Game {
       let diff = Math.abs(toAng - angle)
       if (diff > Math.PI) diff = Math.PI * 2 - diff
       if (diff <= arc / 2 + 0.15) {
-        e.takeDamage(damage)
+        const reflected = e.takeDamage(damage, 'melee')
         e.knockback(pos.x, pos.z, knockback)
         this.audio.hit()
         this.applyLifesteal(damage)
         this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
         this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), damage, crit)
+        if (reflected > 0 && this.player.takeDamage(reflected)) {
+          this.audio.hurt()
+          this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
+        }
       }
     }
   }

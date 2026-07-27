@@ -1,5 +1,6 @@
 import { CONFIG } from '../config'
 import { EnemyKind } from '../entities/Enemy'
+import { ELITE_AFFIX, EliteAffix, rollEliteAffix } from './EliteAffixes'
 
 export type RoomKind = 'combat' | 'elite' | 'treasure' | 'shop' | 'boss'
 export type Direction = 'north' | 'east' | 'south' | 'west'
@@ -27,6 +28,7 @@ export interface RoomPlan {
   hpMul: number
   dmgMul: number
   speedMul: number
+  affix?: EliteAffix
   x: number
   y: number
   depth: number
@@ -72,6 +74,11 @@ export const ROOM_ICON: Record<RoomKind, string> = {
   boss: '☠',
 }
 
+export function roomLabel(plan: Pick<RoomPlan, 'kind' | 'affix'>) {
+  if (plan.kind === 'elite' && plan.affix) return `${ROOM_LABEL.elite} · ${ELITE_AFFIX[plan.affix].name}`
+  return ROOM_LABEL[plan.kind]
+}
+
 const STAGES = [
   {
     name: '검은 숲 지하',
@@ -94,6 +101,7 @@ export class RunState {
 
   private nodes = new Map<string, RoomNode>()
   private currentId: string | null = null
+  private previousEliteAffix: EliteAffix | undefined
 
   get cfg() {
     return STAGES[Math.min(this.stage - 1, STAGES.length - 1)]
@@ -113,6 +121,7 @@ export class RunState {
     this.current = null
     this.currentId = null
     this.nodes.clear()
+    this.previousEliteAffix = undefined
   }
 
   private muls(depth: number) {
@@ -132,6 +141,8 @@ export class RunState {
     }
     if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, ...m }
     if (kind === 'elite') {
+      const affix = rollEliteAffix(this.previousEliteAffix)
+      this.previousEliteAffix = affix
       const count = Math.ceil((3 + depth * 1.4) * CONFIG.spawn.roomDensity)
       const enemies: EnemyKind[] = []
       for (let i = 0; i < count; i++) {
@@ -139,7 +150,7 @@ export class RunState {
         else if (Math.random() < 0.55) enemies.push('shooter')
         else enemies.push('imp')
       }
-      return { id, kind, enemies, chests: 0, x, y, depth, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
+      return { id, kind, enemies, chests: 0, x, y, depth, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
     }
     if (kind === 'treasure') {
       const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))

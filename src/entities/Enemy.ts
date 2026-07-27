@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { CONFIG } from '../config'
 import { EnemySprite } from './EnemySprite'
 import { noOutline } from '../rendering/toon'
+import { ELITE_AFFIX, EliteAffix } from '../systems/EliteAffixes'
 
 export type EnemyKind = 'imp' | 'brute' | 'shooter' | 'boss'
 
@@ -9,7 +10,9 @@ export type EnemyAction =
   | { type: 'shoot'; direction: THREE.Vector3 }
   | { type: 'bossGroundFx'; effect: 'warning' | 'shockwave' | 'tealMagic'; position: THREE.Vector3; radius: number; duration: number }
   | { type: 'bossSlam'; position: THREE.Vector3; radius: number; damageMultiplier: number; effectDuration: number; phaseEntry: boolean }
+  | { type: 'eliteRegenFx'; position: THREE.Vector3; radius: number; duration: number }
 type BossSlamAction = Extract<EnemyAction, { type: 'bossSlam' }>
+export type DamageSource = 'ranged' | 'melee'
 
 interface KindDef {
   hp: number
@@ -71,6 +74,7 @@ export class Enemy {
   xp: number
   radius: number
   elite: boolean
+  affix: EliteAffix | undefined
   alive = true
   contactTimer = 0
   shootTimer: number
@@ -88,23 +92,37 @@ export class Enemy {
   private bossPhaseTwo = false
   private bossStaggerVulnerable = false
   private bossHistory: BossPattern[] = []
+  private lastHitTimer = -1
+  private regenEffectTimer = 0
 
-  constructor(kind: EnemyKind, x: number, z: number, hpMul: number, dmgMul: number, speedMul: number, elite = false) {
+  constructor(
+    kind: EnemyKind,
+    x: number,
+    z: number,
+    hpMul: number,
+    dmgMul: number,
+    speedMul: number,
+    elite = false,
+    affix?: EliteAffix,
+  ) {
     this.kind = kind
     this.def = DEFS[kind]
     this.sprite = new EnemySprite(kind)
     this.group = this.sprite.group
     this.pos.set(x, 0, z)
     this.group.position.copy(this.pos)
+    this.elite = elite && kind !== 'boss'
+    this.affix = this.elite ? affix : undefined
     this.maxHp = CONFIG.enemy.baseHp * this.def.hp * hpMul
+    if (this.affix === 'swift') this.maxHp *= ELITE_AFFIX.swift.hpMultiplier
     this.hp = this.maxHp
     this.speed = CONFIG.enemy.baseSpeed * this.def.speed * speedMul
+    if (this.affix === 'swift') this.speed *= ELITE_AFFIX.swift.speedMultiplier
     this.damage = CONFIG.enemy.baseDamage * this.def.damage * dmgMul
     this.xp = CONFIG.enemy.baseXp * this.def.xp
     this.radius = this.def.radius
-    this.elite = elite
     this.shootTimer = kind === 'boss' ? 0 : (this.def.shootCd ?? 0) * Math.random()
-    if (elite) this.createEliteMarker()
+    if (this.elite) this.createEliteMarker()
   }
 
   get isBossCharging() {
@@ -132,6 +150,8 @@ export class Enemy {
 
     let moving = false
     let actions: EnemyAction[] = []
+
+    actions.push(...this.updateAffix(dt))
 
     if (this.knockTimer > 0) {
       this.knockTimer -= dt
@@ -305,13 +325,33 @@ export class Enemy {
     this.bossStaggerVulnerable = vulnerable
   }
 
-  takeDamage(amount: number) {
+  takeDamage(amount: number, source: DamageSource = 'ranged') {
     const effective = this.kind === 'boss' && this.bossState === 'stagger' && this.bossStaggerVulnerable
       ? amount * BOSS_PATTERN.staggerDamageMultiplier
       : amount
     this.hp -= effective
     this.hitFlash = 0.12
+    this.lastHitTimer = 0
     if (this.hp <= 0) this.alive = false
+    return this.affix === 'thorns' && source === 'melee' ? amount * ELITE_AFFIX.thorns.reflectRatio : 0
+  }
+
+  private updateAffix(dt: number): EnemyAction[] {
+    if (this.affix !== 'regen' || this.hp >= this.maxHp || this.lastHitTimer < 0) return []
+
+    this.lastHitTimer += dt
+    if (this.lastHitTimer < ELITE_AFFIX.regen.delay) return []
+
+    this.hp = Math.min(this.maxHp, this.hp + this.maxHp * ELITE_AFFIX.regen.healPerSecond * dt)
+    this.regenEffectTimer -= dt
+    if (this.regenEffectTimer > 0) return []
+    this.regenEffectTimer = ELITE_AFFIX.regen.effectInterval
+    return [{
+      type: 'eliteRegenFx',
+      position: this.pos.clone(),
+      radius: this.radius,
+      duration: ELITE_AFFIX.regen.effectInterval,
+    }]
   }
 
   knockback(fromX: number, fromZ: number, power: number) {
@@ -332,8 +372,9 @@ export class Enemy {
     bg.scale.set(2.7, 0.3, 1)
     this.group.add(bg)
 
+    const color = this.affix ? ELITE_AFFIX[this.affix].color : 0xd996ff
     const fill = new THREE.Sprite(
-      new THREE.SpriteMaterial({ color: 0xd996ff, transparent: true, opacity: 0.98, depthWrite: false }),
+      new THREE.SpriteMaterial({ color, transparent: true, opacity: 0.98, depthWrite: false }),
     )
     fill.center.set(0, 0.5)
     fill.position.set(-1.25, y, 0.02)
