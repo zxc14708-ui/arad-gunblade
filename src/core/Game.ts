@@ -14,6 +14,7 @@ import { Effects } from '../systems/Effects'
 import { rollChoices, Upgrade } from '../systems/Upgrades'
 import { Shop, ShopItem } from '../systems/Shop'
 import { AudioManager } from '../systems/Audio'
+import { ELITE_AFFIX } from '../systems/EliteAffixes'
 import { preloadAssets } from '../rendering/assets'
 import { HUD } from '../ui/HUD'
 
@@ -1021,6 +1022,22 @@ export class Game {
     const death = enemyDeathArt(e.kind)
     this.effects.deathDissolve(e.pos, death.map, death.scale)
     this.effects.playFx('death', e.pos.x, 1.0, e.pos.z, ENEMY_SCALE[e.kind] * 1.3)
+
+    if (e.affix === 'split') {
+      for (const child of e.createSplitChildren()) {
+        this.enemies.push(child)
+        this.scene.add(child.group)
+      }
+    }
+
+    if (e.affix === 'volatile') {
+      this.effects.playGroundFx('shockwave', e.pos.x, e.pos.z, ELITE_AFFIX.volatile.radius * 2)
+      const distance = Math.hypot(this.player.pos.x - e.pos.x, this.player.pos.z - e.pos.z)
+      if (distance <= ELITE_AFFIX.volatile.radius && this.player.takeDamage(e.damage * ELITE_AFFIX.volatile.damageMultiplier)) {
+        this.audio.hurt()
+        this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
+      }
+    }
 
     // 경험치 + 골드 드랍
     this.pickups.dropXp(e.pos.x, e.pos.z, e.xp)

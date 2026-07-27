@@ -137,7 +137,7 @@ export class Effects {
   }
 
   /** 보스 예고와 충격파처럼 바닥에 붙는 프레임 이펙트. */
-  playGroundFx(kind: GroundFxKind, x: number, z: number, diameter: number, duration: number) {
+  playGroundFx(kind: GroundFxKind, x: number, z: number, diameter: number, duration = 1) {
     const frames = frameTextures(ASSET.stage1.effects[kind], kind === 'shockwave' ? 6 : 4)
     const mat = new THREE.MeshBasicMaterial({ map: frames[0], transparent: true, depthWrite: false })
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)

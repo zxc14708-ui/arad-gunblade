@@ -84,6 +84,7 @@ export class Enemy {
   private bob = Math.random() * Math.PI * 2
   private sprite: EnemySprite
   private eliteBarFill: THREE.Sprite | null = null
+  private shieldBarFill: THREE.Sprite | null = null
 
   private bossState: BossState = 'idle'
   private bossTimer = 0
@@ -94,6 +95,9 @@ export class Enemy {
   private bossHistory: BossPattern[] = []
   private lastHitTimer = -1
   private regenEffectTimer = 0
+  private shield = 0
+  private maxShield = 0
+  private shieldHitTimer = -1
 
   constructor(
     kind: EnemyKind,
@@ -116,6 +120,10 @@ export class Enemy {
     this.maxHp = CONFIG.enemy.baseHp * this.def.hp * hpMul
     if (this.affix === 'swift') this.maxHp *= ELITE_AFFIX.swift.hpMultiplier
     this.hp = this.maxHp
+    if (this.affix === 'ward') {
+      this.maxShield = this.maxHp * ELITE_AFFIX.ward.maxHpRatio
+      this.shield = this.maxShield
+    }
     this.speed = CONFIG.enemy.baseSpeed * this.def.speed * speedMul
     if (this.affix === 'swift') this.speed *= ELITE_AFFIX.swift.speedMultiplier
     this.damage = CONFIG.enemy.baseDamage * this.def.damage * dmgMul
@@ -191,6 +199,10 @@ export class Enemy {
       : dir
     this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, bobY)
     if (this.eliteBarFill) this.eliteBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.hp / this.maxHp))
+    if (this.shieldBarFill) {
+      this.shieldBarFill.visible = this.shield > 0
+      this.shieldBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.shield / this.maxShield))
+    }
 
     return actions
   }
@@ -326,9 +338,15 @@ export class Enemy {
   }
 
   takeDamage(amount: number, source: DamageSource = 'ranged') {
-    const effective = this.kind === 'boss' && this.bossState === 'stagger' && this.bossStaggerVulnerable
+    let effective = this.kind === 'boss' && this.bossState === 'stagger' && this.bossStaggerVulnerable
       ? amount * BOSS_PATTERN.staggerDamageMultiplier
       : amount
+    if (this.affix === 'ward') {
+      this.shieldHitTimer = 0
+      const absorbed = Math.min(this.shield, effective)
+      this.shield -= absorbed
+      effective -= absorbed
+    }
     this.hp -= effective
     this.hitFlash = 0.12
     this.lastHitTimer = 0
@@ -337,6 +355,13 @@ export class Enemy {
   }
 
   private updateAffix(dt: number): EnemyAction[] {
+    if (this.affix === 'ward') {
+      if (this.shieldHitTimer < 0 || this.shield >= this.maxShield) return []
+      this.shieldHitTimer += dt
+      if (this.shieldHitTimer >= ELITE_AFFIX.ward.rechargeDelay) this.shield = this.maxShield
+      return []
+    }
+
     if (this.affix !== 'regen' || this.hp >= this.maxHp || this.lastHitTimer < 0) return []
 
     this.lastHitTimer += dt
@@ -352,6 +377,22 @@ export class Enemy {
       radius: this.radius,
       duration: ELITE_AFFIX.regen.effectInterval,
     }]
+  }
+
+  /** 분열 접두사가 붙은 적의 사망 보상. 자식은 접두사·경험치를 갖지 않는다. */
+  createSplitChildren(): Enemy[] {
+    if (this.affix !== 'split' || this.kind === 'boss') return []
+    return Array.from({ length: ELITE_AFFIX.split.childCount }, () => {
+      const child = new Enemy(this.kind, this.pos.x, this.pos.z, 1, 1, 1)
+      child.maxHp = this.maxHp * ELITE_AFFIX.split.hpMultiplier
+      child.hp = child.maxHp
+      child.speed = this.speed
+      child.damage = this.damage
+      child.xp = 0
+      child.radius = this.radius * ELITE_AFFIX.split.scaleMultiplier
+      child.group.scale.setScalar(ELITE_AFFIX.split.scaleMultiplier)
+      return child
+    })
   }
 
   knockback(fromX: number, fromZ: number, power: number) {
@@ -381,6 +422,17 @@ export class Enemy {
     fill.scale.set(2.5, 0.16, 1)
     this.group.add(fill)
     this.eliteBarFill = fill
+
+    if (this.affix === 'ward') {
+      const shield = new THREE.Sprite(
+        new THREE.SpriteMaterial({ color: ELITE_AFFIX.ward.color, transparent: true, opacity: 0.98, depthWrite: false }),
+      )
+      shield.center.set(0, 0.5)
+      shield.position.set(-1.25, y + 0.22, 0.02)
+      shield.scale.set(2.5, 0.1, 1)
+      this.group.add(shield)
+      this.shieldBarFill = shield
+    }
 
     const badge = new THREE.Mesh(
       new THREE.OctahedronGeometry(0.18, 0),

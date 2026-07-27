@@ -1,6 +1,6 @@
-export type EliteAffix = 'regen' | 'swift' | 'thorns'
+export type EliteAffix = 'regen' | 'swift' | 'thorns' | 'split' | 'volatile' | 'ward'
 
-export const ELITE_AFFIXES: EliteAffix[] = ['regen', 'swift', 'thorns']
+export const ELITE_AFFIXES: EliteAffix[] = ['regen', 'swift', 'thorns', 'split', 'volatile', 'ward']
 
 export const ELITE_AFFIX = {
   regen: {
@@ -20,6 +20,25 @@ export const ELITE_AFFIX = {
     name: '가시',
     color: 0xf39a49,
     reflectRatio: 0.25,
+  },
+  split: {
+    name: '분열',
+    color: 0xdf4fc7,
+    childCount: 2,
+    hpMultiplier: 0.35,
+    scaleMultiplier: 0.65,
+  },
+  volatile: {
+    name: '폭발',
+    color: 0xe34c4c,
+    radius: 4,
+    damageMultiplier: 1.2,
+  },
+  ward: {
+    name: '보호막',
+    color: 0x36d2c7,
+    maxHpRatio: 0.4,
+    rechargeDelay: 3,
   },
 } as const
 
