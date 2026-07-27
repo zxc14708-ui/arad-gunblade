@@ -73,12 +73,20 @@ not merge, regardless of which agent produced it.
 
 - Horizontal strips of square cells. Frame counts live in
   `src/entities/EnemySprite.ts` (`FRAMES`) and `src/rendering/assets.ts`.
-- The player currently renders from a single static sheet, `public/gunblader.png`
-  (an SD illustration, loaded via `CharacterSprite.SHEET_URL`), with a
-  procedurally-drawn canvas sheet as the fallback shown before it loads. There
-  is no `public/assets/player/gunblade_*.png` five-sheet set on disk — an
-  earlier attempt at one was reverted (see `DESIGN_LOG.md` changelog). Do not
-  assume per-state player PNGs exist without checking `public/` first.
+- The player renders from three layered sheets sharing one 112×64×27-frame
+  grid — `public/gunblader_base.png` (body, no weapon), `gunblader_sword_katana.png`
+  (katana only, transparent elsewhere), `gunblader_gun_m1911.png` (M1911 only,
+  transparent elsewhere) — composited base→sword→gun onto a canvas at load
+  time (`CharacterSprite.SHEET_LAYERS`). Both weapons are drawn in every frame
+  (holstered/sheathed by default, drawn in the active pose during their own
+  attack animation), so the three sheets can simply be stacked without
+  per-frame conditional logic. A procedurally-drawn canvas sheet is the
+  fallback shown before the art loads. The art sheet is fixed to
+  katana/M1911 — equipping a different weapon does not change its
+  appearance, only the procedural fallback varies by weapon. There is no
+  `public/assets/player/gunblade_*.png` five-sheet set on disk — an earlier
+  attempt at one was reverted (see `DESIGN_LOG.md` changelog). Do not assume
+  per-state player PNGs exist without checking `public/` first.
 - A creature's walk and attack sheets must use the same cell size and body
   proportions as its idle sheet. Mismatches between animation states are
   immediately visible in game.

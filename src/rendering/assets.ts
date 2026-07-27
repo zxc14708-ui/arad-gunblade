@@ -118,9 +118,10 @@ export const ASSET = {
     xpCrystal: 'assets/props/xp_crystal.png',
   },
   fx: {
-    slash: { path: 'assets/fx/slash_strip.png', frames: 6 },
+    slash: { path: 'assets/fx/slash_strip.png', frames: 8 },
+    slashWind: { path: 'assets/fx/slash_wind_strip.png', frames: 8 },
     death: { path: 'assets/fx/death_dissolve_strip.png', frames: 6 },
-    muzzle: { path: 'assets/fx/muzzle_flash_strip.png', frames: 3 },
+    muzzle: { path: 'assets/fx/muzzle_flash_strip.png', frames: 8 },
     hit: { path: 'assets/stage1/stage1_combat_effects/goblin_hit_impact_4f.png', frames: 4 },
   },
   monsters: {

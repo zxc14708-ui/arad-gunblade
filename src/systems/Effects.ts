@@ -3,11 +3,11 @@ import { COLORS } from '../config'
 import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
 
-export type FxKind = 'slash' | 'death' | 'muzzle' | 'hit'
+export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit'
 export type GroundFxKind = 'warning' | 'shockwave' | 'tealMagic'
 
 /** 이펙트별 재생 속도(fps) */
-const FX_FPS: Record<FxKind, number> = { slash: 26, death: 16, muzzle: 26, hit: 22 }
+const FX_FPS: Record<FxKind, number> = { slash: 26, slashWind: 26, death: 16, muzzle: 26, hit: 22 }
 
 type Particle = {
   mesh: THREE.Sprite
@@ -119,10 +119,13 @@ export class Effects {
     this.fx.push({ sp, kind, time: 0, frames, fps: FX_FPS[kind] })
   }
 
-  /** 베기 크레센트 (조준 방향, 사거리에 맞춰 전방 배치) */
+  /** 베기 크레센트 (조준 방향, 사거리에 맞춰 전방 배치) — 바람 잔상을 겹쳐 타격감 보강 */
   slash(pos: THREE.Vector3, angle: number, _arc: number, range: number) {
     const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
-    this.playFx('slash', pos.x + fwd.x * range * 0.45, 1.1, pos.z + fwd.z * range * 0.45, range * 1.5, angle)
+    const x = pos.x + fwd.x * range * 0.45
+    const z = pos.z + fwd.z * range * 0.45
+    this.playFx('slashWind', x, 1.1, z, range * 1.5, angle)
+    this.playFx('slash', x, 1.1, z, range * 1.5, angle)
   }
 
   /** 총구 화염 (총구 앞쪽에 배치) */

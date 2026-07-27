@@ -1,14 +1,20 @@
 import * as THREE from 'three'
 
 /**
- * 2D 주인공 빌보드 — SD 총검사 아트 시트(public/gunblader.png) 사용.
+ * 2D 주인공 빌보드 — SD 총검사 아트 시트 3장(base+sword+gun 레이어) 합성 사용.
  *
- * 아트 시트: 112x64 셀 × 27프레임 스트립 (오른쪽 기준)
+ * 아트 시트: 112x64 셀 × 27프레임 스트립 (오른쪽 기준), 세 장이 프레임 그리드를 공유한다.
+ *   - `gunblader_base.png`: 몸(무기 없음)
+ *   - `gunblader_sword_katana.png`: 카타나만(등에 거치 or 휘두르는 자세), 나머지 투명
+ *   - `gunblader_gun_m1911.png`: M1911만(허리에 거치 or 조준 자세), 나머지 투명
+ *   전 프레임에 검/총이 항상 그려져 있다(평소엔 거치, 해당 공격 애니메이션 중엔 사용 자세) —
+ *   그래서 base → sword → gun 순서로 그냥 겹쳐 그리면 모든 프레임에서 올바르게 합성된다.
  *   셀 폭은 카타나가 몸통 왼쪽으로 길게 뻗는 것을 담기 위한 값 — 캐릭터는 셀 중앙,
  *   발끝이 셀 바닥에 오도록 정렬되어 있다.
  *   대기 0-3 / 걷기 4-10 / 검 공격 11-18 / 총 공격 19-26
  * 로드 실패 시(또는 로드 전) 절차 생성 픽셀 시트(9프레임)로 폴백.
  * 절차 시트는 무기별 드로잉을 지원하므로 폴백 상태에선 무기 교체가 반영된다.
+ * (아트 시트는 카타나/M1911 고정 — 다른 무기 장착 시에도 외형은 바뀌지 않는다.)
  */
 interface SheetSpec {
   n: number
@@ -38,8 +44,12 @@ const ART_SPEC: SheetSpec = {
 }
 
 export class CharacterSprite {
-  /** 커스텀 아트 시트 경로 (null이면 절차 생성만 사용) */
-  static SHEET_URL: string | null = 'gunblader.png'
+  /** 커스텀 아트 시트 레이어 경로 (null이면 절차 생성만 사용) */
+  static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = {
+    base: 'gunblader_base.png',
+    sword: 'gunblader_sword_katana.png',
+    gun: 'gunblader_gun_m1911.png',
+  }
 
   object = new THREE.Group()
   private sprite: THREE.Sprite
@@ -75,15 +85,20 @@ export class CharacterSprite {
     this.shadow.scale.set(1, 0.55, 1)
     this.object.add(this.shadow)
 
-    // 아트 시트 비동기 로드 → 성공 시 교체
-    if (CharacterSprite.SHEET_URL) {
-      new THREE.TextureLoader().load(
-        CharacterSprite.SHEET_URL,
-        (loaded) => {
-          loaded.magFilter = THREE.NearestFilter
-          loaded.minFilter = THREE.NearestFilter
-          loaded.generateMipmaps = false
-          loaded.colorSpace = THREE.SRGBColorSpace
+    // 아트 시트 3장(base+sword+gun) 비동기 로드 → 캔버스에 합성 후 교체
+    if (CharacterSprite.SHEET_LAYERS) {
+      const { base, sword, gun } = CharacterSprite.SHEET_LAYERS
+      Promise.all([loadImage(base), loadImage(sword), loadImage(gun)])
+        .then(([baseImg, swordImg, gunImg]) => {
+          const cv = document.createElement('canvas')
+          cv.width = baseImg.width
+          cv.height = baseImg.height
+          const ctx = cv.getContext('2d')!
+          ctx.imageSmoothingEnabled = false
+          ctx.drawImage(baseImg, 0, 0)
+          ctx.drawImage(swordImg, 0, 0)
+          ctx.drawImage(gunImg, 0, 0)
+          const loaded = makeTexture(cv)
           this.spec = ART_SPEC
           loaded.repeat.set(1 / this.spec.n, 1)
           const old = this.mat.map
@@ -92,12 +107,10 @@ export class CharacterSprite {
           this.artActive = true
           this.applyScale()
           old?.dispose()
-        },
-        undefined,
-        () => {
+        })
+        .catch(() => {
           /* 로드 실패 → 절차 시트 유지 */
-        },
-      )
+        })
     }
   }
 
@@ -178,6 +191,15 @@ export class CharacterSprite {
     else this.mat.color.setRGB(1, 1, 1)
     this.mat.opacity = st.invulnerable && Math.floor(performance.now() / 70) % 2 === 0 ? 0.35 : 1
   }
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = url
+  })
 }
 
 function makeTexture(canvas: HTMLCanvasElement): THREE.Texture {

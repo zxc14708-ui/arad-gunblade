@@ -149,6 +149,32 @@
 
 ## 변경 이력
 
+### 2026-07-27 — 캐릭터 아트 base+무기 레이어 교체, FX 시트 갱신
+- **대상**: `src/entities/CharacterSprite.ts` · `src/rendering/assets.ts` ·
+  `src/systems/Effects.ts` · `AGENTS.md` · `public/gunblader_base.png`(신규) ·
+  `public/gunblader_sword_katana.png`(신규) · `public/gunblader_gun_m1911.png`(신규) ·
+  `public/gunblader.png`(삭제) · `public/assets/fx/slash_strip.png`(교체) ·
+  `public/assets/fx/muzzle_flash_strip.png`(교체) ·
+  `public/assets/fx/slash_wind_strip.png`(신규)
+- **의도**: 사용자가 새 캐릭터 일러스트(112x64×27프레임 그리드를 공유하는 base/katana/M1911
+  3장 레이어 + 전용 FX 3종)를 전달하며 캐릭터 코드를 다시 짜서 적용해 달라고 직접 지시.
+- **결과**: 기존에는 무기가 이미 그려진 단일 시트(`gunblader.png`) 하나를 그대로 로드했다.
+  새 아트는 몸(무기 없음) + 검 오버레이(투명 배경) + 총 오버레이(투명 배경) 3장으로 분리돼
+  왔고, 두 무기 모두 전 프레임에 항상 그려져 있다(평소엔 거치, 자기 공격 애니메이션
+  중엔 사용 자세) — 그래서 프레임별 조건 분기 없이 `base → sword → gun` 순서로 캔버스에
+  겹쳐 그리기만 하면 idle/walk/검공격/총공격 모든 프레임에서 올바르게 합성된다는 걸
+  PIL로 몇 프레임 합성해 미리 확인한 뒤 적용했다. `CharacterSprite`의 애니메이션/UV
+  로직(오프셋 기반 프레임 전환, 대시 잔상, 좌우 반전)은 텍스처가 단일 소스에서 3장
+  Promise.all 로드 + 캔버스 합성으로 바뀐 것 외에는 그대로다. FX는 `slash_strip.png`
+  (6→8프레임)·`muzzle_flash_strip.png`(3→8프레임)를 새 아트로 교체하고, 함께 온
+  `fx_sword_slash_katana_wind_8f.png`는 신규 `slashWind` 종류로 추가해 베기 시 기존
+  크레센트와 겹쳐 재생하도록 `Effects.slash()`를 수정했다(잔상 보강 목적 — 수치/밸런스
+  변경 없음). `npm run qc` 통과, `contact.png` 육안 확인(idle/walk/shoot/slash/dash 전부
+  무기 위치·총구화염·베기 궤적 정상).
+- **남은 문제**: 없음. 다만 아트 시트는 카타나/M1911 고정이라 다른 무기 장착 시 외형이
+  안 바뀌는 기존 제약은 그대로 남아있다(절차 생성 폴백만 무기별로 다르게 그려짐) — 이후
+  다른 무기 전용 아트가 오면 같은 3층 합성 패턴을 확장하면 된다.
+
 ### 2026-07-27 — 보스/엘리트 QC 하네스 정착 (C1·C3 검증 자동화 미비 해소)
 - **대상**: `tools/qc.mjs`(신규 10~15단계) · `src/core/qcDebugHooks.ts`(신규) ·
   `vite.config.ts`(`__QC_DEBUG__` define) · `src/main.ts` · `CLAUDE.md`
