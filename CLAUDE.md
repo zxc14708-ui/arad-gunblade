@@ -27,9 +27,9 @@ in this project was visual and passed the type check: character frames sliced
 with a neighbour's sword in them, effect textures uploading black, the muzzle
 flash drawn behind the head, boss rewards never appearing.
 
-`npm run qc` builds, serves, and drives a real browser through nine steps
-(town idle/walk, shoot, reload, slash, dash, settings, dungeon entry, combat),
-then writes to `qc-out/`:
+`npm run qc` builds, serves, and drives a real browser through fifteen steps
+(town idle/walk, shoot, reload, slash, dash, settings, dungeon entry, combat,
+boss charge/slam/phase-2, six elite affixes), then writes to `qc-out/`:
 
 - `contact.png` — every step on one page. **Look at this before claiming a
   change works.**
@@ -55,6 +55,25 @@ manually each time:
 Reserve eyes for what scripts cannot judge: composition, readability, whether
 two interactables are actually distinguishable, whether pixel density looks
 consistent across sprites sharing a frame.
+
+## Boss/elite debug hooks (`QC_DEBUG` build flag)
+
+The boss (idle → 예고 → 실행 → 경직 → phase-2) and elite-affix state machines
+can't be reached deterministically through normal play — the boss room needs a
+full 8-room clear and elite affixes are random. `tools/qc.mjs` builds with
+`QC_DEBUG=1`, which flips `vite.config.ts`'s `__QC_DEBUG__` define to `true`;
+`main.ts` then dynamically imports `src/core/qcDebugHooks.ts` and installs
+`window.__game.debugSpawnBoss()` / `debugSpawnElite(kind, affix)` /
+`debugClearEnemies()`. QC steps 10–15 use these to spawn the boss/elites
+in-place and poll internal state (`bossState`, `bossTimer`, `shield`, etc. —
+all reachable at runtime despite being `private` in TS) against the durations
+in `Enemy.ts`'s `BOSS_PATTERN`/`ELITE_AFFIX` tables.
+
+`QC_DEBUG` is unset for `npm run build` (the deploy build), so
+`__QC_DEBUG__` folds to `false` and esbuild dead-code-eliminates the whole
+dynamic-import block — `qcDebugHooks.ts` never ends up in `dist/`. Verify this
+hasn't regressed with `npm run build && grep -r debugSpawnBoss dist/` (must be
+empty) whenever touching this mechanism.
 
 ## Assets from GPT
 

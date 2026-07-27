@@ -199,7 +199,282 @@ const STEPS = [
       await p.waitForTimeout(200)
     },
   },
+  // ── 이하 보스/엘리트 접두사 — 절차 생성 던전에서는 매 실행마다 나온다는
+  // 보장이 없어(보스방은 8개 방 완주, 특정 접두사는 확률) 정상 플레이 경로로는
+  // 결정적으로 재현할 수 없다. qcDebugHooks.ts(QC_DEBUG=1 빌드에만 포함)로
+  // 현재 방에 직접 스폰해 상태머신 타이밍·접두사 효과를 검증한다.
+  {
+    name: 'boss-charge',
+    what: '보스 돌진 — 예고(0.7s)→돌진(1.0s,3.5배속)→경직(1.2s) 타이밍',
+    async run(p) {
+      // 09-combat 에서 처치한 적의 경험치로 레벨업 모달이 뜬 채 남아있을 수
+      // 있다 — state가 'levelup'이면 Game의 프레임 루프가 적을 갱신하지 않아
+      // (this.state==='play' 로만 진행) 이후 모든 보스/엘리트 단계가 멈춰
+      // 보인다. 항상 먼저 치워야 한다.
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        // 이 구간부터는 보스/엘리트를 실제 피해 판정과 함께 반복 스폰한다 —
+        // 죽어서 gameover가 되면 프레임 루프 전체가 멈춰 뒤 단계가 연쇄로
+        // 얼어붙으므로, 이 구간 동안은 플레이어를 사실상 무적으로 둔다.
+        g.player.stats.maxHp = 999999
+        g.player.hp = 999999
+        g.debugClearEnemies()
+        const boss = g.debugSpawnBoss()
+        const dir = g.player.pos.clone().sub(boss.pos).normalize()
+        boss.bossFacing.copy(dir)
+        boss.bossState = 'chargeWarning'
+        boss.bossTimer = 0.7
+        startQcSampler()
+      })
+      await p.waitForTimeout(400) // 예고 스프라이트가 화면에 보이는 시점에서 스크린샷
+    },
+    check: async (p) => {
+      await p.waitForTimeout(2800) // 남은 예고+돌진+경직 전 구간 관찰
+      const samples = await stopQcSampler(p)
+      return verifyStateSequence(samples, [
+        { state: 'chargeWarning', ms: 700 },
+        { state: 'charge', ms: 1000 },
+        { state: 'stagger', ms: 1200 },
+      ])
+    },
+  },
+  {
+    name: 'boss-slam',
+    what: '보스 슬램 — 예고(0.9s, 바닥 경고)→발동(반경7·2배피해)→경직(1.0s) 타이밍',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const boss = g.debugSpawnBoss()
+        window.__qcPlayerHpBefore = g.player.hp
+        boss.bossAnchor.copy(boss.pos)
+        boss.bossState = 'slamWarning'
+        boss.bossTimer = 0.9
+        startQcSampler()
+      })
+      await p.waitForTimeout(500) // 바닥 경고 이펙트가 보이는 시점에서 스크린샷
+    },
+    check: async (p) => {
+      await p.waitForTimeout(1700) // 남은 예고+발동+경직 관찰
+      const samples = await stopQcSampler(p)
+      const seqFail = verifyStateSequence(samples, [
+        { state: 'slamWarning', ms: 900 },
+        { state: 'stagger', ms: 1000 },
+      ])
+      if (seqFail) return seqFail
+      const dmg = await p.evaluate(() => window.__qcPlayerHpBefore - window.__game.player.hp)
+      return dmg > 0 ? null : `슬램 발동 후 플레이어 피해 없음 (반경 내 배치했는데 피해 0)`
+    },
+  },
+  {
+    name: 'boss-phase2',
+    what: '보스 2페이즈 — 체력 50% 시점 1회성 전환(배너·예고/경직 단축)',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const boss = g.debugSpawnBoss()
+        boss.hp = boss.maxHp * 0.49
+      })
+      await p.waitForTimeout(300) // 배너 애니메이션(2s) 중 캡처
+    },
+    check: async (p) => {
+      const r = await p.evaluate(() => {
+        const g = window.__game
+        const boss = g.enemies.find((e) => e.kind === 'boss')
+        const bannerText = document.querySelector('#banner')?.textContent ?? ''
+        const firstPhase2 = boss?.bossPhaseTwo === true
+        // 체력을 더 깎아도 재진입(중복 발동)하지 않아야 한다 — 짧은 예고 시간이
+        // 유지되는지로 간접 확인(재진입 시 telegraph가 phaseTwo 계산을 다시 안 함).
+        if (boss) boss.hp = Math.max(1, boss.maxHp * 0.1)
+        return { firstPhase2, bannerText, stillPhase2: boss?.bossPhaseTwo === true }
+      })
+      if (!r.firstPhase2) return '체력 50% 이하인데도 bossPhaseTwo 가 true 로 안 바뀜'
+      if (!r.bannerText.includes('2페이즈')) return `배너 텍스트에 "2페이즈" 없음 (실제: "${r.bannerText}")`
+      if (!r.stillPhase2) return '체력을 더 깎았더니 bossPhaseTwo 가 false 로 되돌아감 (재진입 가드 깨짐)'
+      return null
+    },
+  },
+  {
+    name: 'elite-ward-thorns',
+    what: '엘리트 접두사 — 보호막(피격 흡수) / 가시(근접 반사 25%)',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const ward = g.debugSpawnElite('imp', 'ward')
+        window.__qcWardBefore = { hp: ward.hp, shield: ward.shield, maxShield: ward.maxShield }
+        ward.takeDamage(5, 'melee')
+        window.__qcWardAfter = { hp: ward.hp, shield: ward.shield }
+
+        const thorns = g.debugSpawnElite('brute', 'thorns')
+        window.__qcThornsReflect = thorns.takeDamage(20, 'melee')
+      })
+      await p.waitForTimeout(150) // 보호막 실드 바가 체력바 위에 뜬 상태로 캡처
+    },
+    check: async (p) => {
+      const r = await p.evaluate(() => ({ before: window.__qcWardBefore, after: window.__qcWardAfter, thornsReflect: window.__qcThornsReflect }))
+      if (r.before.shield !== r.before.maxShield) return `보호막 스폰 직후 실드가 최대치가 아님 (${r.before.shield}/${r.before.maxShield})`
+      if (r.after.hp !== r.before.hp) return `실드가 남아있는데 체력이 깎임 (흡수 전:${r.before.hp} 후:${r.after.hp})`
+      if (r.after.shield !== r.before.shield - 5) return `실드 차감량이 안 맞음 (기대 -5, 실제 ${r.before.shield}→${r.after.shield})`
+      if (r.thornsReflect !== 5) return `가시 반사량이 기대(20×0.25=5)와 다름: ${r.thornsReflect}`
+      return null
+    },
+  },
+  {
+    name: 'elite-regen',
+    what: '엘리트 접두사 — 재생(피격 후 2초 지연, 초당 최대체력 3% 회복)',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const regen = g.debugSpawnElite('brute', 'regen')
+        regen.takeDamage(regen.maxHp * 0.6, 'melee')
+        window.__qcRegenAfterHit = regen.hp
+      })
+      await p.waitForTimeout(2600) // 지연(2s) + 회복 틱 1회 — 재생 이펙트가 뜬 상태로 캡처
+    },
+    check: async (p) => {
+      const r = await p.evaluate(() => {
+        const regen = window.__game.enemies.find((e) => e.affix === 'regen')
+        return { after: window.__qcRegenAfterHit, now: regen?.hp, maxHp: regen?.maxHp }
+      })
+      if (r.now == null) return '재생 엘리트가 사라짐'
+      if (r.now <= r.after) return `2.6초 경과했는데 체력이 회복 안 됨 (${r.after} → ${r.now})`
+      if (r.now > r.maxHp) return `체력이 최대치를 넘어감 (${r.now} > ${r.maxHp})`
+      return null
+    },
+  },
+  {
+    name: 'elite-split-volatile-swift',
+    what: '엘리트 접두사 — 분열(사망 시 자식 2) / 폭발(사망 시 광역) / 신속(이동속도↑)',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+
+        // 신속 비교용 대조군 — thorns는 speed를 건드리지 않으므로 기준선으로 쓴다
+        const normal = g.debugSpawnElite('imp', 'thorns')
+        window.__qcNormalSpeed = normal.speed
+        const swift = g.debugSpawnElite('imp', 'swift')
+        window.__qcSwiftSpeed = swift.speed
+
+        g.player.invuln = 0 // 직전 실제 접촉 피해로 무적창이 남아있으면 폭발 피해가 막힌다
+        window.__qcPlayerHpBefore = g.player.hp
+        const volatile_ = g.debugSpawnElite('imp', 'volatile')
+        volatile_.pos.x = g.player.pos.x
+        volatile_.pos.z = g.player.pos.z - 1
+        volatile_.hp = 1
+        volatile_.takeDamage(999, 'melee')
+
+        const split = g.debugSpawnElite('imp', 'split')
+        split.pos.x = g.player.pos.x + 3
+        split.pos.z = g.player.pos.z
+        split.hp = 1
+        split.takeDamage(999, 'melee')
+      })
+      await p.waitForTimeout(250) // 폭발 이펙트가 뜬 상태로 캡처 (Game의 매 프레임 루프가 사망 처리)
+    },
+    check: async (p) => {
+      const r = await p.evaluate(() => {
+        const g = window.__game
+        return {
+          normalSpeed: window.__qcNormalSpeed,
+          swiftSpeed: window.__qcSwiftSpeed,
+          playerHpBefore: window.__qcPlayerHpBefore,
+          playerHpAfter: g.player.hp,
+          splitChildren: g.enemies.filter((e) => e.kind === 'imp' && !e.affix && e.xp === 0).length,
+        }
+      })
+      if (r.swiftSpeed <= r.normalSpeed) return `신속 접두사인데 속도가 더 안 빠름 (일반:${r.normalSpeed} 신속:${r.swiftSpeed})`
+      if (r.playerHpAfter >= r.playerHpBefore) return `폭발 접두사 사망 후 플레이어 피해 없음 (${r.playerHpBefore} → ${r.playerHpAfter})`
+      if (r.splitChildren !== 2) return `분열 자식 수가 2가 아님 (실제 ${r.splitChildren})`
+      return null
+    },
+  },
 ]
+
+/**
+ * 09-combat 등에서 처치한 적의 경험치로 레벨업/보스보상 모달(state==='levelup')이
+ * 열린 채 남아있으면 Game의 프레임 루프가 적을 갱신하지 않는다(this.state==='play'
+ * 로만 진행) — 보스/엘리트 디버그 단계 진입 전에 항상 치운다. 모달이 없으면 아무것도
+ * 안 한다.
+ */
+async function dismissLevelUp(p) {
+  for (let i = 0; i < 5; i++) {
+    const open = await p.evaluate(() => window.__game.state === 'levelup')
+    if (!open) return
+    await p.click('#cards .card').catch(() => {})
+    await p.waitForTimeout(150)
+  }
+}
+
+/**
+ * window.startQcSampler를 브라우저 전역에 한 번 심어둔다 — 50ms 간격으로
+ * 보스 상태를 표본 수집한다. Node↔브라우저 왕복마다 생기는 타이밍 오차를
+ * 피하려고 표본 수집 자체는 전부 브라우저 쪽 setInterval로 돌린다. SPA라
+ * 페이지 리로드가 없으므로 러닝 도중 한 번만 설치하면 이후 스텝에서 계속 쓴다.
+ */
+async function installQcSamplerFn(p) {
+  await p.evaluate(() => {
+    window.startQcSampler = () => {
+      window.__qcT0 = performance.now()
+      window.__qcSamples = []
+      window.__qcTimer = setInterval(() => {
+        const boss = window.__game.enemies.find((e) => e.kind === 'boss')
+        window.__qcSamples.push({ t: performance.now() - window.__qcT0, state: boss?.bossState ?? null })
+      }, 50)
+    }
+  })
+}
+
+async function stopQcSampler(p) {
+  return p.evaluate(() => {
+    clearInterval(window.__qcTimer)
+    return window.__qcSamples
+  })
+}
+
+/** 연속된 동일 상태 구간의 길이(ms)를 뽑는다 */
+function segmentDurations(samples) {
+  const segs = []
+  for (const s of samples) {
+    if (!s.state) continue
+    const last = segs[segs.length - 1]
+    if (last && last.state === s.state) last.end = s.t
+    else segs.push({ state: s.state, start: s.t, end: s.t })
+  }
+  return segs.map((s) => ({ state: s.state, ms: s.end - s.start }))
+}
+
+/** 폴링 간격(50ms) + 실제 프레임/타이머 지연을 감안한 허용 오차 */
+const STATE_TOL_MS = 300
+
+/** samples 안에서 expected 시퀀스가 순서대로(중간에 다른 상태가 껴도 됨) 등장하고, 각 구간 길이가 허용 오차 안인지 검증 */
+function verifyStateSequence(samples, expected) {
+  const segs = segmentDurations(samples)
+  let idx = 0
+  for (const seg of segs) {
+    if (idx >= expected.length) break
+    if (seg.state !== expected[idx].state) continue
+    const exp = expected[idx]
+    if (Math.abs(seg.ms - exp.ms) > STATE_TOL_MS) {
+      return `${exp.state} 구간 실측 ${seg.ms.toFixed(0)}ms (기대 ${exp.ms}±${STATE_TOL_MS}ms)`
+    }
+    idx++
+  }
+  if (idx < expected.length) {
+    const observed = segs.map((s) => `${s.state}:${s.ms.toFixed(0)}ms`).join(' → ')
+    return `상태 시퀀스 미완주 — '${expected[idx].state}' 못 봄 (관측: ${observed || '없음'})`
+  }
+  return null
+}
 
 const inDungeon = (p) =>
   p.evaluate(() => window.__game?.mode === 'dungeon').catch(() => false)
@@ -244,8 +519,12 @@ const assetReport = checkAssetIntegrity()
 let server = null
 let port = PORT
 if (!url) {
-  console.log('· 빌드')
-  execSync('npm run build', { cwd: ROOT, stdio: 'inherit' })
+  console.log('· 빌드 (QC_DEBUG=1 — 보스/엘리트 디버그 스폰 훅 포함)')
+  // QC_DEBUG=1 은 vite.config.ts의 define을 통해 __QC_DEBUG__ 를 true로 정적
+  // 치환한다 — main.ts가 qcDebugHooks.ts를 동적 import해 설치한다. 이 env가
+  // 없는 일반 배포 빌드(npm run build)에는 해당 코드가 죽은 코드로 제거돼
+  // 번들에 실리지 않는다(사후 검증: qc.mjs 실행 후 `grep debugSpawnBoss dist`).
+  execSync('npm run build', { cwd: ROOT, stdio: 'inherit', env: { ...process.env, QC_DEBUG: '1' } })
   port = await freePort(PORT)
   console.log(`· 프리뷰 :${port}`)
   // Windows 의 spawn()은 셸을 거치지 않아 확장자 없는 'npx'를 ENOENT로 못 찾는다
@@ -287,6 +566,7 @@ page.on('requestfailed', (r) => errors.push(`request: ${r.url()} — ${r.failure
 
 await page.goto(target, { waitUntil: 'networkidle' })
 await page.waitForTimeout(1200)
+await installQcSamplerFn(page)
 
 let i = 0
 for (const s of STEPS) {
