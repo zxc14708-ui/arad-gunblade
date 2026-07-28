@@ -11,7 +11,7 @@ import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
 import { Pickups } from '../systems/Pickups'
 import { Effects } from '../systems/Effects'
-import { rollChoices, Upgrade } from '../systems/Upgrades'
+import { rollChoices, Upgrade, forgeSwapCandidates } from '../systems/Upgrades'
 import { Shop, ShopItem } from '../systems/Shop'
 import { AudioManager } from '../systems/Audio'
 import { ELITE_AFFIX } from '../systems/EliteAffixes'
@@ -295,6 +295,7 @@ export class Game {
       }
       this.interactables.push(new Interactable('merchant', -6, -1, '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('fountain', 6, -1, '분수에서 회복').addTo(this.scene))
+      this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
     }
 
     // 플레이어 진입 위치
@@ -406,7 +407,7 @@ export class Game {
     let target: Interactable | null = null
     let best = Infinity
     for (const o of this.interactables) {
-      if (o.used && o.kind !== 'merchant' && o.kind !== 'portal') continue
+      if (o.used && o.kind !== 'merchant' && o.kind !== 'portal' && o.kind !== 'dungeonForge') continue
       if (!o.inRange(this.player.pos)) continue
       const d = Math.hypot(o.pos.x - this.player.pos.x, o.pos.z - this.player.pos.z)
       if (d < best) {
@@ -444,6 +445,9 @@ export class Game {
         break
       case 'traitForge':
         this.useTraitForge(target)
+        break
+      case 'dungeonForge':
+        this.useDungeonForge(target)
         break
     }
   }
@@ -493,6 +497,58 @@ export class Game {
       this.hud.banner_(`${u.name} 강화!`)
       this.clock.getDelta()
     })
+  }
+
+  /**
+   * 던전 제련소 — 보유 특성 1개를 같은 등급의 다른 특성으로 교체(유료, 반복 사용
+   * 가능). 특성 효과는 apply()가 누적 연산만 하고 되돌릴 수 없는 구조라 "교체"는
+   * 스택 장부만 옮긴다 — 기존 특성 A의 스택을 1 내리고(효과는 유지) 새 특성 B의
+   * 스택을 1 올려 적용한다. 플레이어 파워가 줄어드는 일은 없다(마을/던전 제련소가
+   * 이미 "스택을 더 쌓는" 방식이라 이번 것도 같은 성질을 유지한 것 — DESIGN_LOG 참고).
+   */
+  private useDungeonForge(forge: Interactable) {
+    const price = this.run.dungeonForgePrice
+    const owned = [...this.acquired.values()]
+      .map((a) => a.upgrade)
+      .filter((u) => forgeSwapCandidates(u.id, this.player.traitStacks).length > 0)
+    if (owned.length === 0) {
+      this.hud.banner_('교체할 수 있는 특성이 없습니다')
+      return
+    }
+    if (this.run.gold < price) {
+      this.hud.banner_(`골드가 부족합니다 (제련소 ${price}G)`)
+      return
+    }
+    const choices = owned.sort(() => Math.random() - 0.5).slice(0, 3)
+    this.state = 'levelup'
+    this.input.clearAll()
+    this.audio.levelup()
+    this.hud.showLevelUp('제련소 — 교체할 특성', `${price} 골드 — 같은 등급의 다른 특성으로 교체합니다`, choices, (from) => {
+      const candidates = forgeSwapCandidates(from.id, this.player.traitStacks).sort(() => Math.random() - 0.5).slice(0, 3)
+      this.hud.showLevelUp('제련소 — 무엇으로 교체할까요?', `${from.name} 을(를) 교체`, candidates, (to) => {
+        if (!this.run.spendGold(price)) {
+          this.state = 'play'
+          return
+        }
+        const stack = Math.max(0, this.player.traitStacks.get(from.id) ?? 0)
+        this.player.traitStacks.set(from.id, stack > 0 ? stack - 1 : 0)
+        const cur = this.acquired.get(from.id)
+        if (cur) {
+          cur.count--
+          if (cur.count <= 0) this.acquired.delete(from.id)
+        }
+        this.applyTrait(to)
+        this.run.dungeonForgePrice = Math.round(price * CONFIG.economy.dungeonForgePriceRatio)
+        forge.label = this.dungeonForgeLabel()
+        this.state = 'play'
+        this.hud.banner_(`${from.name} → ${to.name} 교체!`)
+        this.clock.getDelta()
+      })
+    })
+  }
+
+  private dungeonForgeLabel() {
+    return `제련소 — 특성 교체 (${this.run.dungeonForgePrice}G)`
   }
 
   private openChest(chest: Interactable) {

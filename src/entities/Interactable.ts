@@ -3,7 +3,7 @@ import { noOutline } from '../rendering/toon'
 import { ASSET, loadTex } from '../rendering/assets'
 import type { Direction } from '../systems/RunState'
 
-export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'door' | 'traitAltar' | 'traitForge'
+export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'door' | 'traitAltar' | 'traitForge' | 'dungeonForge'
 
 // ── 프롭 텍스처 (제공된 픽셀 애셋) ──
 const chestClosedTex = () => loadTex(ASSET.props.chestClosed)
@@ -23,8 +23,12 @@ const TEXFN: Record<InteractKind, () => THREE.Texture> = {
   door: doorTex,
   traitAltar: altarTex,
   traitForge: forgeTex,
+  // 던전 제련소 — 전용 아트 없이 마을 제련소와 같은 룬석을 재사용(STATION_TINT로만 구분)
+  dungeonForge: forgeTex,
 }
-const SCALE: Record<InteractKind, number> = { chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 4.9, door: 4.2, traitAltar: 3.4, traitForge: 3.4 }
+const SCALE: Record<InteractKind, number> = {
+  chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 4.9, door: 4.2, traitAltar: 3.4, traitForge: 3.4, dungeonForge: 3.4,
+}
 /** 애셋 원본 종횡비(가로/세로) — 텍스처가 비동기 로드라 상수로 고정 */
 const ASPECT: Record<InteractKind, number> = {
   chest: 24 / 20,
@@ -34,6 +38,7 @@ const ASPECT: Record<InteractKind, number> = {
   door: 24 / 30,
   traitAltar: 48 / 64,
   traitForge: 48 / 64,
+  dungeonForge: 48 / 64,
 }
 export const INTERACT_RANGE: Record<InteractKind, number> = {
   chest: 2.2,
@@ -43,6 +48,7 @@ export const INTERACT_RANGE: Record<InteractKind, number> = {
   door: 2.0,
   traitAltar: 2.6,
   traitForge: 2.6,
+  dungeonForge: 2.6,
 }
 
 /**
@@ -52,6 +58,8 @@ export const INTERACT_RANGE: Record<InteractKind, number> = {
 const STATION_TINT: Partial<Record<InteractKind, { body: number; ring: number }>> = {
   traitAltar: { body: 0xc9a6ff, ring: 0xa76cff },
   traitForge: { body: 0xffc98a, ring: 0xff9a3c },
+  // 마을 제련소와 같은 색 계열(제련소 기능)이되 청록 링으로 구분 — 유료 던전 시설임을 표시
+  dungeonForge: { body: 0xffc98a, ring: 0x3cd2ff },
 }
 
 /** 상호작용 가능한 월드 오브젝트 (빌보드 스프라이트 + 근접 판정) */

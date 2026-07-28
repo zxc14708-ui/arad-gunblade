@@ -117,3 +117,19 @@ export function rollChoices(count = 3, boss = false, traitStacks: ReadonlyMap<st
   }
   return chosen
 }
+
+export function upgradeById(id: string): Upgrade | undefined {
+  return POOL.find((u) => u.id === id)
+}
+
+/**
+ * 던전 제련소용: currentId 특성과 같은 등급이면서, currentId 자신이 아니고,
+ * 아직 maxStacks에 도달하지 않은 교체 후보 목록.
+ */
+export function forgeSwapCandidates(currentId: string, traitStacks: ReadonlyMap<string, number>): Upgrade[] {
+  const current = upgradeById(currentId)
+  if (!current) return []
+  return POOL.filter(
+    (u) => u.rarity === current.rarity && u.id !== currentId && (traitStacks.get(u.id) ?? 0) < u.maxStacks,
+  )
+}

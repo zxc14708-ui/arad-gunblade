@@ -96,6 +96,14 @@ export const CONFIG = {
     baseToLevel: 12,
     growth: 1.28, // 레벨당 필요 경험치 증가율
   },
+
+  // 골드 소비처 (DESIGN_LOG B5 2·3단계 — 잉여 골드 흡수용)
+  economy: {
+    // 던전 제련소: 보유 특성을 같은 등급의 다른 특성으로 교체. 사용할 때마다 가격이
+    // 오른다(런 단위 유지) — 가격 = 이전 가격 * ratio, 반올림은 매 단계 누적 적용.
+    dungeonForgeBasePrice: 100,
+    dungeonForgePriceRatio: 1.7,
+  },
 }
 
 export type Difficulty = { hpMul: number; dmgMul: number; speedMul: number; countMul: number }

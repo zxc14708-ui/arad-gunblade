@@ -99,6 +99,9 @@ export class RunState {
   roomsCleared = 0
   current: RoomPlan | null = null
 
+  /** 던전 제련소 다음 사용 가격 — 런 단위로 유지, 사용할 때마다 오름 */
+  dungeonForgePrice = CONFIG.economy.dungeonForgeBasePrice
+
   private nodes = new Map<string, RoomNode>()
   private currentId: string | null = null
   private previousEliteAffix: EliteAffix | undefined
@@ -122,6 +125,7 @@ export class RunState {
     this.currentId = null
     this.nodes.clear()
     this.previousEliteAffix = undefined
+    this.dungeonForgePrice = CONFIG.economy.dungeonForgeBasePrice
   }
 
   private muls(depth: number) {
