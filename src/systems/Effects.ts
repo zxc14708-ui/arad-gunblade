@@ -128,10 +128,11 @@ export class Effects {
     this.playFx('slash', x, 1.1, z, range * 1.5, angle)
   }
 
-  /** 총구 화염 (총구 앞쪽에 배치) */
+  /** 총구 화염 (총구 앞쪽에 배치) — 높이는 gunblader_gun_m1911.png 발사 프레임의
+   * 실제 총구 픽셀 위치를 월드 단위로 환산한 값(CharacterSprite.ts GUN_SHOOT_FIX 참고) */
   muzzleFlash(pos: THREE.Vector3, angle: number) {
     const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
-    this.playFx('muzzle', pos.x + fwd.x * 1.35, 1.75, pos.z + fwd.z * 1.35, 1.5, angle)
+    this.playFx('muzzle', pos.x + fwd.x * 1.35, 2.6, pos.z + fwd.z * 1.35, 1.5, angle)
   }
 
   /** 피격 임팩트 */

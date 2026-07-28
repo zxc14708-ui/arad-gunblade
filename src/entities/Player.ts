@@ -299,7 +299,9 @@ export class Player {
           dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), jitter)
           const crit = this.rollCrit()
           bullets.push({
-            pos: new THREE.Vector3(this.pos.x, 1.2, this.pos.z).addScaledVector(dir, 0.8),
+            // 총구 높이/전방 거리는 gunblader_gun_m1911.png 발사 프레임의 실제 총구
+            // 픽셀 위치를 월드 단위로 환산한 값이다(CharacterSprite.ts GUN_SHOOT_FIX 주석 참고).
+            pos: new THREE.Vector3(this.pos.x, 2.6, this.pos.z).addScaledVector(dir, 0.9),
             dir,
             damage: this.stats.gunDamage * (crit ? this.stats.critMult : 1),
             crit,
