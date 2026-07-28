@@ -101,6 +101,10 @@ export class RunState {
 
   /** 던전 제련소 다음 사용 가격 — 런 단위로 유지, 사용할 때마다 오름 */
   dungeonForgePrice = CONFIG.economy.dungeonForgeBasePrice
+  /** 던전 분수 런 전체 첫 사용(무료) 소진 여부 */
+  fountainFreeUsed = false
+  /** 던전 분수 다음 유료 사용 가격 — 런 단위로 유지 */
+  fountainPrice = CONFIG.economy.fountainBasePrice
 
   private nodes = new Map<string, RoomNode>()
   private currentId: string | null = null
@@ -126,6 +130,8 @@ export class RunState {
     this.nodes.clear()
     this.previousEliteAffix = undefined
     this.dungeonForgePrice = CONFIG.economy.dungeonForgeBasePrice
+    this.fountainFreeUsed = false
+    this.fountainPrice = CONFIG.economy.fountainBasePrice
   }
 
   private muls(depth: number) {

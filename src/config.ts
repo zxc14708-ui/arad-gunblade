@@ -103,6 +103,9 @@ export const CONFIG = {
     // 오른다(런 단위 유지) — 가격 = 이전 가격 * ratio, 반올림은 매 단계 누적 적용.
     dungeonForgeBasePrice: 100,
     dungeonForgePriceRatio: 1.7,
+    // 던전 분수: 런 전체 첫 사용은 무료, 두 번째 사용부터 유료(방당 1회 제한은 별도).
+    fountainBasePrice: 60,
+    fountainPriceRatio: 1.6,
   },
 }
 

@@ -294,7 +294,7 @@ export class Game {
         this.shopRoomId = plan.id
       }
       this.interactables.push(new Interactable('merchant', -6, -1, '상인과 거래').addTo(this.scene))
-      this.interactables.push(new Interactable('fountain', 6, -1, '분수에서 회복').addTo(this.scene))
+      this.interactables.push(new Interactable('fountain', 6, -1, this.fountainLabel()).addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
     }
 
@@ -551,6 +551,10 @@ export class Game {
     return `제련소 — 특성 교체 (${this.run.dungeonForgePrice}G)`
   }
 
+  private fountainLabel() {
+    return this.run.fountainFreeUsed ? `분수에서 회복 (${this.run.fountainPrice}G)` : '분수에서 회복 (무료)'
+  }
+
   private openChest(chest: Interactable) {
     chest.markUsed()
     this.run.markObjectUsed('chests-opened')
@@ -572,15 +576,32 @@ export class Game {
     }
   }
 
+  /**
+   * 회복 분수. 마을 분수는 항상 무료. 던전 분수는 런 전체 첫 사용만 무료이고
+   * 이후로는 유료(가격은 런 단위로 유지, 사용할 때마다 오름) — 방당 1회 제한은
+   * run.isObjectUsed('fountain')로 그대로 유지된다.
+   */
   private useFountain(f: Interactable) {
     if (this.run.isObjectUsed('fountain')) return
+    const isTown = this.mode === 'town'
+    let priceCharged = 0
+    if (!isTown && this.run.fountainFreeUsed) {
+      const price = this.run.fountainPrice
+      if (!this.run.spendGold(price)) {
+        this.hud.banner_(`골드가 부족합니다 (분수 ${price}G)`)
+        return
+      }
+      priceCharged = price
+      this.run.fountainPrice = Math.round(price * CONFIG.economy.fountainPriceRatio)
+    }
     const heal = Math.round(this.player.stats.maxHp * 0.45)
     this.player.heal(heal)
     f.markUsed()
     this.run.markObjectUsed('fountain')
+    if (!isTown) this.run.fountainFreeUsed = true
     this.audio.pick()
     this.effects.burst(new THREE.Vector3(this.player.pos.x, 1.2, this.player.pos.z), 0x7fd8f0, 18, 6)
-    this.hud.banner_(`체력 +${heal} 회복`)
+    this.hud.banner_(priceCharged > 0 ? `체력 +${heal} 회복 (-${priceCharged}G)` : `체력 +${heal} 회복`)
   }
 
   // ══════════════════ 상점 ══════════════════
