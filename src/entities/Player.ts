@@ -317,7 +317,12 @@ export class Player {
       if (this.ammo > 0) {
         this.gunTimer = this.stats.gunCooldown
         this.ammo--
-        this.shootAnim = 0.16 // 사격 모션 재생
+        // 사격 모션 재생 — 총의 재장전 간격(gunCooldown)이 이 값보다 길면(산탄총·
+        // 저격소총·매그넘·석궁 등) 다음 발이 나가기 전에 st.shooting이 꺼져
+        // CharacterSprite의 좌우 반전 고정이 풀렸다가 다음 발에서 다시 걸리며
+        // 조준 방향이 바뀌어 있으면 좌우로 튀어 보였다 — 최소한 쿨타임만큼은
+        // 유지해 연사 중 내내 얼어붙게 한다.
+        this.shootAnim = Math.max(0.16, this.stats.gunCooldown)
         const shots = this.stats.multishot
         const baseDir = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
         for (let i = 0; i < shots; i++) {

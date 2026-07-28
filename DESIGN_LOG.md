@@ -197,6 +197,17 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 몸통 동작을 거의 안 따라감)는 이번 재생성으로 해소됐다 — 위 두 항목은 그
 잔여 결함이다.
 
+### D4. `gunblader_gun_m1911.png` — 총이 대기/걷기/베기 프레임(0~18)에서 허리 홀스터로 보임
+
+사용자가 "총을 계속 들고 있는 걸로" 요청. 프레임 0~18은 허리에 작게 거치된
+총 아이콘이고, 사격 프레임(19~26)만 손에 쥔 큰 아이콘이다(실측: 각 구간
+대표 프레임을 잘라 비교, `frame_0`·`frame_11`·`frame_19` 등에서 확인). 코드로는
+고칠 수 없다 — 홀스터 포즈 자체가 다른 그림이라 확대/재배치로 "쥔 포즈"를
+만들 수 없다. 아래 변경 이력의 "캐릭터 방향/사격 튐 진단" 항목에서 작성한
+나노바나나 재생성 프롬프트로 새 `gunblader_gun_m1911.png`를 받아야 한다.
+받은 뒤에는 프레임 19~26용 `GUN_SHOOT_FIX` 보정 테이블(`CharacterSprite.ts`)이
+새 좌표에 맞게 다시 필요할 가능성이 높다 — D2의 기존 경고와 같은 종류.
+
 ---
 
 ## 미검증 영역
@@ -206,6 +217,77 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 ---
 
 ## 변경 이력
+
+### 2026-07-28 — 캐릭터 방향/사격 튐 진단 + 발사 간격 튐 수정
+- **대상**: `src/entities/Player.ts`(`shootAnim`), `DESIGN_LOG.md`(D4)
+- **의도**: 사용자가 "캐릭터가 마우스랑 반대 방향을 보고 있고, 총을 쏠 때
+  좌우로 계속 움직인다"고 보고. 두 증상을 각각 사실 확인했다.
+- **"마우스 반대 방향" 검증 — 실제로는 버그가 아니었다**: `CharacterSprite.ts`의
+  좌우 반전 조건(`Math.sin(aimAngle)`의 부호로 `flip` 결정)을 의심해 먼저
+  반전시켜 봤으나, 실제 게임 루프가 백그라운드에서 계속 돌면서 수동으로
+  주입한 애니메이션 상태(`animTime`)를 곧바로 덮어써 판정이 오염됐다(과거
+  "flip jitter" 조사 때와 같은 종류의 레이스 컨디션). `CharacterSprite`만
+  독립적으로 인스턴스화하는 별도 HTML 페이지(Game 루프 완전 배제)로 다시
+  검증하니, 원본 코드가 이미 정확했다 — 조준 우측(`sin>0`)일 때 미러링
+  없는 원본 프레임이 총을 오른쪽으로 겨눈다. 처음의 오판은 사격 8프레임
+  사이 팔이 크게 움직이는 과도기 프레임(`GUN_SHOOT_FIX` 대상 구간)을
+  캡처해서 생긴 착시였다. **`CharacterSprite.ts`는 결국 변경하지 않았다**
+  (한 차례 반전시켰다가 검증 후 원복).
+- **"좌우로 계속 움직임" 검증 — 실재하는 버그, 수정함**: 사격 모션 표시
+  시간(`shootAnim`)이 무기 종류와 무관하게 `0.16`초로 고정돼 있었는데,
+  `CONFIG`상 총 7종 중 4종(산탄총 0.7 · 저격소총 0.28 · 매그넘 0.5 ·
+  석궁 0.4)은 발사 간격(`gunCooldown`)이 이보다 길다. 이 네 무기로 연사하면
+  한 발 쏜 뒤 다음 발이 나가기 전에 `shootAnim`이 다 닳아 `st.shooting`이
+  꺼지고, `CharacterSprite`의 좌우 반전 고정(사격 중엔 마우스를 안 따라가게
+  얼린 것)이 풀린다 — 그 사이 마우스가 반대편으로 넘어가 있으면 다음 발이
+  나가는 순간 반전이 다시 걸리며 화면에서 좌우로 튄다(M1911·SMG·오토캐논은
+  쿨타임이 0.16보다 짧아 이 틈이 안 생겨서 증상이 없었다). `shootAnim =
+  Math.max(0.16, this.stats.gunCooldown)`로 고쳐 연사 중 내내 얼어있게 했다.
+  dev 서버로 산탄총(쿨타임 0.7) 장착 후 직접 재현: 발사 직후 마우스를
+  반대쪽으로 옮기고 다음 발 전까지 여러 프레임을 진행시켜도 `flip`이
+  발사 시점 방향으로 고정된 채 유지됨을 확인(수정 전이라면 쿨타임 중간에
+  풀렸을 것). `npx tsc --noEmit` 통과, `npm run qc` 15단계 전부 통과,
+  `contact.png` 육안 확인(결함 없음).
+- **홀스터 제거 요청**: 코드로 해결 불가 — D4(미해결 이슈)에 원인과 재생성
+  프롬프트를 기록했다. 아래 프롬프트로 `gunblader_gun_m1911.png`를
+  나노바나나 등으로 재생성해야 한다.
+
+  ```
+  Pixel art sprite sheet edit. Input: a 3024x64px horizontal strip of 27
+  frames (112x64px each), transparent background, showing ONLY a hand
+  gripping an M1911 pistol (no body, no other character parts) — this is
+  one layer of a 3-layer character composite (base body + katana + this
+  gun layer), all sharing the same 112x64 frame grid.
+
+  Current problem: frames 0-18 (idle/walk/sword-attack range) show a tiny
+  holstered gun icon tucked near the waist — looks like the character
+  isn't holding the weapon. Frames 19-26 (the dedicated gun-fire range)
+  correctly show a large hand gripping the gun in a raised, ready-to-fire
+  pose.
+
+  Requested change: replace the holstered pose in frames 0-18 with the
+  character actively holding the gun down at their side, ready-but-not-
+  aiming — NOT holstered, NOT raised to fire. Keep the same grip scale and
+  art style as the existing frames 19-26 pose (same pistol design, same
+  pixel-art shading, same nearest-neighbor/no-anti-aliasing look), just
+  lowered to a relaxed carry position consistent with the body's
+  idle/walk/sword-swing poses in that frame range. The gun's grip point
+  must track the same hand position established in `gunblader_base.png`
+  for each of frames 0-18 (idle: 0-3, walk: 4-10, sword attack: 11-18) —
+  do not change hand position, only replace what's drawn in the hand.
+
+  Frames 19-26 (aiming/firing pose) must stay exactly as they are —
+  do not touch them.
+
+  Output: same 3024x64px strip, same 27-frame grid, transparent
+  background elsewhere, nearest-neighbor pixel art, no soft edges.
+  ```
+
+  받은 뒤 필요한 후속 작업(별도 커밋): 프레임 0~18의 새 그립 좌표를 실측해
+  `CharacterSprite.ts`에 프레임별 위치 보정이 필요한지 확인(기존
+  `GUN_SHOOT_FIX`와 같은 종류의 보정이 이 구간에도 필요할 수 있음), `npm
+  run qc`로 전 프레임 재검증.
+- **남은 문제**: D4(홀스터 제거)는 새 아트 수령 후 별도 커밋으로 진행.
 
 ### 2026-07-28 — 분수 배치 확대 (B5 "분수 사문화" 해결)
 - **대상**: `src/config.ts`(`economy.fountainRoomCount`), `src/systems/RunState.ts`
