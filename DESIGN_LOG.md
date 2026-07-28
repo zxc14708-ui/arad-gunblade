@@ -946,3 +946,7 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 - **결과**: 현재 코드 기준 미해결 이슈 12건(B1~B4, C1~C8)을 정리.
   밸런스 이슈 4건은 `config.ts`·`Upgrades.ts`·`Weapons.ts` 실측값 계산에서 도출.
 - **남은 문제**: 미검증 영역 3개 파일을 읽기 전까지 B1·B2는 확정 아님.
+### 2026-07-28 — Paperdoll 캐릭터 적용 보류
+- **대상**: `CharacterSprite.ts`, `assets/player/*`
+- **의도**: 분리 파츠의 최종 모션·피벗 기준이 확정될 때까지 화면 회귀를 막는다.
+- **결과**: 임시 Paperdoll 레이어와 에셋을 되돌리고, 기존 단일 2D 시트 `gunblader.png` 표시 방식으로 복귀했다. 새 캐릭터 에셋 확정 후 재검토 필요.
