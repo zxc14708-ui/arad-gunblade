@@ -14,6 +14,9 @@ FRAMES/ASPECT/경로는 소스(EnemySprite.ts / Interactable.ts / assets.ts)에�
   3. Interactable.ts 의 ASPECT 값이 실제 PNG 가로/세로 비율과 일치
   4. 배경이어야 하는 타일을 제외한 모든 스프라이트/프롭의 네 모서리가
      완전 투명(alpha=0에 가까움) — 검은 후광 사전 차단
+  5. public/assets 전체를 훑어 src/ 어디에서도 참조되지 않는 파일(고아 에셋) —
+     이건 경고만 남긴다(실패 아님). 의도적으로 보관 중인 미연결 장식 프롭이
+     있어 단순 "미참조 = 삭제 대상"으로 볼 수 없다 — DESIGN_LOG.md D1 참고.
 
 사용법:
   python3 tools/measure_sprites.py
@@ -257,11 +260,42 @@ def check_prop_aspect():
     print(f'Interactable ASPECT {len(aspect)}건 대조 완료')
 
 
+# ── 5. 고아 에셋(public/assets 전체 vs src/ 참조) — 경고만, 실패 아님 ──────
+
+ASSET_EXTS = ('.png', '.jpg', '.jpeg', '.ogg', '.mp3', '.wav')
+
+
+def check_orphan_assets():
+    all_files = []
+    for dirpath, _, filenames in os.walk(os.path.join(PUBLIC, 'assets')):
+        for fn in filenames:
+            if fn.lower().endswith(ASSET_EXTS):
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, PUBLIC).replace(os.sep, '/')
+                all_files.append(rel)
+
+    src_text = ''
+    for dirpath, _, filenames in os.walk(SRC):
+        for fn in filenames:
+            if fn.endswith('.ts'):
+                src_text += read(os.path.join(dirpath, fn))
+
+    orphans = sorted(f for f in all_files if f not in src_text)
+    if orphans:
+        total_kb = sum(os.path.getsize(os.path.join(PUBLIC, f)) for f in orphans) / 1024
+        for f in orphans:
+            warnings.append(f'미사용 에셋(고아 파일): {f}')
+        print(f'고아 에셋 {len(orphans)}개, {total_kb:.1f}KB — 경고 처리(DESIGN_LOG.md D1 참고)')
+    else:
+        print('고아 에셋 없음')
+
+
 # ── 실행 ─────────────────────────────────────────────────────────────────
 
 check_monster_sheets()
 check_all_paths_exist()
 check_prop_aspect()
+check_orphan_assets()
 
 for w in warnings:
     print(f'경고: {w}')

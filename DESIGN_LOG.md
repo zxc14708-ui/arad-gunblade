@@ -119,25 +119,47 @@
 2. **미해결** — 특성 제련소 유료화.
 3. **미해결** — 분수 유료화.
 
-### D1. 사용되지 않는 에셋 31개, 131.5KB (실측 완료 2026-07-27)
+### D1. 사용되지 않는 에셋 (재실측 2026-07-28)
 
-`assets.ts`/`EnemySprite.ts`/`Interactable.ts` 어디에서도 참조하지 않는 파일:
+2026-07-27 실측 이후 두 가지가 반영 안 돼 있었다 — `tau_chief_charge_6f.png`가
+C1(보스 돌진 패턴) 구현으로 `assets.ts` 147행에 등록되어 더 이상 고아가
+아니었고, `public/assets` 전체를 `src/` 전체 참조와 다시 대조하니 이전
+audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
+`healing_fountain.png` — `stage1_interactive_objects/`의 동명 파일로 이미
+교체된 구버전 중복)가 추가로 나왔다. 캐릭터가 절차 생성에서 일러스트
+시트(`gunblader_*.png` 3장)로 교체되면서 새로 고아가 된 파일은 없다
+(`public/` 루트 파일이라 애초에 이 audit 범위인 `public/assets` 밖).
 
+**삭제함**(구버전 교체·미사용 변형 — 요청에 따라 이 두 부류만, 총 26개 39.0KB):
 - `public/assets/monsters/*` 구버전 12개 (imp_*, brute_*, shooter_*, stage1_boss_*) —
   `stage1_goblins`/`stage1_tau` 체계로 교체되기 전 잔재
-- `public/assets/props/coin_0~3.png`, `torch_0~2.png` — `coin_strip.png`/`torch_strip.png`
-  프레임 분리 시스템 도입 전 개별 프레임 파일
-- `public/assets/props/dungeon_portal.png`(26x34) — `arcane_portal_v1.png`(128x192)로 교체된 구버전
-- `public/assets/fx/hit_impact_strip.png` — `stage1_combat_effects/goblin_hit_impact_4f.png`로 교체됨
+- `public/assets/props/coin_0~3.png`, `torch_0~2.png`(7개) — `coin_strip.png`/
+  `torch_strip.png` 프레임 분리 시스템 도입 전 개별 프레임 파일
+- `public/assets/props/dungeon_portal.png` — `arcane_portal_v1.png`로 교체된 구버전
+- `public/assets/fx/hit_impact_strip.png` — `goblin_hit_impact_4f.png`로 교체됨
 - `stage1_forest_foreground/dark_bush_c.png`, `great_tree_c.png`,
-  `root_vine_bottom/left/right.png` — 배경 배치 코드가 a/b 변형과 `vineTop`만 사용
-- `stage1_interactive_objects/wildflower_*.png`, `wooden_crate.png` — 장식 프롭 아트는
-  받았지만 스폰 코드에 연결된 적이 없음
-- `stage1_tau/tau_chief_charge_6f.png`(92.9KB) — `ASSET.monsters.boss`는
-  idle/move(walk)/slam(attack)만 등록, 돌진 시트는 애초에 다운로드도 안 됨
+  `root_vine_bottom/left/right.png`(5개) — 배경 배치 코드가 a/b 변형과
+  `vineTop`만 사용
 
-삭제는 하지 않음(요청 범위 밖). `tools/measure_sprites.py`가 `assets.ts` 참조
-경로만 검사하므로 이 파일들은 자동 검사로는 못 잡음 — 여기 기록만 남긴다.
+**남은 고아 파일 3개, 0.53KB** (삭제 범위 밖 — 다음 정리 때 검토):
+- `public/assets/props/chest_closed.png`, `chest_open.png`, `healing_fountain.png` —
+  `stage1_interactive_objects/`의 동명 파일(치수도 다르고 실제로 사용 중)로
+  대체된 것으로 보이나, 이번 지시에 명시된 삭제 목록에 없어 삭제하지 않음.
+
+장식 프롭(`wildflower_*`, `wooden_crate`)은 "교체된 구버전"이 아니라 별도
+분류로 옮김 — D3 참고. `tau_chief_charge_6f.png`는 사용 중이라 목록에서 제외.
+
+`tools/measure_sprites.py`에 `public/assets` 전체 vs `src/` 참조 대조를
+경고(실패 아님)로 추가했다 — 이제 이 표를 수동으로 다시 만들 필요 없이
+`npm run qc` 출력에서 고아 파일 최신 목록을 바로 확인할 수 있다.
+
+### D3. 미연결 장식 프롭 4개, 1.74KB
+
+`stage1_interactive_objects/wildflower_blue.png`, `wildflower_red.png`,
+`wildflower_white.png`, `wooden_crate.png` — GPT가 만든 장식 프롭 아트지만
+스폰/배치 코드에 연결된 적이 없다. D1과 달리 "교체돼서 되살릴 이유가 없는"
+게 아니라 "아직 안 쓴 신규 자산"이라 별도로 분류한다 — 나중에 방 장식으로
+쓸 수 있어 삭제하지 않는다.
 
 ### D2. 캐릭터 검공격 시트(frame 11~18) 잔여 결함 (1차 재생성 후에도 일부 남음)
 
@@ -168,6 +190,27 @@
 ---
 
 ## 변경 이력
+
+### 2026-07-28 — D1 미사용 에셋 재실측·정리 + 고아 파일 자동 경고 추가
+- **대상**: `public/assets/*`(26개 파일 삭제) · `tools/measure_sprites.py`
+  (`check_orphan_assets` 추가) · `DESIGN_LOG.md`
+- **의도**: 클로드(기획) 지시사항 검증 후 반영. D1이 2026-07-27 기준이라
+  이후 변경(C1의 `tau_chief_charge_6f.png` 사용 시작 등)이 반영 안 돼 있었고,
+  자동 검사가 `assets.ts` 참조 경로만 봐서 고아 파일을 영구히 못 잡는 구조였다.
+- **결과**: `public/assets` 전체 파일을 `src/**/*.ts` 전체 텍스트와 대조해
+  재실측 — `tau_chief_charge_6f.png`는 제외, 이전 audit이 놓친 `props/`
+  중복 파일 3개(`chest_closed.png`·`chest_open.png`·`healing_fountain.png`)를
+  새로 발견. 지시된 두 부류(구버전 교체 21개 + 미사용 변형 5개, 총 26개
+  39.0KB)만 삭제하고, 장식 프롭(`wildflower_*`·`wooden_crate`)은 "교체된
+  구버전"이 아니라 "미연결 신규 자산"이라 D1에서 D3로 분리 기록, 새로
+  찾은 3개는 이번 삭제 범위 밖이라 D1에 남겨뒀다. `measure_sprites.py`에
+  `public/assets` 전체 vs `src/` 참조를 경고(실패 아님)로 대조하는 검사를
+  추가해 이제 고아 파일이 생겨도 `npm run qc` 실행 때마다 자동으로 드러난다
+  (의도적으로 보관 중인 파일이 있어 실패로 처리하지 않음). 삭제 후
+  `npm run qc` 15단계 통과, 자산 무결성 검사도 통과(경고 7건 — D1·D3에
+  남긴 파일들과 정확히 일치).
+- **남은 문제**: 없음. `props/chest_*`·`healing_fountain.png` 3개는 다음
+  정리 때 삭제 여부 판단 필요(D1 참고).
 
 ### 2026-07-28 — 사격 중 캐릭터 좌우 반전(flip) 튐 수정
 - **대상**: `src/entities/CharacterSprite.ts` (`update()`의 좌우 반전 로직)
