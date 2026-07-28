@@ -118,6 +118,17 @@ export const CONFIG = {
     // 이 값을 넘지 않는다(전투 망치처럼 느린 검에서 조작감이 나빠지는 걸 방지).
     swordSwingCommitMax: 0.25,
   },
+
+  // 타격감 연출 (히트스톱/화면 흔들림/피격 플래시)
+  effects: {
+    // 히트스톱: 타격 순간 게임 시간을 짧게 늦춘다. 0으로 완전히 멈추면 애니메이션이
+    // 얼어붙어 버그처럼 보이므로 아주 느리게(0.05배)만 흐르게 한다.
+    hitstopScale: 0.05,
+    hitstopHit: 0.04,
+    hitstopCrit: 0.07,
+    hitstopKill: 0.1,
+    hitstopBossKill: 0.35,
+  },
 }
 
 export type Difficulty = { hpMul: number; dmgMul: number; speedMul: number; countMul: number }

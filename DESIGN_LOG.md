@@ -184,6 +184,37 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 
 ## 변경 이력
 
+### 2026-07-28 — 히트스톱 (타격감 개선 1단계)
+- **대상**: `src/config.ts`(`effects` 상수), `src/core/Game.ts`(`triggerHitstop`,
+  `loop`, `resolveBullets`, `resolveSlash`, `killEnemy`)
+- **의도**: 타격 순간 게임 시간을 아주 짧게 늦춰 충격을 강조한다. B4 밸런스
+  작업과 무관한 순수 연출 작업 — 전투 수치는 건드리지 않았다.
+- **결과**:
+  - `Game.loop()`에서 매 프레임 실제 경과 시간(`rawDt`)으로 `hitstopTimer`를
+    감소시키고, 타이머가 남아있는 동안에는 `step()`과 `effects.update()`에
+    `rawDt × CONFIG.effects.hitstopScale`(0.05배)를 넘긴다 — 완전히 0으로
+    멈추면 애니메이션이 얼어붙어 버그처럼 보이므로 아주 느리게만 흐르게 했다.
+    `Input.update()`는 이 스케일링 이전에 매 프레임 그대로 호출되므로 입력은
+    히트스톱 중에도 씹히지 않는다.
+  - `triggerHitstop(duration)`은 겹치는 요청을 더하지 않고 `Math.max`로
+    갱신한다 — 다수 적을 동시에 맞혀도 정지 시간이 길게 누적되어 조작이
+    끊기지 않는다.
+  - 지속시간은 피해량 성격에 비례: 일반 명중 0.04초(`resolveBullets`/
+    `resolveSlash`), 치명타 0.07초, 처치 0.10초(`killEnemy`), 보스 처치
+    0.35초(`killEnemy`에서 `e.kind === 'boss'` 분기). 상수는 `CONFIG.effects`에
+    모았다.
+  - dev 서버 + `window.__game` 직접 조작으로 검증: `triggerHitstop`이 더 짧은
+    요청은 무시하고(`0.04`→`0.02` 요청 시 `0.04` 유지) 더 긴 요청만 반영
+    (`0.1`로 갱신)함을 확인; `resolveBullets`를 통한 실전 경로로 일반 명중
+    0.04·치명타 0.07을, `killEnemy`로 일반 처치 0.10·보스 처치 0.35를 각각
+    정확히 확인; `hitstopTimer`가 남아있는 상태에서 `player.update()`에
+    `rawDt×hitstopScale`을 넣으면 이동 거리가 이론적 상한(`speed×scaledDt`)
+    이내로 억제됨(완전히 0은 아님)을 확인.
+  - `npx tsc --noEmit` 통과, `npm run qc` 15단계 전부 통과·`contact.png`
+    육안 확인(결함 없음 — 히트스톱은 타이밍 연출이라 정지 프레임 스크린샷
+    자체에는 차이가 나타나지 않는다).
+- **남은 문제**: 화면 흔들림(2단계), 피격 플래시(3단계)가 이어진다.
+
 ### 2026-07-28 — 발도장전 기본 승격 (B4 3단계, B4 해결)
 - **대상**: `src/entities/Player.ts`(`Mods`, `reloadFromSwordHit`, 사격 루프),
   `src/core/Game.ts`(`resolveSlash`), `src/systems/Upgrades.ts`(`lg_quickdraw`)

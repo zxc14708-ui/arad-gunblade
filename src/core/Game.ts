@@ -58,6 +58,8 @@ export class Game {
 
   private kills = 0
   private boss: Enemy | null = null
+  /** 히트스톱 잔여 시간 — 겹치면 더하지 않고 더 긴 쪽으로 갱신(triggerHitstop) */
+  private hitstopTimer = 0
   private wasDashing = false
   private ghostTimer = 0
   private settingsOpen = false
@@ -744,9 +746,18 @@ export class Game {
 
   // ══════════════════ 메인 루프 ══════════════════
 
+  /** 히트스톱 요청 — 겹치면 합산하지 않고 더 긴 지속시간으로 갱신한다. */
+  private triggerHitstop(duration: number) {
+    this.hitstopTimer = Math.max(this.hitstopTimer, duration)
+  }
+
   private loop = () => {
     requestAnimationFrame(this.loop)
-    const dt = Math.min(this.clock.getDelta(), 0.05)
+    const rawDt = Math.min(this.clock.getDelta(), 0.05)
+    // 히트스톱 타이머는 실제 경과 시간으로 감소시킨다 — 늦춰진 dt로 감소시키면
+    // 스스로를 거의 끝내지 못한다.
+    if (this.hitstopTimer > 0) this.hitstopTimer = Math.max(0, this.hitstopTimer - rawDt)
+    const dt = this.hitstopTimer > 0 ? rawDt * CONFIG.effects.hitstopScale : rawDt
     this.input.update()
 
     const running = this.state === 'play' && !this.settingsOpen
@@ -1048,6 +1059,7 @@ export class Game {
           e.takeDamage(dmg)
           b.hitSet.add(e.id)
           this.audio.hit()
+          this.triggerHitstop(b.crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
           this.applyLifesteal(dmg)
           this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, b.crit, rangeBonus)
@@ -1101,6 +1113,7 @@ export class Game {
         const reflected = e.takeDamage(damage, 'melee')
         e.knockback(pos.x, pos.z, knockback)
         this.audio.hit()
+        this.triggerHitstop(crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
         this.applyLifesteal(damage)
         this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
         this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), damage, crit)
@@ -1119,6 +1132,7 @@ export class Game {
   }
 
   private killEnemy(e: Enemy) {
+    this.triggerHitstop(e.kind === 'boss' ? CONFIG.effects.hitstopBossKill : CONFIG.effects.hitstopKill)
     this.scene.remove(e.group)
     this.kills++
     const death = enemyDeathArt(e.kind)
