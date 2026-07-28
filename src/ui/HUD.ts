@@ -4,7 +4,7 @@ import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaPro
 
 export interface MiniMapRoom {
   id: string
-  kind: 'combat' | 'elite' | 'treasure' | 'shop' | 'boss'
+  kind: 'combat' | 'elite' | 'treasure' | 'shop' | 'rest' | 'boss'
   x: number
   y: number
   current: boolean
@@ -356,7 +356,7 @@ export class HUD {
     const visible = rooms.filter((room) => room.visible)
     const minX = Math.min(...visible.map((room) => room.x))
     const minY = Math.min(...visible.map((room) => room.y))
-    const icon: Record<MiniMapRoom['kind'], string> = { combat: '⚔', elite: '✦', treasure: '◆', shop: '¤', boss: '☠' }
+    const icon: Record<MiniMapRoom['kind'], string> = { combat: '⚔', elite: '✦', treasure: '◆', shop: '¤', rest: '⛺', boss: '☠' }
     map.innerHTML = visible
       .map((room) => {
         const cls = [
