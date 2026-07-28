@@ -22,6 +22,7 @@ const SIZES: Record<string, { w: number; d: number }> = {
   combat: { w: 42, d: 30 },
   treasure: { w: 34, d: 26 },
   shop: { w: 38, d: 26 },
+  rest: { w: 38, d: 26 },
   boss: { w: 50, d: 36 },
   town: { w: 46, d: 32 },
 }

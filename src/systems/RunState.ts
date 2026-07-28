@@ -2,7 +2,7 @@ import { CONFIG } from '../config'
 import { EnemyKind } from '../entities/Enemy'
 import { ELITE_AFFIX, EliteAffix, rollEliteAffix } from './EliteAffixes'
 
-export type RoomKind = 'combat' | 'elite' | 'treasure' | 'shop' | 'boss'
+export type RoomKind = 'combat' | 'elite' | 'treasure' | 'shop' | 'rest' | 'boss'
 export type Direction = 'north' | 'east' | 'south' | 'west'
 
 export const DIRECTIONS: Direction[] = ['north', 'east', 'south', 'west']
@@ -66,6 +66,7 @@ export const ROOM_LABEL: Record<RoomKind, string> = {
   elite: '엘리트',
   treasure: '보물',
   shop: '상점',
+  rest: '보스 준비',
   boss: '보스',
 }
 export const ROOM_ICON: Record<RoomKind, string> = {
@@ -73,6 +74,7 @@ export const ROOM_ICON: Record<RoomKind, string> = {
   elite: '✦',
   treasure: '◆',
   shop: '¤',
+  rest: '⛺',
   boss: '☠',
 }
 
@@ -116,7 +118,7 @@ export class RunState {
     return STAGES[Math.min(this.stage - 1, STAGES.length - 1)]
   }
   get bossDepth() {
-    return this.cfg.normalRooms + 2
+    return this.cfg.normalRooms + 3
   }
   get isBossRoom() {
     return this.current?.kind === 'boss'
@@ -151,7 +153,7 @@ export class RunState {
       const adds: EnemyKind[] = ['imp', 'imp', 'brute', 'shooter', 'shooter']
       return { id, kind, enemies: ['boss', ...adds], chests: 0, x, y, depth, hasFountain: false, ...m }
     }
-    if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
+    if (kind === 'shop' || kind === 'rest') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
     if (kind === 'elite') {
       const affix = rollEliteAffix(this.previousEliteAffix)
       this.previousEliteAffix = affix
@@ -201,13 +203,31 @@ export class RunState {
 
     const occupied = new Map<string, RoomNode>()
     occupied.set(this.key(0, 0), this.nodes.get(start.id)!)
-    const roomCount = this.cfg.normalRooms + 2
+    const roomCount = this.cfg.normalRooms + 3
+    const restIndex = roomCount - 2
+    const bossIndex = roomCount - 1
     const shopIndex = 2 + Math.floor(Math.random() * Math.max(1, this.cfg.normalRooms - 2))
 
     for (let index = 1; index < roomCount; index++) {
+      if (index === bossIndex) {
+        const rest = this.nodes.get(`room-${restIndex}`)!
+        const directions = DIRECTIONS.filter((direction) => {
+          const d = DELTA[direction]
+          return !rest.exits[direction] && !occupied.has(this.key(rest.plan.x + d.x, rest.plan.y + d.y))
+        })
+        const direction = directions[Math.floor(Math.random() * directions.length)]
+        const d = DELTA[direction]
+        const plan = this.makePlan(`room-${index}`, index + 1, 'boss', rest.plan.x + d.x, rest.plan.y + d.y)
+        this.addNode(plan)
+        const node = this.nodes.get(plan.id)!
+        occupied.set(this.key(plan.x, plan.y), node)
+        this.connect(rest, direction, node)
+        continue
+      }
+
       const candidates: { parent: RoomNode; direction: Direction; x: number; y: number }[] = []
       for (const node of occupied.values()) {
-        if (node.plan.kind === 'boss') continue
+        if (node.plan.kind === 'boss' || node.plan.kind === 'rest') continue
         for (const direction of DIRECTIONS) {
           const d = DELTA[direction]
           const x = node.plan.x + d.x
@@ -215,9 +235,15 @@ export class RunState {
           if (!occupied.has(this.key(x, y))) candidates.push({ parent: node, direction, x, y })
         }
       }
-      const pick = candidates[Math.floor(Math.random() * candidates.length)]
+      const placementCandidates = index === restIndex
+        ? candidates.filter((candidate) => DIRECTIONS.some((direction) => {
+          const d = DELTA[direction]
+          return !occupied.has(this.key(candidate.x + d.x, candidate.y + d.y))
+        }))
+        : candidates
+      const pick = placementCandidates[Math.floor(Math.random() * placementCandidates.length)]
       const roll = Math.random()
-      const kind: RoomKind = index === roomCount - 1 ? 'boss' : index === shopIndex ? 'shop' : roll < 0.16 ? 'elite' : roll < 0.42 ? 'treasure' : 'combat'
+      const kind: RoomKind = index === restIndex ? 'rest' : index === shopIndex ? 'shop' : roll < 0.16 ? 'elite' : roll < 0.42 ? 'treasure' : 'combat'
       const plan = this.makePlan(`room-${index}`, index + 1, kind, pick.x, pick.y)
       this.addNode(plan)
       const node = this.nodes.get(plan.id)!
@@ -225,7 +251,7 @@ export class RunState {
       this.connect(pick.parent, pick.direction, node)
 
       // 새 방이 기존 방에 맞닿아 있으면 함께 연결해 지름길/순환 경로를 만든다.
-      for (const direction of DIRECTIONS) {
+      for (const direction of kind === 'rest' ? [] : DIRECTIONS) {
         const d = DELTA[direction]
         const neighbor = occupied.get(this.key(pick.x + d.x, pick.y + d.y))
         if (neighbor && neighbor !== node && !node.exits[direction]) this.connect(node, direction, neighbor)

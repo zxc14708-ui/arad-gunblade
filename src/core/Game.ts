@@ -293,12 +293,12 @@ export class Game {
     }
 
     // 상점 방: 상인 + 제련소 (분수는 별도 — 상점방 포함 여러 방에 배치될 수 있다)
-    if (plan.kind === 'shop') {
+    if (plan.kind === 'shop' || plan.kind === 'rest') {
       if (this.shopRoomId !== plan.id) {
         this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
         this.shopRoomId = plan.id
       }
-      this.interactables.push(new Interactable('merchant', -6, -1, '상인과 거래').addTo(this.scene))
+      this.interactables.push(new Interactable('merchant', -6, -1, plan.kind === 'rest' ? '보스전 물자 준비' : '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
     }
 
@@ -306,8 +306,8 @@ export class Game {
     // 재방문해도 나타났다 사라지지 않는다(상점방 1개 + 전투방 일부, DESIGN_LOG
     // B5 "분수 사문화" 해결).
     if (plan.hasFountain) {
-      const p = plan.kind === 'shop' ? { x: 6, z: -1 } : this.room.randomPoint(5)
-      this.interactables.push(new Interactable('fountain', p.x, p.z, this.fountainLabel()).addTo(this.scene))
+      const p = plan.kind === 'shop' || plan.kind === 'rest' ? { x: 6, z: -1 } : this.room.randomPoint(5)
+      this.interactables.push(new Interactable('fountain', p.x, p.z, plan.kind === 'rest' ? `보스전 ${this.fountainLabel()}` : this.fountainLabel()).addTo(this.scene))
     }
 
     // 플레이어 진입 위치

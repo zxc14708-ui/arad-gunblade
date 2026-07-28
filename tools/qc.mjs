@@ -254,6 +254,35 @@ const STEPS = [
   // 결정적으로 재현할 수 없다. qcDebugHooks.ts(QC_DEBUG=1 빌드에만 포함)로
   // 현재 방에 직접 스폰해 상태머신 타이밍·접두사 효과를 검증한다.
   {
+    name: 'boss-prep',
+    what: '보스 준비 장소 — 적 없이 상점·분수로 보스방 하나만 연결되는가',
+    async run(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        const nodes = g.run.nodes
+        const rest = [...nodes.values()].find((node) => node.plan.kind === 'rest')
+        if (!rest) throw new Error('보스 준비 장소가 생성되지 않음')
+        g.loadRoom(g.run.enter(rest.plan.id))
+      })
+      await p.waitForTimeout(350)
+    },
+    check: async (p) => p.evaluate(() => {
+      const g = window.__game
+      const nodes = g.run.nodes
+      const rest = [...nodes.values()].find((node) => node.plan.kind === 'rest')
+      const boss = [...nodes.values()].find((node) => node.plan.kind === 'boss')
+      const kinds = g.interactables.map((item) => item.kind)
+      const restExitIds = rest ? Object.values(rest.exits) : []
+      const bossExitIds = boss ? Object.values(boss.exits) : []
+      if (!rest || !boss) return '보스 준비 장소 또는 보스방이 없음'
+      if (rest.plan.enemies.length !== 0) return '보스 준비 장소에 적이 배치됨'
+      if (!kinds.includes('merchant') || !kinds.includes('fountain')) return '보스 준비 장소에 상점 또는 분수가 없음'
+      if (restExitIds.length !== 2 || !restExitIds.includes(boss.plan.id)) return '준비 장소가 보스방과 단일 통로로 연결되지 않음'
+      if (bossExitIds.length !== 1 || bossExitIds[0] !== rest.plan.id) return '보스방에 준비 장소 외의 출입구가 있음'
+      return null
+    }),
+  },
+  {
     name: 'boss-charge',
     what: '보스 돌진 — 예고(0.7s)→돌진(1.0s,3.5배속)→경직(1.2s) 타이밍',
     async run(p) {
