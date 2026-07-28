@@ -358,6 +358,44 @@ canvas.pixelated {
   opacity: 0.6;
 }
 
+/* ===== 영구 성장 / 출발 장비 ===== */
+.meta-panel, .loadout-panel { width: 900px; }
+.meta-resources {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: -4px 0 18px;
+}
+.meta-resource {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.05);
+  font-size: 13px;
+}
+.meta-resource b { margin-left: 4px; color: #fff; }
+.meta-resource.faint { color: #b9c7d6; }
+.meta-resource.decent { color: #8bc9ff; }
+.meta-resource.strong { color: #f4c55e; }
+.meta-resource.token { color: #d9a6ff; }
+.meta-items .shop-item { min-height: 156px; }
+.meta-upgrade { width: 150px; }
+.shop-item.selected {
+  border-color: #f0d68a;
+  box-shadow: 0 0 0 2px rgba(240, 214, 138, 0.3), 0 8px 20px rgba(0,0,0,.45);
+  transform: translateY(-3px);
+}
+.loadout-section { margin-top: 16px; }
+.loadout-label {
+  text-align: center;
+  color: var(--gold);
+  font-size: 17px;
+  font-weight: bold;
+  margin: 10px 0 8px;
+}
+.clear-meta { display: inline-block; margin-top: 10px; color: #f0d68a; }
+
 /* 설정 버튼 */
 .icon-btn {
   position: absolute;

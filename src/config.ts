@@ -112,6 +112,28 @@ export const CONFIG = {
     fountainRoomCount: 3,
   },
 
+  // 브라우저 프로필에 저장되는 영구 성장. 런 중 골드/특성과는 분리한다.
+  meta: {
+    altar: {
+      damagePerRank: 0.04,
+      maxHpPerRank: 10,
+      rankCosts: [
+        { kind: 'faint' as const, amount: 3 },
+        { kind: 'faint' as const, amount: 6 },
+        { kind: 'decent' as const, amount: 3 },
+        { kind: 'decent' as const, amount: 6 },
+        { kind: 'strong' as const, amount: 2 },
+      ],
+      reviveCost: { decent: 5, strong: 3 },
+      wardCost: { decent: 3, strong: 2 },
+    },
+    rewards: {
+      stageClear: { faint: 3, decent: 1, strong: 1, tokens: 2 },
+      eliteToken: 1,
+    },
+    weaponPrice: { common: 0, rare: 3, epic: 7, legendary: 15 },
+  },
+
   // 총검사 역할 분리 (DESIGN_LOG B4 — 멀면 총, 붙으면 검)
   combat: {
     // 총 거리 보너스: 발사 지점~명중 지점 거리가 이 이상이면 피해 배율 적용.

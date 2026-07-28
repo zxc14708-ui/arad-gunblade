@@ -170,6 +170,50 @@ const STEPS = [
     },
   },
   {
+    name: 'town-meta',
+    what: '마을 영구 성장 — 제단 강화·무기 설계도 해금 UI와 브라우저 프로필 반영',
+    async run(p) {
+      // 일반 플레이 보상으로 쌓일 영구 재화를 QC에서 결정적으로 준비한다.
+      // Game의 런 골드와 분리된 MetaProgression 프로필을 직접 채워, 구매와
+      // localStorage 저장 경로가 실제로 동작하는지 검증한다.
+      await p.evaluate(() => {
+        const profile = window.__game.meta.profile
+        profile.crystals = { faint: 99, decent: 99, strong: 99 }
+        profile.tokens = 99
+      })
+
+      if (!await walkTo(p, 'metaAltar')) throw new Error('힘의 제단에 접근하지 못함')
+      await p.keyboard.press('KeyE')
+      await p.waitForTimeout(250)
+      if (!await p.isVisible('#metaOv')) throw new Error('힘의 제단 창이 열리지 않음')
+      await p.locator('#metaItems .meta-upgrade').first().click()
+      await p.waitForTimeout(150)
+      const upgraded = await p.textContent('#metaItems').catch(() => '')
+      if (!upgraded?.includes('Lv.1/5')) throw new Error('제단 강화 단계가 갱신되지 않음')
+
+      await p.keyboard.press('Escape')
+      await p.waitForTimeout(180)
+      if (!await walkTo(p, 'merchant')) throw new Error('모험가 상점에 접근하지 못함')
+      await p.keyboard.press('KeyE')
+      await p.waitForTimeout(250)
+      if (!await p.isVisible('#metaOv')) throw new Error('모험가 상점 창이 열리지 않음')
+      const rare = p.locator('#metaItems .shop-item.rare:not(.sold)').first()
+      if (await rare.count() === 0) throw new Error('해금 가능한 희귀 무기가 없음')
+      await rare.click()
+      await p.waitForTimeout(150)
+    },
+    check: async (p) => {
+      const head = await p.textContent('#metaHead').catch(() => '')
+      const unlocked = await p.locator('#metaItems .shop-item.sold').count()
+      if (head !== '모험가 상점') return `상점 제목이 예상과 다름 ('${head}')`
+      return unlocked > 0 ? null : '무기 설계도가 해금 완료 상태로 갱신되지 않음'
+    },
+    async after(p) {
+      await p.keyboard.press('Escape')
+      await p.waitForTimeout(180)
+    },
+  },
+  {
     name: 'dungeon',
     what: '포탈로 던전 입장 — 방이 생성되고 적이 배치되는가',
     async run(p) {
@@ -177,6 +221,12 @@ const STEPS = [
       for (let i = 0; i < 8; i++) {
         await p.keyboard.press('KeyE')
         await p.waitForTimeout(300)
+        // 영구 무기 해금이 생긴 뒤에는 포탈이 출발 장비 선택을 먼저 연다.
+        // 기본 장비를 확정해 정상 플레이 경로 그대로 던전에 진입한다.
+        if (await p.locator('#loadoutOv.show').count()) {
+          await p.locator('#loadoutStart').click()
+          await p.waitForTimeout(300)
+        }
         if (await inDungeon(p)) break
       }
       await p.waitForTimeout(1400)

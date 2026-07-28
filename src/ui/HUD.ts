@@ -1,5 +1,6 @@
 import { Upgrade } from '../systems/Upgrades'
-import { WeaponDef } from '../systems/Weapons'
+import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
+import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 
 export interface MiniMapRoom {
   id: string
@@ -158,6 +159,26 @@ export class HUD {
             <button class="btn small" id="shopReroll">🔄 재고 리셋 (<span id="rerollPrice">25</span>🪙)</button>
             <button class="btn small alt" id="shopClose">나가기 (Esc)</button>
           </div>
+        </div>
+      </div>
+
+      <div class="overlay" id="metaOv">
+        <div class="shop-panel meta-panel">
+          <div class="shop-head" id="metaHead">힘의 제단</div>
+          <div class="shop-sub" id="metaSub"></div>
+          <div class="meta-resources" id="metaResources"></div>
+          <div class="shop-items meta-items" id="metaItems"></div>
+          <div class="shop-actions"><button class="btn small alt" id="metaClose">나가기 (Esc)</button></div>
+        </div>
+      </div>
+
+      <div class="overlay" id="loadoutOv">
+        <div class="shop-panel loadout-panel">
+          <div class="shop-head">출발 장비 선택</div>
+          <div class="shop-sub">해금한 총과 검을 장비한 뒤 던전으로 출발합니다.</div>
+          <div class="loadout-section"><div class="loadout-label">총</div><div class="shop-items meta-items" id="loadoutGuns"></div></div>
+          <div class="loadout-section"><div class="loadout-label">검</div><div class="shop-items meta-items" id="loadoutSwords"></div></div>
+          <div class="shop-actions"><button class="btn small alt" id="loadoutClose">나가기 (Esc)</button><button class="btn small" id="loadoutStart">장비하고 출발</button></div>
         </div>
       </div>
 
@@ -500,6 +521,95 @@ export class HUD {
     return this.q<HTMLDivElement>('#shopOv').classList.contains('show')
   }
 
+  showMetaAltar(
+    crystals: Record<CrystalKind, number>,
+    upgrades: MetaUpgradeView[],
+    onBuy: (id: MetaUpgradeView['id']) => void,
+    onClose: () => void,
+  ) {
+    this.q('#metaHead').textContent = '힘의 제단'
+    this.q('#metaSub').textContent = '결정으로 영구 능력을 강화합니다. 효과는 다음 런부터도 유지됩니다.'
+    this.q('#metaResources').innerHTML = this.resourceMarkup(crystals)
+    const box = this.q('#metaItems')
+    box.innerHTML = ''
+    upgrades.forEach((upgrade) => {
+      const maxed = upgrade.cost === null
+      const item = document.createElement('div')
+      item.className = `shop-item ${maxed || upgrade.affordable ? '' : 'poor'} meta-upgrade`
+      item.innerHTML = `<div class="si-icon">${upgrade.icon}</div><div class="si-name">${upgrade.name} <small>Lv.${upgrade.rank}/${upgrade.maxRank}</small></div><div class="si-desc">${upgrade.desc}</div><div class="si-price">${maxed ? '최대 단계' : this.costMarkup(upgrade.cost!)}</div>`
+      if (!maxed && upgrade.affordable) item.onclick = () => onBuy(upgrade.id)
+      box.appendChild(item)
+    })
+    const close = this.q<HTMLButtonElement>('#metaClose')
+    close.onclick = () => { close.blur(); onClose() }
+    this.q<HTMLDivElement>('#metaOv').classList.add('show')
+  }
+
+  showMetaShop(tokens: number, weapons: MetaWeaponView[], onBuy: (id: string) => void, onClose: () => void) {
+    this.q('#metaHead').textContent = '모험가 상점'
+    this.q('#metaSub').textContent = '증표로 무기 설계도를 해금합니다. 해금한 무기는 매 런 출발 전에 선택할 수 있습니다.'
+    this.q('#metaResources').innerHTML = `<span class="meta-resource token">✦ 모험가 증표 <b>${tokens}</b></span>`
+    const box = this.q('#metaItems')
+    box.innerHTML = ''
+    weapons.forEach((weapon) => {
+      const item = document.createElement('div')
+      const state = weapon.unlocked ? 'sold' : weapon.affordable ? '' : 'poor'
+      item.className = `shop-item ${weapon.def.rarity} ${state}`
+      item.innerHTML = `<div class="ctag">${weapon.def.kind === 'gun' ? '총' : '검'}</div><div class="si-icon">${weapon.def.icon}</div><div class="si-name">${weapon.def.name}</div><div class="si-desc">${weapon.def.desc}</div><div class="si-price">${weapon.unlocked ? '해금 완료' : `✦ ${weapon.price}`}</div>`
+      if (!weapon.unlocked && weapon.affordable) item.onclick = () => onBuy(weapon.def.id)
+      box.appendChild(item)
+    })
+    const close = this.q<HTMLButtonElement>('#metaClose')
+    close.onclick = () => { close.blur(); onClose() }
+    this.q<HTMLDivElement>('#metaOv').classList.add('show')
+  }
+
+  closeMeta() {
+    this.q<HTMLDivElement>('#metaOv').classList.remove('show')
+  }
+
+  showLoadout(
+    guns: GunDef[], swords: SwordDef[], selected: { gunId: string; swordId: string },
+    onStart: (gunId: string, swordId: string) => void, onClose: () => void,
+  ) {
+    let gunId = selected.gunId
+    let swordId = selected.swordId
+    const renderChoices = <T extends WeaponDef>(boxId: string, items: T[], chosen: string, choose: (id: string) => void) => {
+      const box = this.q(boxId)
+      box.innerHTML = ''
+      items.forEach((weapon) => {
+        const item = document.createElement('div')
+        item.className = `shop-item ${weapon.rarity}${weapon.id === chosen ? ' selected' : ''}`
+        item.innerHTML = `<div class="si-icon">${weapon.icon}</div><div class="si-name">${weapon.name}</div><div class="si-desc">${weapon.desc}</div>`
+        item.onclick = () => { choose(weapon.id); render() }
+        box.appendChild(item)
+      })
+    }
+    const render = () => {
+      renderChoices('#loadoutGuns', guns, gunId, (id) => { gunId = id })
+      renderChoices('#loadoutSwords', swords, swordId, (id) => { swordId = id })
+    }
+    render()
+    const start = this.q<HTMLButtonElement>('#loadoutStart')
+    start.onclick = () => { start.blur(); onStart(gunId, swordId) }
+    const close = this.q<HTMLButtonElement>('#loadoutClose')
+    close.onclick = () => { close.blur(); onClose() }
+    this.q<HTMLDivElement>('#loadoutOv').classList.add('show')
+  }
+
+  closeLoadout() {
+    this.q<HTMLDivElement>('#loadoutOv').classList.remove('show')
+  }
+
+  private resourceMarkup(crystals: Record<CrystalKind, number>) {
+    return `<span class="meta-resource faint">◇ 희미한 결정 <b>${crystals.faint}</b></span><span class="meta-resource decent">◆ 준수한 결정 <b>${crystals.decent}</b></span><span class="meta-resource strong">✦ 강력한 결정 <b>${crystals.strong}</b></span>`
+  }
+
+  private costMarkup(cost: Partial<Record<CrystalKind, number>>) {
+    const labels: Record<CrystalKind, string> = { faint: '◇', decent: '◆', strong: '✦' }
+    return (Object.keys(cost) as CrystalKind[]).map((kind) => `${labels[kind]} ${cost[kind]}`).join('  ')
+  }
+
   onStageClear(cb: () => void) {
     const btn = this.q('#clearBtn') as HTMLButtonElement
     btn.onclick = () => {
@@ -509,10 +619,10 @@ export class HUD {
     }
   }
 
-  showStageClear(stage: number, kills: number, gold: number, level: number) {
+  showStageClear(stage: number, kills: number, gold: number, level: number, reward?: { faint: number; decent: number; strong: number; tokens: number }) {
     this.q('#clearStats').innerHTML = `
       스테이지 <b>${stage}</b> 클리어! &nbsp;·&nbsp; 레벨 <b>${level}</b><br/>
-      처치 <b>${kills}</b> &nbsp;·&nbsp; 획득 골드 <b>🪙 ${gold}</b>`
+      처치 <b>${kills}</b> &nbsp;·&nbsp; 획득 골드 <b>🪙 ${gold}</b>${reward ? `<br/><span class="clear-meta">◇ ${reward.faint} &nbsp;◆ ${reward.decent} &nbsp;✦ ${reward.strong} &nbsp; 모험가 증표 ${reward.tokens}</span>` : ''}`
     this.q<HTMLDivElement>('#clearOv').classList.add('show')
   }
 
