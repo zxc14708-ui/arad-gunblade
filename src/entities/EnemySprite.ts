@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { CONFIG } from '../config'
 import type { EnemyKind } from './Enemy'
 import { noOutline } from '../rendering/toon'
 import { ASSET, cloneTex } from '../rendering/assets'
@@ -99,7 +100,7 @@ export class EnemySprite {
    * @param moving 이동 중인지
    * @param faceLeft 왼쪽을 보는지
    */
-  update(dt: number, moving: boolean, faceLeft: boolean, hitFlash: number, bobY: number) {
+  update(dt: number, moving: boolean, faceLeft: boolean, hitFlash: number, hitFlashCrit: boolean, bobY: number) {
     if (this.attackTimer > 0) this.attackTimer -= dt
     if (this.chargeTimer > 0) this.chargeTimer -= dt
 
@@ -129,8 +130,15 @@ export class EnemySprite {
 
     this.sprite.position.y = bobY
 
-    // 피격 시 흰색 번쩍
-    if (hitFlash > 0) this.mat.color.setRGB(2.4, 2.4, 2.4)
-    else this.mat.color.setRGB(1, 1, 1)
+    // 피격 시 번쩍 — 텍스처는 그대로 두고 SpriteMaterial.color 배율만 조작한다.
+    // 보스는 매 명중마다 번쩍이면 시야를 방해하므로 강도를 절반으로 낮춘다
+    // (지속시간은 Enemy.ts에서 이미 짧게 준다).
+    if (hitFlash > 0) {
+      const peak = CONFIG.effects.flashIntensity * (this.kind === 'boss' ? CONFIG.effects.flashBossIntensityMul : 1)
+      if (hitFlashCrit) this.mat.color.setRGB(peak, peak, peak * 0.3) // 치명타는 흰색 대신 노란색
+      else this.mat.color.setRGB(peak, peak, peak)
+    } else {
+      this.mat.color.setRGB(1, 1, 1)
+    }
   }
 }

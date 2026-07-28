@@ -140,6 +140,14 @@ export const CONFIG = {
     shakePlayerHit: 0.35,
     shakeBossSlam: 0.4,
     shakeBossCharge: 0.3,
+
+    // 피격 플래시: 적 스프라이트 색상 배율(1=원색, 클수록 밝게 번쩍)과 지속(초).
+    // 텍스처 교체 없이 SpriteMaterial.color만 곱해 구현 — 짧고 선명하게.
+    flashDuration: 0.06,
+    flashIntensity: 2.4,
+    // 보스는 매 명중마다 번쩍이면 시야를 방해하므로 지속·강도를 낮춘다.
+    flashBossDuration: 0.04,
+    flashBossIntensityMul: 0.5,
   },
 }
 

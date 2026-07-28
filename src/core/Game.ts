@@ -1060,7 +1060,7 @@ export class Game {
           const rdz = b.pos.z - b.spawnPos.z
           const rangeBonus = Math.hypot(rdx, rdz) >= CONFIG.combat.gunRangeBonusDist
           const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : b.damage
-          e.takeDamage(dmg)
+          e.takeDamage(dmg, 'ranged', b.crit)
           b.hitSet.add(e.id)
           this.audio.hit()
           this.triggerHitstop(b.crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
@@ -1116,7 +1116,7 @@ export class Game {
       if (diff > Math.PI) diff = Math.PI * 2 - diff
       if (diff <= arc / 2 + 0.15) {
         hitAny = true
-        const reflected = e.takeDamage(damage, 'melee')
+        const reflected = e.takeDamage(damage, 'melee', crit)
         e.knockback(pos.x, pos.z, knockback)
         this.audio.hit()
         this.triggerHitstop(crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)

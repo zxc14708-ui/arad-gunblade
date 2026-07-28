@@ -80,6 +80,7 @@ export class Enemy {
   shootTimer: number
   knockTimer = 0
   private hitFlash = 0
+  private hitFlashCrit = false
   private def: KindDef
   private bob = Math.random() * Math.PI * 2
   private sprite: EnemySprite
@@ -197,7 +198,7 @@ export class Enemy {
     const facing = this.kind === 'boss' && (this.bossState === 'chargeWarning' || this.bossState === 'charge')
       ? this.bossFacing
       : dir
-    this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, bobY)
+    this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, this.hitFlashCrit, bobY)
     if (this.eliteBarFill) this.eliteBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.hp / this.maxHp))
     if (this.shieldBarFill) {
       this.shieldBarFill.visible = this.shield > 0
@@ -337,7 +338,7 @@ export class Enemy {
     this.bossStaggerVulnerable = vulnerable
   }
 
-  takeDamage(amount: number, source: DamageSource = 'ranged') {
+  takeDamage(amount: number, source: DamageSource = 'ranged', crit = false) {
     let effective = this.kind === 'boss' && this.bossState === 'stagger' && this.bossStaggerVulnerable
       ? amount * BOSS_PATTERN.staggerDamageMultiplier
       : amount
@@ -348,7 +349,8 @@ export class Enemy {
       effective -= absorbed
     }
     this.hp -= effective
-    this.hitFlash = 0.12
+    this.hitFlash = this.kind === 'boss' ? CONFIG.effects.flashBossDuration : CONFIG.effects.flashDuration
+    this.hitFlashCrit = crit
     this.lastHitTimer = 0
     if (this.hp <= 0) this.alive = false
     return this.affix === 'thorns' && source === 'melee' ? amount * ELITE_AFFIX.thorns.reflectRatio : 0

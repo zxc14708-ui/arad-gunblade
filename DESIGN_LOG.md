@@ -184,6 +184,42 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 
 ## 변경 이력
 
+### 2026-07-28 — 피격 플래시 (타격감 개선 3단계)
+- **대상**: `src/config.ts`(`effects` 플래시 상수), `src/entities/EnemySprite.ts`
+  (`update` 시그니처·색상 계산), `src/entities/Enemy.ts`(`takeDamage`,
+  `hitFlashCrit`), `src/core/Game.ts`(`resolveBullets`/`resolveSlash`가
+  `crit`을 `takeDamage`로 전달)
+- **사실 확인**: 지시사항은 "피격 플래시가 없다"고 전제했지만, 실제로는
+  `EnemySprite.update()`에 색상만 조작하는 흰색 번쩍임이 이미 존재했다
+  (`hitFlash>0`이면 `mat.color.setRGB(2.4,2.4,2.4)`, 지속 0.12초, 치명타
+  구분·보스 감쇠 없음). 텍스처 교체 금지 요구사항과는 이미 일치하는
+  구현이었으므로 새로 만들지 않고 이 기존 메커니즘을 스펙대로 확장했다.
+- **결과**:
+  - `Enemy.takeDamage(amount, source, crit = false)`에 `crit` 인자를 추가.
+    `hitFlash` 지속시간을 보스는 `CONFIG.effects.flashBossDuration`(0.04),
+    그 외는 `flashDuration`(0.06)로 설정하고, `hitFlashCrit`에 `crit`을
+    저장한다.
+  - `EnemySprite.update()`가 `hitFlashCrit`을 추가로 받아, 밝기 배율
+    `peak = flashIntensity(2.4) × (보스면 flashBossIntensityMul(0.5), 아니면
+    1)`을 계산한다. 치명타면 `(peak, peak, peak×0.3)`으로 파란 채널만
+    낮춰 노란색, 아니면 `(peak, peak, peak)`로 흰색 — 스프라이트 텍스처는
+    건드리지 않고 `SpriteMaterial.color` 배율만 조작한다.
+  - `Game.resolveBullets()`(`b.crit`)와 `resolveSlash()`(`crit` 매개변수)가
+    실제 명중 시 `crit` 플래그를 `takeDamage`로 넘기도록 수정.
+  - 엘리트 접두사 체력바(`eliteBarFill`/`shieldBarFill`)는 몸체 스프라이트와
+    별개의 `THREE.Sprite`·별도 `SpriteMaterial`이라 몸체 색상 배율과
+    간섭하지 않음을 코드로 확인(`Enemy.createEliteMarker`).
+  - dev 서버 + `window.__game` 직접 조작으로 검증: 일반 명중 → 지속
+    0.06·색상 (2.4,2.4,2.4); 치명타 → (2.4,2.4,0.72); 보스 일반 명중 →
+    지속 0.04·색상 (1.2,1.2,1.2); 보스 치명타 → (1.2,1.2,0.36); 플래시
+    시간 경과 후 (1,1,1)로 복귀; `resolveBullets` 실전 경로에서 치명타
+    총알이 `hitFlashCrit=true`를 정확히 전달함을 확인.
+  - `npx tsc --noEmit` 통과, `npm run qc` 15단계 전부 통과. `contact.png`
+    및 `13-elite-ward-thorns-zoom.png` 확대본 육안 확인 — 엘리트 보호막
+    체력바가 몸체 플래시와 겹치거나 색이 섞이지 않음, 결함 없음.
+- **남은 문제**: 없음 — 타격감 개선(히트스톱/화면 흔들림/피격 플래시)
+  3단계를 모두 마쳤다.
+
 ### 2026-07-28 — 화면 흔들림 (타격감 개선 2단계)
 - **대상**: `src/config.ts`(`effects` 흔들림 상수), `src/systems/Effects.ts`
   (`shake`, `setShakeEnabled`, `update`), `src/core/Game.ts`(각 피해 판정
