@@ -97,7 +97,14 @@ export class CharacterSprite {
           ctx.imageSmoothingEnabled = false
           ctx.drawImage(baseImg, 0, 0)
           ctx.drawImage(swordImg, 0, 0)
-          ctx.drawImage(gunImg, 0, 0)
+          // 총 공격 프레임(19~26)은 gunblader_gun_m1911.png 자체가 손/몸 대비 과대
+          // 스케일에 위치도 안 맞아(그립 중심이 손 위치에서 최대 20px 이상 어긋남),
+          // 그 구간만 프레임별로 축소·재배치해서 합성한다. 나머지(0~18, 거치 자세)는
+          // 문제 없어 원본 그대로 그린다.
+          ctx.drawImage(gunImg, 0, 0, 19 * ART_CELL, ART_CELL_H, 0, 0, 19 * ART_CELL, ART_CELL_H)
+          for (const [frameStr, off] of Object.entries(GUN_SHOOT_FIX)) {
+            drawFixedGunCell(ctx, gunImg, Number(frameStr) * ART_CELL, off.dx, off.dy)
+          }
           const loaded = makeTexture(cv)
           this.spec = ART_SPEC
           loaded.repeat.set(1 / this.spec.n, 1)
@@ -200,6 +207,44 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     img.onerror = reject
     img.src = url
   })
+}
+
+const ART_CELL = 112
+const ART_CELL_H = 64
+
+/**
+ * gunblader_gun_m1911.png의 총 공격 프레임(19~26) 보정값.
+ *
+ * 원본 그립 중심은 프레임마다 대략 (60, 39) 근방에 있는데(측정치), 몸통 쪽
+ * 손 위치는 프레임마다 크게 달라(조준 동작이라 팔이 넓게 움직임) — 프레임별로
+ * dx/dy를 따로 재서 grip 기준점을 실제 손 위치로 옮긴다. 축소(0.55배)는
+ * 손 대비 총이 과대했던 것(측정: 손+총 높이가 전신 높이의 40%대)을 줄인 것.
+ */
+const GUN_SHOOT_PIVOT = { x: 60, y: 39 }
+const GUN_SHOOT_SCALE = 0.55
+const GUN_SHOOT_FIX: Record<number, { dx: number; dy: number }> = {
+  19: { dx: -5, dy: -22 },
+  20: { dx: 15, dy: -20 },
+  21: { dx: 22, dy: -21 },
+  22: { dx: 6, dy: -20 },
+  23: { dx: 3, dy: -22 },
+  24: { dx: -22, dy: -20 },
+  25: { dx: 5, dy: -16 },
+  26: { dx: 5, dy: -18 },
+}
+
+/** gunImg의 frameX 셀 하나를 그립 기준점 축소+이동해서 ctx의 같은 셀 위치에 그린다. */
+function drawFixedGunCell(ctx: CanvasRenderingContext2D, gunImg: HTMLImageElement, frameX: number, dx: number, dy: number) {
+  const tmp = document.createElement('canvas')
+  tmp.width = ART_CELL
+  tmp.height = ART_CELL_H
+  const t = tmp.getContext('2d')!
+  t.imageSmoothingEnabled = true
+  const { x: px, y: py } = GUN_SHOOT_PIVOT
+  t.translate(px - px * GUN_SHOOT_SCALE + dx, py - py * GUN_SHOOT_SCALE + dy)
+  t.scale(GUN_SHOOT_SCALE, GUN_SHOOT_SCALE)
+  t.drawImage(gunImg, frameX, 0, ART_CELL, ART_CELL_H, 0, 0, ART_CELL, ART_CELL_H)
+  ctx.drawImage(tmp, frameX, 0)
 }
 
 function makeTexture(canvas: HTMLCanvasElement): THREE.Texture {
