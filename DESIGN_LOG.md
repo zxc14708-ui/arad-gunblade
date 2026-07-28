@@ -198,6 +198,32 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 
 ## 변경 이력
 
+### 2026-07-28 — 검/총 데미지 격차 축소 (B4 1단계)
+- **대상**: `src/systems/Weapons.ts`(damage만)
+- **의도**: 클로드(기획) 지시사항 검증 후 반영. 단순 동률화가 아니라 역할
+  분리(멀면 총, 붙으면 검)를 위한 사전 작업 — 검 damage ×0.8, 총 damage
+  ×1.25(반올림), cooldown/range/arc/knockback/lunge/magSize/reloadTime은
+  그대로 뒀다.
+- **결과**: 장전시간 포함 지속 DPS(총 = magSize×damage÷(magSize×cooldown+
+  reloadTime), 검 = damage÷cooldown)를 재계산:
+
+  | 무기 | 이전 DPS | 이후 DPS | | 무기 | 이전 DPS | 이후 DPS |
+  |---|---|---|---|---|---|---|
+  | m1911 | 38.2 | 47.7 | | katana | 81.0 | 64.3 |
+  | smg | 50.0 | 66.7 | | daggers | 83.3 | 66.7 |
+  | shotgun | 39.6 | 50.9 | | rapier | 117.6 | 94.1 |
+  | rifle | 45.5 | 56.8 | | greatsword | 92.3 | 74.4 |
+  | magnum | 46.4 | 58.6 | | warhammer | 96.0 | 77.0 |
+  | crossbow | 37.4 | 47.7 | | glaive | 88.0 | 70.0 |
+  | autocannon | 83.0 | 105.7 | | moonblade | 145.0 | 115.0 |
+
+  총 DPS 범위 38~83 → 48~106, 검 DPS 범위 81~145 → 64~115. 7종 평균으로 보면
+  검/총 비율이 약 2.0배 → 약 1.29배로 줄었다 — 완전 동률은 아니고 근접
+  리스크 보상으로 검이 더 높게 남는 게 의도된 결과(지시사항 그대로).
+  `npm run qc` 15단계 통과(수치만 바뀐 변경이라 시각적 영향 없음).
+- **남은 문제**: 이 수치 조정만으로는 역할 분리가 완성되지 않는다 —
+  B4 2·3·4단계(총 거리 보너스, 검 스윙 커밋, 발도장전 기본 승격)가 이어진다.
+
 ### 2026-07-28 — 분수 유료화 (B5 3단계)
 - **대상**: `src/core/Game.ts`(`useFountain`/`fountainLabel`) ·
   `src/systems/RunState.ts`(`fountainFreeUsed`/`fountainPrice`) ·
