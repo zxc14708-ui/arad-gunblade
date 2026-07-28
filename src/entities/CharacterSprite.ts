@@ -385,17 +385,20 @@ function drawFrame(x: CanvasRenderingContext2D, mode: Mode, leg: number, gunId: 
   R(bx - 1, hy, 2, 1, C.out)
 
   // ── 총 팔 (왼팔) + 총 — 걷기 시 다리 반대 위상으로 스윙 ──
+  // 총은 팔보다 먼저 그린다: 손/장갑이 그립 부분을 덮어써 자연스럽게 손에 쥔 것처럼
+  // 보이고, 석궁 활대가 팔과 겹치는 구간도 팔에 가려진다(수정 6).
   if (mode === 'shoot1' || mode === 'shoot2') {
+    drawGun(x, shootAnchor(bx), gunId, mode === 'shoot1')
     R(bx + 2, 18, 9, 3, C.coat) // 팔 전방으로 쭉
     R(bx + 10, 18, 3, 3, C.glove)
-    drawGun(x, bx + 12, 18, gunId, mode === 'shoot1')
   } else if (mode === 'slash') {
+    drawGun(x, slashAnchor(bx), gunId, false)
     R(bx - 7, 18, 5, 3, C.coat) // 베기 중 뒤로 젖힌 팔
   } else {
     const armSwing = -leg * 2 // 팔은 다리와 반대로
+    drawGun(x, idleAnchor(bx, armSwing), gunId, false)
     R(bx - 8 + armSwing, 17, 3, 9, C.coat)
     R(bx - 8 + armSwing, 25, 3, 3, C.glove)
-    drawGunSmall(x, bx - 8 + armSwing, 27, gunId)
   }
 
   // ── 베기 검 (몸 앞, 스윙 궤적 포함) ──
@@ -494,71 +497,116 @@ function drawSword(x: CanvasRenderingContext2D, hx: number, hy: number, mode: 's
   }
 }
 
-/** 총(전방 발사 자세): 손 위치에서 오른쪽으로. flash=총구 화염 */
-function drawGun(x: CanvasRenderingContext2D, gx: number, gy: number, id: string, flash: boolean) {
+/**
+ * 손 앵커: 총이 그려질 기준점(그립 위치) + 방향.
+ * angle 0 = 로컬 +x(=총구 방향)가 캔버스 +x(오른쪽)와 일치, PI/2 = 아래쪽.
+ * 대기/걷기/베기가 서로 다른 그림이 아니라 같은 drawGun을 다른 각도로 회전시켜
+ * 재사용하도록 만든 것이 이 앵커의 목적이다(수정 1·3).
+ */
+type HandAnchor = { x: number; y: number; angle: number }
+
+/** 그립~총구 길이 — 상체 폭(코트 몸통 14~18px) 대비 과했던 걸 축소(수정 4) */
+const GUN_LEN: Record<string, number> = {
+  m1911: 6,
+  smg: 7,
+  shotgun: 10,
+  rifle: 11,
+  magnum: 8,
+  crossbow: 7,
+  autocannon: 9,
+}
+
+/** 총구 화염이 팁에서 로컬 +x로 더 뻗는 폭 (R(tip+2,...,3,...) 까지 = 5) */
+const FLASH_REACH = 5
+
+function gunLen(id: string): number {
+  return GUN_LEN[id] ?? GUN_LEN.m1911
+}
+
+/**
+ * 발사 자세 앵커. 총구+화염을 포함한 끝점이 프레임 폭(FW)을 넘지 않도록
+ * 무기별 실제 길이에서 계산해 x를 왼쪽으로 보정한다(수정 5) — 하드코딩 상수 없음.
+ * shoot1/shoot2에서 같은 위치를 쓰도록 항상 화염 포함 최대 reach로 계산한다
+ * (프레임마다 위치가 흔들리면 "같은 총, 자세만 바뀜"이 깨진다).
+ */
+function shootAnchor(bx: number): HandAnchor {
+  return { x: bx + 12, y: 18, angle: 0 }
+}
+
+function clampShootX(x: number, id: string): number {
+  const maxReach = gunLen(id) + FLASH_REACH
+  return Math.min(x, FW - maxReach - 1)
+}
+
+/** 대기/걷기 앵커 — 몸 왼쪽 아래로 내린 손, 총구가 아래를 향함 */
+function idleAnchor(bx: number, armSwing: number): HandAnchor {
+  return { x: bx - 8 + armSwing, y: 27, angle: Math.PI / 2 }
+}
+
+/** 베기 중 앵커 — 총을 든 팔을 뒤로 젖힌 자세, 총구는 계속 아래 */
+function slashAnchor(bx: number): HandAnchor {
+  return { x: bx - 9, y: 20, angle: Math.PI / 2 }
+}
+
+/**
+ * 총 하나로 통일된 렌더러. 각 무기는 그립(로컬 원점)에서 총구(+x) 방향으로
+ * 그려지며, anchor.x/y/angle로 위치·회전만 바뀐다 — idle/walk/shoot/slash가
+ * 서로 다른 그림이 아니라 같은 그립 기준 그림의 자세 차이가 되도록 한다(수정 2·3).
+ */
+function drawGun(x: CanvasRenderingContext2D, anchor: HandAnchor, id: string, flash: boolean) {
   const R = (px: number, py: number, w: number, h: number, c: string) => {
     x.fillStyle = c
-    x.fillRect(Math.round(px), Math.round(py), w, h)
+    x.fillRect(Math.round(px), Math.round(py), Math.round(w), Math.round(h))
   }
-  let tip = gx + 7
+  const anchorX = anchor.angle === 0 ? clampShootX(anchor.x, id) : anchor.x
+  x.save()
+  x.translate(Math.round(anchorX), Math.round(anchor.y))
+  x.rotate(anchor.angle)
+
+  let tip = gunLen(id)
   switch (id) {
     case 'smg':
-      R(gx, gy, 8, 3, C.metal)
-      R(gx + 2, gy + 3, 2, 4, C.metal) // 탄창
-      tip = gx + 8
+      R(0, -1, 7, 3, C.metal)
+      R(2, 2, 2, 4, C.metal) // 탄창
       break
     case 'shotgun':
-      R(gx - 2, gy, 3, 3, C.wood) // 개머리
-      R(gx + 1, gy, 11, 2, C.metal)
-      R(gx + 3, gy + 2, 4, 2, C.wood) // 펌프
-      tip = gx + 12
+      R(-2, -1, 3, 3, C.wood) // 개머리
+      R(1, -1, 9, 2, C.metal)
+      R(3, 1, 4, 2, C.wood) // 펌프
       break
     case 'rifle':
-      R(gx - 1, gy, 14, 2, C.metal)
-      R(gx + 3, gy - 2, 3, 2, C.metal) // 스코프
-      tip = gx + 13
+      R(-1, -1, 12, 2, C.metal)
+      R(3, -3, 3, 2, C.metal) // 스코프
       break
     case 'magnum':
-      R(gx, gy, 9, 2, C.silver)
-      R(gx + 1, gy + 1, 3, 3, C.metal) // 실린더
-      tip = gx + 9
+      R(0, -1, 8, 2, C.silver)
+      R(1, 0, 3, 3, C.metal) // 실린더
       break
     case 'crossbow':
-      R(gx, gy, 8, 2, C.wood)
-      R(gx + 6, gy - 4, 2, 10, C.metal) // 활대
+      R(0, -1, 7, 2, C.wood)
+      R(5, -3, 2, 6, C.metal) // 활대 — 세로 10→6px로 축소(수정 6)
       x.strokeStyle = '#ddd'
       x.lineWidth = 1
       x.beginPath()
-      x.moveTo(gx + 7, gy - 4)
-      x.lineTo(gx + 1, gy + 1)
-      x.lineTo(gx + 7, gy + 6)
+      x.moveTo(6, -3)
+      x.lineTo(1, 0)
+      x.lineTo(6, 3)
       x.stroke()
-      tip = gx + 8
       break
     case 'autocannon':
-      R(gx, gy - 1, 10, 2, C.metal)
-      R(gx, gy + 1, 10, 2, C.metal)
-      R(gx - 1, gy - 2, 3, 6, '#565a66')
-      tip = gx + 10
+      R(0, -2, 9, 2, C.metal)
+      R(0, 0, 9, 2, C.metal)
+      R(-1, -3, 3, 6, '#565a66')
       break
     default: // m1911
-      R(gx, gy, 6, 3, C.metal)
-      R(gx + 1, gy + 3, 2, 3, C.wood)
-      tip = gx + 6
+      R(0, -1, 6, 3, C.metal)
+      R(1, 2, 2, 3, C.wood)
   }
   if (flash) {
-    R(tip, gy - 1, 3, 3, '#fff6c0')
-    R(tip + 2, gy, 3, 1, '#ffd020')
-    R(tip + 1, gy - 3, 1, 2, '#ffd020')
-    R(tip + 1, gy + 2, 1, 2, '#ffd020')
+    R(tip, -2, 3, 3, '#fff6c0')
+    R(tip + 2, -1, 3, 1, '#ffd020')
+    R(tip + 1, -4, 1, 2, '#ffd020')
+    R(tip + 1, 1, 1, 2, '#ffd020')
   }
-}
-
-/** 대기/걷기 시 내려 든 총 (간단 실루엣) */
-function drawGunSmall(x: CanvasRenderingContext2D, gx: number, gy: number, id: string) {
-  x.fillStyle = C.metal
-  const big = id === 'shotgun' || id === 'rifle' || id === 'autocannon' || id === 'crossbow'
-  x.fillRect(gx, gy, 3, big ? 8 : 5)
-  if (id === 'magnum') x.fillStyle = C.silver
-  x.fillRect(gx - 1, gy, 2, 2)
+  x.restore()
 }

@@ -169,6 +169,36 @@
 
 ## 변경 이력
 
+### 2026-07-28 — 절차 생성 폴백 시트: 총 렌더링을 손 앵커 기반으로 재작성
+- **대상**: `src/entities/CharacterSprite.ts` (`drawFrame`/`drawGun`/`drawGunSmall` →
+  `HandAnchor`/`drawGun` 통합), `DESIGN_LOG.md`
+- **의도**: 클로드(기획)가 작성한 지시사항 검증 후 반영. 절차 생성 폴백 시트(아트 시트
+  로드 전/실패 시 노출)에서 총 렌더링에 4가지 문제가 있었다 — (1) 발사 자세에서 저격소총/
+  산탄총/오토캐논의 총구 화염이 프레임(FW=48) 밖으로 잘림, (2) 대기·걷기는
+  `drawGunSmall`(범용 실루엣), 발사는 `drawGun`(무기별 상세 그림)으로 서로 다른 그림을 써서
+  모드 전환 시 총이 다른 모양으로 순간 바뀜 + 몸 반대편으로 위치가 튐, (3) 석궁 활대(세로
+  10px)가 팔 두께(3px)를 관통, (4) 총 길이가 상체 폭 대비 과함.
+- **결과**: 무기별 그립(로컬 원점)~총구(+x) 좌표로 그리는 `drawGun` 하나로 통일하고,
+  모드별 `HandAnchor{x,y,angle}`(idle/walk: 아래로 내린 손, angle=90° · shoot: 앞으로
+  뻗은 손, angle=0° · slash: 뒤로 젖힌 손, angle=90°)로 위치·회전만 바꿔 재사용한다.
+  `drawGunSmall` 삭제. 발사 자세는 총구+화염 reach(`GUN_LEN[id] + 5`)를 프레임 폭에서
+  역산해 초과분만큼 앵커 x를 왼쪽으로 자동 보정(하드코딩 없음) — shoot1/shoot2 둘 다
+  화염 유무와 무관하게 항상 최대 reach 기준으로 계산해 두 프레임 사이에 총이 흔들리지
+  않게 했다. 총 길이는 지시사항대로 축소(rifle 14→11, shotgun 12→10, autocannon 10→9,
+  magnum 9→8, smg 8→7, crossbow 8→7, m1911 6 유지). 석궁 활대는 세로 10→6px로 줄이고,
+  모든 무기에서 총을 팔보다 먼저 그려(팔·장갑이 그립 부분을 덮음) 활대-팔 겹침 문제를
+  z-order로 해결. 지시사항 검증 중 발견한 추가 사항: `slash` 모드는 원래 총이 아예
+  안 그려졌는데(양손이 검에 쏠린 자세), 지시사항의 앵커 표에 slash 항목이 있어 이번에
+  같이 채웠다. 7개 총(m1911/smg/shotgun/rifle/magnum/crossbow/autocannon) 전부
+  idle/walk×4/windup/slash/shoot1/shoot2 9프레임을 Playwright로 렌더링해 개별 확인 —
+  전 무기에서 프레임 밖으로 안 나가고, 무기별 실루엣이 자세 전환에도 유지됨.
+  `npm run qc` 15단계 통과(아트 시트 사용 경로는 이 변경과 무관해 영향 없음).
+- **되돌림**: 지시사항은 `HandAnchor`에 `facing: 1 | -1` 필드를 요구했으나, "아래 향함"과
+  "앞 향함"처럼 각도 자체가 달라지는 요구를 boolean 하나로는 표현할 수 없어 `angle:
+  number`(라디안)로 대체했다 — 캔버스 `rotate()`로 같은 로컬 좌표 그림을 재사용한다는
+  핵심 의도는 그대로 satisfy한다.
+- **남은 문제**: 없음.
+
 ### 2026-07-27 — 캐릭터 아트 base+무기 레이어 교체, FX 시트 갱신
 - **대상**: `src/entities/CharacterSprite.ts` · `src/rendering/assets.ts` ·
   `src/systems/Effects.ts` · `AGENTS.md` · `public/gunblader_base.png`(신규) ·
