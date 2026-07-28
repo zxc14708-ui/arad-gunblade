@@ -141,6 +141,7 @@ export class Game {
       else if (kind === 'music') this.audio.setMusicVolume(v)
       else this.audio.setSfxVolume(v)
     })
+    this.hud.onShakeToggle((on) => this.effects.setShakeEnabled(on))
     this.hud.onShop(
       (i) => this.buyShopItem(i),
       () => this.rerollShop(),
@@ -727,6 +728,7 @@ export class Game {
           sword: this.player.sword.name,
           swordIcon: this.player.sword.icon,
         },
+        this.effects.shakeIsEnabled,
       )
     }
   }
@@ -909,6 +911,7 @@ export class Game {
           e.contactTimer = CONFIG.enemy.contactCooldown
           this.audio.hurt()
           this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
+          this.effects.shake(e.isBossCharging ? CONFIG.effects.shakeBossCharge : CONFIG.effects.shakePlayerHit)
         }
         if (e.isBossCharging) this.pushPlayerAway(e.pos.x, e.pos.z, e.radius + CONFIG.player.radius)
       }
@@ -956,6 +959,7 @@ export class Game {
     if (this.player.takeDamage(enemy.damage * action.damageMultiplier)) {
       this.audio.hurt()
       this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
+      this.effects.shake(CONFIG.effects.shakeBossSlam)
     }
     this.pushPlayerAway(action.position.x, action.position.z, action.radius + CONFIG.player.radius)
   }
@@ -1060,6 +1064,7 @@ export class Game {
           b.hitSet.add(e.id)
           this.audio.hit()
           this.triggerHitstop(b.crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
+          this.effects.shake(b.crit ? CONFIG.effects.shakeCrit : CONFIG.effects.shakeGunHit)
           this.applyLifesteal(dmg)
           this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, b.crit, rangeBonus)
@@ -1083,6 +1088,7 @@ export class Game {
         if (this.player.takeDamage(b.damage)) {
           this.audio.hurt()
           this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
+          this.effects.shake(CONFIG.effects.shakePlayerHit)
         }
         this.projectiles.removeEnemyBullet(i)
       }
@@ -1114,12 +1120,14 @@ export class Game {
         e.knockback(pos.x, pos.z, knockback)
         this.audio.hit()
         this.triggerHitstop(crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
+        this.effects.shake(crit ? CONFIG.effects.shakeCrit : CONFIG.effects.shakeSwordHit)
         this.applyLifesteal(damage)
         this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
         this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), damage, crit)
         if (reflected > 0 && this.player.takeDamage(reflected)) {
           this.audio.hurt()
           this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
+          this.effects.shake(CONFIG.effects.shakePlayerHit)
         }
       }
     }
@@ -1133,6 +1141,7 @@ export class Game {
 
   private killEnemy(e: Enemy) {
     this.triggerHitstop(e.kind === 'boss' ? CONFIG.effects.hitstopBossKill : CONFIG.effects.hitstopKill)
+    this.effects.shake(CONFIG.effects.shakeKill)
     this.scene.remove(e.group)
     this.kills++
     const death = enemyDeathArt(e.kind)
@@ -1152,6 +1161,7 @@ export class Game {
       if (distance <= ELITE_AFFIX.volatile.radius && this.player.takeDamage(e.damage * ELITE_AFFIX.volatile.damageMultiplier)) {
         this.audio.hurt()
         this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
+        this.effects.shake(CONFIG.effects.shakePlayerHit)
       }
     }
 

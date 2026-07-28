@@ -486,6 +486,24 @@ canvas.pixelated {
   font-size: 13px;
   color: var(--gold);
 }
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.toggle-row label {
+  flex: 1;
+  font-size: 14px;
+  color: #ddd;
+  cursor: pointer;
+}
+.toggle-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
 .traits {
   display: flex;
   flex-direction: column;

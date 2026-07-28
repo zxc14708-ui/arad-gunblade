@@ -184,6 +184,49 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 
 ## 변경 이력
 
+### 2026-07-28 — 화면 흔들림 (타격감 개선 2단계)
+- **대상**: `src/config.ts`(`effects` 흔들림 상수), `src/systems/Effects.ts`
+  (`shake`, `setShakeEnabled`, `update`), `src/core/Game.ts`(각 피해 판정
+  지점), `src/ui/HUD.ts`·`src/style.css`(설정창 토글)
+- **의도**: 타격/피격 종류별로 카메라를 짧게 흔들어 임팩트를 강조한다.
+  단, 3D 멀미에 민감한 사용자를 위해 설정에서 완전히 끌 수 있어야 한다.
+- **결과**:
+  - `Effects.shake(intensity, duration = CONFIG.effects.shakeDuration)`가
+    누적 강도(`shakeAmp`)를 `Math.min(CONFIG.effects.shakeMax, shakeAmp +
+    intensity)`로 합산(상한 0.6)하고, `update()`에서 매 프레임
+    `shakeAmp *= exp(-decayRate·dt)`로 지수 감쇠시킨다 — `decayRate`는
+    `duration`초 뒤 5%만 남도록 역산해, 시작이 강하고 빠르게 잦아드는 모양이
+    된다. `Game.ts`가 이미 이번 프레임 카메라 위치를 정한 뒤(`loop()`의 lerp
+    직후) 호출되는 `effects.update()` 안에서 `camera.position.x/z`에
+    무작위 오프셋을 더하기만 하므로 카메라 기준 로직 자체는 건드리지 않는다.
+  - 트리거·강도: 검 명중 0.08 / 총 명중 0.03 / 치명타 0.15(무기 종류 무관,
+    명중 강도 대신 적용) / 처치 0.12 / 플레이어 피격(일반) 0.35 / 보스 슬램
+    0.4 / 보스 돌진 충돌 0.3(`e.isBossCharging`일 때만 — 나머지 접촉 피해는
+    일반 피격 0.35). `resolveBullets`·`resolveSlash`·`killEnemy`·
+    `resolveEnemyBullets`·`resolveEnemyAction`(보스 슬램 액션)·적 접촉
+    판정·가시 반사·변덕(volatile) 처치 폭발까지, 플레이어가 피해를 받거나
+    입히는 모든 지점에 대응하는 흔들림을 걸었다.
+  - 설정창에 "🎬 화면 효과 → 화면 흔들림" 체크박스를 추가했다. 끄면
+    `shakeAmp`를 즉시 0으로 비우고 이후 `shake()` 호출을 전부 무시한다.
+    `localStorage`(`arad_settings`)에 저장해 새로고침 후에도 유지된다
+    (기존 `AudioManager`의 음량 저장 패턴을 그대로 따름).
+  - 구현 중 발견한 잠재 버그를 미리 막음: 설정창이 열려 게임이 일시정지되면
+    `effects.update(0, ...)`처럼 `dt=0`으로 호출되는데, 이때도 감쇠 없이
+    매 프레임 새 무작위 오프셋만 계속 더해지면 정지 화면이 끝없이
+    떨리게 된다. `shake()` 적용 블록에 `dt > 0` 조건을 추가해 방지했다.
+  - dev 서버 + `window.__game` 직접 조작으로 검증: 강도 합산(0.08+0.15=0.23)과
+    상한(1.0 요청 시 0.6로 캡) 확인; `shakeDecayRate`를 duration=0.3 기준으로
+    설정 후 30프레임(≈0.48s) 경과시키자 0.3 → 0.0025로 감쇠(단조 감소) 확인;
+    토글 off 시 기존 amp 즉시 0 및 이후 `shake()` 무시, on 재전환 후 정상
+    동작 확인; `localStorage` 저장값이 토글 상태와 일치함을 확인; `dt=0`으로
+    `update()` 호출 시 `shakeAmp`가 변하지 않음(끝없는 떨림 없음) 확인;
+    `resolveBullets` 실전 경로로 일반 총 명중 0.03·치명타 총 명중 0.15가
+    정확히 적용됨을 확인.
+  - `npx tsc --noEmit` 통과, `npm run qc` 15단계 전부 통과·`contact.png`와
+    `07-settings.png` 확대본 육안 확인 — 새 토글 행이 설정 패널 안에 정상
+    배치되고 잘림 없음, 결함 없음.
+- **남은 문제**: 피격 플래시(3단계)가 이어진다.
+
 ### 2026-07-28 — 히트스톱 (타격감 개선 1단계)
 - **대상**: `src/config.ts`(`effects` 상수), `src/core/Game.ts`(`triggerHitstop`,
   `loop`, `resolveBullets`, `resolveSlash`, `killEnemy`)

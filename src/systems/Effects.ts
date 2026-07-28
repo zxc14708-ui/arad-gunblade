@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { COLORS } from '../config'
+import { CONFIG, COLORS } from '../config'
 import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
 
@@ -43,9 +43,46 @@ export class Effects {
   private fx: { sp: THREE.Sprite; kind: FxKind; time: number; frames: THREE.Texture[]; fps: number }[] = []
   private layer: HTMLDivElement
 
+  // 화면 흔들림: 누적 강도(shakeAmp)를 프레임마다 지수적으로 감쇠시킨다.
+  private shakeAmp = 0
+  private shakeDecayRate = 8
+  private shakeEnabled = true
+
   constructor(scene: THREE.Scene, uiLayer: HTMLDivElement) {
     this.scene = scene
     this.layer = uiLayer
+    try {
+      const s = JSON.parse(localStorage.getItem('arad_settings') || '{}')
+      if (typeof s.shakeEnabled === 'boolean') this.shakeEnabled = s.shakeEnabled
+    } catch {
+      /* 무시 */
+    }
+  }
+
+  get shakeIsEnabled() {
+    return this.shakeEnabled
+  }
+
+  /** 설정창 토글 — 3D 멀미에 민감한 사용자를 위해 완전히 끌 수 있다. */
+  setShakeEnabled(on: boolean) {
+    this.shakeEnabled = on
+    if (!on) this.shakeAmp = 0
+    try {
+      localStorage.setItem('arad_settings', JSON.stringify({ shakeEnabled: on }))
+    } catch {
+      /* 무시 */
+    }
+  }
+
+  /**
+   * 화면 흔들림 요청 — 강도는 겹치면 합산하되 상한(CONFIG.effects.shakeMax)을 둔다.
+   * 지속시간은 감쇠 속도를 결정한다(짧을수록 빨리 잦아듦).
+   */
+  shake(intensity: number, duration = CONFIG.effects.shakeDuration) {
+    if (!this.shakeEnabled) return
+    this.shakeAmp = Math.min(CONFIG.effects.shakeMax, this.shakeAmp + intensity)
+    // duration 초 뒤 5% 남도록 지수 감쇠율을 정한다 — 시작이 강하고 빠르게 잦아든다.
+    this.shakeDecayRate = -Math.log(0.05) / duration
   }
 
   /** 적 사망 산화: 흰 섬광 → 주황 틴트로 주저앉으며 소멸 */
@@ -162,6 +199,15 @@ export class Effects {
   }
 
   update(dt: number, camera: THREE.Camera, canvasRect: DOMRect) {
+    // 화면 흔들림 — Game이 이번 프레임 카메라 위치를 이미 정한 뒤이므로, 그 위에
+    // 오프셋을 더하기만 한다(카메라 기준 위치 자체는 건드리지 않는다).
+    if (dt > 0 && this.shakeAmp > 0.0005) {
+      camera.position.x += (Math.random() * 2 - 1) * this.shakeAmp
+      camera.position.z += (Math.random() * 2 - 1) * this.shakeAmp
+      this.shakeAmp *= Math.exp(-this.shakeDecayRate * dt)
+      if (this.shakeAmp < 0.0005) this.shakeAmp = 0
+    }
+
     // 파티클
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i]

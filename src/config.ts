@@ -128,6 +128,18 @@ export const CONFIG = {
     hitstopCrit: 0.07,
     hitstopKill: 0.1,
     hitstopBossKill: 0.35,
+
+    // 화면 흔들림: 강도(카메라 오프셋 크기)와 지속(초, 지수 감쇠 — 시작이 강하고
+    // 빠르게 잦아든다). shakeMax는 여러 흔들림이 겹칠 때의 합산 상한.
+    shakeDuration: 0.3,
+    shakeMax: 0.6,
+    shakeSwordHit: 0.08,
+    shakeGunHit: 0.03,
+    shakeCrit: 0.15,
+    shakeKill: 0.12,
+    shakePlayerHit: 0.35,
+    shakeBossSlam: 0.4,
+    shakeBossCharge: 0.3,
   },
 }
 

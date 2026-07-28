@@ -39,6 +39,7 @@ export class HUD {
   private lastAmmo = -1
   private lastMag = -1
   private volCb: ((kind: 'master' | 'music' | 'sfx', v: number) => void) | null = null
+  private shakeCb: ((on: boolean) => void) | null = null
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div')
@@ -132,6 +133,8 @@ export class HUD {
           <div class="slider-row"><label>전체</label><input type="range" id="volMaster" min="0" max="100" value="85"/><span class="slval" id="volMasterV">85%</span></div>
           <div class="slider-row"><label>배경음</label><input type="range" id="volMusic" min="0" max="100" value="70"/><span class="slval" id="volMusicV">70%</span></div>
           <div class="slider-row"><label>효과음</label><input type="range" id="volSfx" min="0" max="100" value="85"/><span class="slval" id="volSfxV">85%</span></div>
+          <div class="settings-sec">🎬 화면 효과</div>
+          <div class="toggle-row"><label for="shakeToggle">화면 흔들림</label><input type="checkbox" id="shakeToggle" checked/></div>
           <div class="settings-sec">🗡️ 장착 무기</div>
           <div class="equipped" id="equipped"></div>
           <div class="settings-sec">✨ 획득 특성 <span class="traits-count" id="traitsCount"></span></div>
@@ -221,10 +224,17 @@ export class HUD {
     wire('#volSfx', '#volSfxV', 'sfx')
   }
 
+  onShakeToggle(cb: (on: boolean) => void) {
+    this.shakeCb = cb
+    const el = this.q('#shakeToggle') as HTMLInputElement
+    el.onchange = () => cb(el.checked)
+  }
+
   openSettings(
     traits: { upgrade: Upgrade; count: number }[],
     vol: { master: number; music: number; sfx: number },
     equip?: { gun: string; gunIcon: string; sword: string; swordIcon: string },
+    shakeEnabled = true,
   ) {
     // 슬라이더를 현재 음량에 맞춤
     const set = (id: string, valId: string, v: number) => {
@@ -234,6 +244,7 @@ export class HUD {
     set('#volMaster', '#volMasterV', vol.master)
     set('#volMusic', '#volMusicV', vol.music)
     set('#volSfx', '#volSfxV', vol.sfx)
+    ;(this.q('#shakeToggle') as HTMLInputElement).checked = shakeEnabled
 
     // 장착 무기
     if (equip) {
