@@ -1038,12 +1038,19 @@ export class Game {
         const dx = e.pos.x - b.pos.x
         const dz = e.pos.z - b.pos.z
         if (dx * dx + dz * dz < (e.radius + 0.2) * (e.radius + 0.2)) {
-          e.takeDamage(b.damage)
+          // 거리 보너스: 발사 지점(spawnPos, 불변) ~ 명중 지점(b.pos, 현재 위치)
+          // 거리로 판정한다. 관통/산탄 각 발은 이 루프에서 개별 총알(b)로 이미
+          // 분리돼 있어 명중마다 따로 계산된다.
+          const rdx = b.pos.x - b.spawnPos.x
+          const rdz = b.pos.z - b.spawnPos.z
+          const rangeBonus = Math.hypot(rdx, rdz) >= CONFIG.combat.gunRangeBonusDist
+          const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : b.damage
+          e.takeDamage(dmg)
           b.hitSet.add(e.id)
           this.audio.hit()
-          this.applyLifesteal(b.damage)
+          this.applyLifesteal(dmg)
           this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
-          this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), b.damage, b.crit)
+          this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, b.crit, rangeBonus)
           if (b.hitSet.size > b.pierce) {
             consumed = true
             break

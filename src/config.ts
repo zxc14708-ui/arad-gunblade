@@ -107,6 +107,17 @@ export const CONFIG = {
     fountainBasePrice: 60,
     fountainPriceRatio: 1.6,
   },
+
+  // 총검사 역할 분리 (DESIGN_LOG B4 — 멀면 총, 붙으면 검)
+  combat: {
+    // 총 거리 보너스: 발사 지점~명중 지점 거리가 이 이상이면 피해 배율 적용.
+    // 검 사거리 최대(4.8)와 안 겹치도록 8로 고정 — 임의로 낮추지 말 것.
+    gunRangeBonusDist: 8,
+    gunRangeBonusMult: 1.35,
+    // 검 스윙 커밋: 스윙 중 이동/방향전환/대시를 막는 시간. 검 쿨타임에 비례하되
+    // 이 값을 넘지 않는다(전투 망치처럼 느린 검에서 조작감이 나빠지는 걸 방지).
+    swordSwingCommitMax: 0.25,
+  },
 }
 
 export type Difficulty = { hpMul: number; dmgMul: number; speedMul: number; countMul: number }

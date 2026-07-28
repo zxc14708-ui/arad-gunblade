@@ -606,6 +606,10 @@ canvas.pixelated {
   color: var(--gold);
   text-shadow: 0 0 8px #e8c979, 0 2px 3px #000;
 }
+.floater.range {
+  color: #6ad0ff;
+  text-shadow: 0 0 8px #3a9fd0, 0 2px 3px #000;
+}
 
 /* ===== 오버레이 (시작/레벨업/게임오버) ===== */
 .overlay {

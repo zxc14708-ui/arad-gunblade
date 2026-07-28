@@ -103,6 +103,8 @@ export class Player {
 
   private gunTimer = 0
   private swordTimer = 0
+  /** 검 스윙 커밋 — 이 값이 남아있는 동안 이동 입력/조준 방향 전환/대시가 막힌다 */
+  private swingCommitTimer = 0
   private dashTimer = 0
   private dashCdTimer = 0
   private dashDir = new THREE.Vector3()
@@ -232,15 +234,18 @@ export class Player {
     let slash: SlashSpec | null = null
     let startedReload = false
 
-    // 조준: 마우스 지면 좌표 방향
-    const dx = aimGround.x - this.pos.x
-    const dz = aimGround.z - this.pos.z
-    if (dx * dx + dz * dz > 0.01) this.angle = Math.atan2(dx, dz)
+    // 조준: 마우스 지면 좌표 방향 — 검 스윙 커밋 중엔 방향 전환 차단
+    if (this.swingCommitTimer <= 0) {
+      const dx = aimGround.x - this.pos.x
+      const dz = aimGround.z - this.pos.z
+      if (dx * dx + dz * dz > 0.01) this.angle = Math.atan2(dx, dz)
+    }
 
     // 타이머 감소
     this.gunTimer -= dt
     this.swordTimer -= dt
     this.dashCdTimer -= dt
+    if (this.swingCommitTimer > 0) this.swingCommitTimer -= dt
     if (this.invuln > 0) this.invuln -= dt
     if (this.hitFlash > 0) this.hitFlash -= dt
 
@@ -250,6 +255,10 @@ export class Player {
       this.pos.addScaledVector(this.dashDir, CONFIG.player.dashSpeed * dt)
       this.moving = true
       this.walkPhase += dt * 24 // 대시 중 빠른 다리 회전
+    } else if (this.swingCommitTimer > 0) {
+      // 검 스윙 커밋 — 이동 입력·대시 시작 모두 무시(런지에 의한 전진은 스윙
+      // 트리거 시점에 이미 적용되어 있어 여기서 막을 이동과는 별개다)
+      this.moving = false
     } else {
       // 이동
       const mv = input.moveVector()
@@ -329,6 +338,8 @@ export class Player {
       const fwd = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
       this.pos.addScaledVector(fwd, this.stats.lunge * dt * 6)
       this.swingAnim = 0.3 // 아트 시트 8프레임 재생 시간
+      // 스윙 커밋: 검 쿨타임에 비례하되 상한을 넘지 않는다
+      this.swingCommitTimer = Math.min(this.stats.swordCooldown, CONFIG.combat.swordSwingCommitMax)
       // 레전더리: 발도 시 총 즉시 장전
       if (this.mods.swordReloads && this.ammo < this.magSize) {
         this.ammo = this.magSize

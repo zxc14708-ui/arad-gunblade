@@ -198,6 +198,43 @@ audit이 놓친 파일 3개(`props/chest_closed.png`·`chest_open.png`·
 
 ## 변경 이력
 
+### 2026-07-28 — 총 거리 보너스 + 검 스윙 커밋 (B4 2단계)
+- **대상**: `src/config.ts`(`combat` 상수), `src/systems/Projectiles.ts`,
+  `src/core/Game.ts`(`resolveBullets`), `src/systems/Effects.ts`
+  (`damageNumber`), `src/style.css`(`.floater.range`), `src/entities/Player.ts`
+  (스윙 커밋)
+- **의도**: B4 1단계(수치 조정)만으로는 역할 분리가 안 된다 — 총에 사거리 외
+  고유 가치를, 검에 리스크를 부여해 "멀면 총, 붙으면 검"을 실체화한다.
+- **결과**:
+  - **총 거리 보너스**: 총알에 발사 시점 위치(`spawnPos`, 불변)를 기록해두고,
+    명중 시 `spawnPos`↔명중 지점(`pos`, 현재 위치) 거리로 판정한다 — 적/플레이어
+    둘 다 움직이므로 현재 위치끼리 비교하면 틀린다. 거리 ≥ `CONFIG.combat.
+    gunRangeBonusDist`(8, 검 최대 사거리 4.8과 겹치지 않도록 고정)면 피해
+    ×`gunRangeBonusMult`(1.35). 관통/산탄은 `resolveBullets`가 이미 개별
+    총알(bullet 객체)로 명중을 순회하므로 각 명중마다 독립적으로 판정된다.
+    보너스가 붙은 명중은 데미지 넘버에 `.floater.range` 클래스(하늘색,
+    `#6ad0ff`)를 추가로 표시해 크리티컬과 시각적으로 구분한다.
+    dev 서버 + `window.__game` 직접 조작으로 검증: 거리 3 명중 → 기본 피해
+    (100, `floater`만), 거리 10 명중 → 135(`100×1.35`, `floater range`) —
+    정확히 일치.
+  - **검 스윙 커밋**: 스윙 시작 시 `swingCommitTimer = min(검 cooldown,
+    CONFIG.combat.swordSwingCommitMax(0.25))`를 설정하고, 타이머가 0보다 큰
+    동안 이동 입력(`moving = false`)·방향 전환(`angle` 갱신 건너뜀)·대시 트리거를
+    모두 막는다. 런지(스윙 시작 시 부여된 전방 속도)는 이 게이트 밖이라 그대로
+    적용된다. 카타나(cooldown 0.42)로 검증: `swingCommitTimer` 정확히
+    0.25(상한 적용)로 설정, 이후 이동/재조준/대시 시도 모두 무효(`pos`
+    불변, `angle` 불변, `isDashing: false`); 대거(cooldown 0.18 < 상한)는
+    상한 미적용 0.18 그대로 설정됨을 확인. 타이머 만료 후에는 이동이 정상
+    재개됨(`movedAfterCommitExpired: true`)도 확인.
+  - **UI 여부 확인**: "스윙 커밋 중임을 플레이어가 알 수 있어야 한다"는 요구에
+    대해, 기존 공격 프레임 표시 창(`swingAnim = 0.3`)이 스윙 커밋 지속시간
+    (최대 0.25)보다 항상 길어 커밋이 풀리기 전까지 캐릭터가 계속 공격 스프라이트
+    프레임으로 보인다 — 별도 UI 없이 기존 스프라이트 애니메이션만으로 충분하다고
+    판단, 추가 UI를 만들지 않았다.
+  - `npx tsc --noEmit` 통과, `npm run qc` 15단계 전부 통과(`contact.png`
+    육안 확인 — 이번 변경은 수치/입력 게이팅이라 시각적 차이 없음, 결함 없음).
+- **남은 문제**: 발도장전 기본 승격(B4 3단계)이 남아있다 — 이어서 반영한다.
+
 ### 2026-07-28 — 검/총 데미지 격차 축소 (B4 1단계)
 - **대상**: `src/systems/Weapons.ts`(damage만)
 - **의도**: 클로드(기획) 지시사항 검증 후 반영. 단순 동률화가 아니라 역할

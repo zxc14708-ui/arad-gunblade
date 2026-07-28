@@ -5,6 +5,8 @@ import { ASSET, cloneTex } from '../rendering/assets'
 export interface Bullet {
   mesh: THREE.Sprite
   pos: THREE.Vector3
+  /** 발사 시점 위치(불변) — 명중 시 거리 보너스 계산용. pos는 매 프레임 이동한다 */
+  spawnPos: THREE.Vector3
   dir: THREE.Vector3
   speed: number
   life: number
@@ -50,6 +52,7 @@ export class Projectiles {
     this.bullets.push({
       mesh,
       pos: pos.clone(),
+      spawnPos: pos.clone(),
       dir: dir.clone().normalize(),
       speed,
       life: 1.1,
