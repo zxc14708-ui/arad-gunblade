@@ -1086,6 +1086,7 @@ export class Game {
     crit: boolean,
     knockback: number,
   ) {
+    let hitAny = false
     for (const e of this.enemies) {
       if (!e.alive) continue
       const dx = e.pos.x - pos.x
@@ -1096,6 +1097,7 @@ export class Game {
       let diff = Math.abs(toAng - angle)
       if (diff > Math.PI) diff = Math.PI * 2 - diff
       if (diff <= arc / 2 + 0.15) {
+        hitAny = true
         const reflected = e.takeDamage(damage, 'melee')
         e.knockback(pos.x, pos.z, knockback)
         this.audio.hit()
@@ -1108,6 +1110,8 @@ export class Game {
         }
       }
     }
+    // 검 적중 시 총알 장전(기본 메커니즘) — 여러 적을 맞혀도 스윙당 1회만
+    if (hitAny) this.player.reloadFromSwordHit()
   }
 
   private applyLifesteal(damage: number) {

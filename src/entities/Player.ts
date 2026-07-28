@@ -52,8 +52,11 @@ export interface Mods {
   magnetRange: number // ×
   // 레전더리 특수
   explodeOnKill: number // >0이면 처치 시 폭발 데미지
-  swordReloads: boolean // 검을 휘두르면 총 즉시 장전
+  swordReloads: boolean // 검을 휘두르면 총 즉시 장전 (총검일체 전용, 발도장전은 기본 메커니즘으로 이관)
   dashStrike: number // >0이면 대시 종료 시 주변 데미지
+  // 검 적중 시 장전 (기본 메커니즘 — 발도장전은 이 값들을 강화한다)
+  swordReloadAmount: number // 검이 적을 맞히면 장전되는 총알 수 (기본 1)
+  swordReloadBurstBonus: number // >0이면 검으로 장전한 직후 발사하는 총알 N발의 피해 배율 보너스
 }
 
 function freshMods(): Mods {
@@ -62,6 +65,7 @@ function freshMods(): Mods {
     swordDamage: 1, swordRange: 1, swordCooldown: 1, moveSpeed: 1, dashCooldown: 1,
     maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0, magnetRange: 1,
     explodeOnKill: 0, swordReloads: false, dashStrike: 0,
+    swordReloadAmount: 1, swordReloadBurstBonus: 0,
   }
 }
 
@@ -120,6 +124,7 @@ export class Player {
   ammo = START_GUN.magSize
   reloading = false
   private reloadTimer = 0
+  private swordReloadBurstShotsLeft = 0
 
   constructor() {
     this.char = new CharacterSprite(this.gun.id, this.sword.id)
@@ -218,6 +223,20 @@ export class Player {
     return true
   }
 
+  /**
+   * 검이 적을 맞히면 호출 — 기본 메커니즘(항상 적용, 특성 무관)으로 총알을
+   * 장전한다. 탄창이 이미 가득 차 있으면 아무 일도 일어나지 않는다. 장전
+   * 진행 중이어도 그 진행을 건드리지 않고(즉시 완료시키지 않고) 그 위에
+   * ammo만 더한다 — 현행 장전 로직(reloadTimer)은 그대로 계속 흐른다.
+   * 발도장전 특성은 mods.swordReloadAmount/swordReloadBurstBonus로 이 값을
+   * 강화한다.
+   */
+  reloadFromSwordHit() {
+    if (this.ammo >= this.magSize) return
+    this.ammo = Math.min(this.magSize, this.ammo + this.mods.swordReloadAmount)
+    if (this.mods.swordReloadBurstBonus > 0) this.swordReloadBurstShotsLeft = 3
+  }
+
   private rollCrit(): boolean {
     return Math.random() < this.stats.critChance
   }
@@ -307,12 +326,18 @@ export class Player {
           const jitter = (Math.random() - 0.5) * this.stats.spread + spreadIdx
           dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), jitter)
           const crit = this.rollCrit()
+          let dmg = this.stats.gunDamage * (crit ? this.stats.critMult : 1)
+          // 발도장전 강화: 검으로 장전한 직후 발사하는 총알 N발에 피해 보너스
+          if (this.swordReloadBurstShotsLeft > 0) {
+            dmg *= 1 + this.mods.swordReloadBurstBonus
+            this.swordReloadBurstShotsLeft--
+          }
           bullets.push({
             // 총구 높이/전방 거리는 gunblader_gun_m1911.png 발사 프레임의 실제 총구
             // 픽셀 위치를 월드 단위로 환산한 값이다(CharacterSprite.ts GUN_SHOOT_FIX 주석 참고).
             pos: new THREE.Vector3(this.pos.x, 2.6, this.pos.z).addScaledVector(dir, 0.9),
             dir,
-            damage: this.stats.gunDamage * (crit ? this.stats.critMult : 1),
+            damage: dmg,
             crit,
           })
         }

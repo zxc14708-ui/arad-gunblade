@@ -61,8 +61,8 @@ const RAW_POOL: Array<Omit<Upgrade, 'maxStacks'>> = [
   // ── Legendary ──
   { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해', icon: '💣', rarity: 'legendary',
     apply: (p) => { p.mods.explodeOnKill += 26; p.recompute() } },
-  { id: 'lg_quickdraw', name: '⭐ 발도장전', desc: '검을 휘두르면 총 즉시 장전 · 검뎀 +20%', icon: '🎴', rarity: 'legendary',
-    apply: (p) => { p.mods.swordReloads = true; p.mods.swordDamage *= 1.2; p.recompute() } },
+  { id: 'lg_quickdraw', name: '⭐ 발도장전', desc: '검 적중 시 장전 1발→2발 · 장전 직후 3발 피해 +30%', icon: '🎴', rarity: 'legendary',
+    apply: (p) => { p.mods.swordReloadAmount = 2; p.mods.swordReloadBurstBonus = 0.3; p.recompute() } },
   { id: 'lg_vampire', name: '⭐ 흡혈귀', desc: '흡혈 +10%, 최대 체력 +40', icon: '🧛', rarity: 'legendary',
     apply: (p) => { p.mods.lifesteal += 0.1; p.mods.maxHp += 40; p.recompute(); p.hp = p.stats.maxHp } },
   { id: 'lg_executioner', name: '⭐ 처형자', desc: '치명타 확률 +20%, 배율 +1.0', icon: '🔱', rarity: 'legendary',
