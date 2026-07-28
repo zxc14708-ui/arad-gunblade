@@ -44,12 +44,10 @@ const ART_SPEC: SheetSpec = {
 }
 
 export class CharacterSprite {
-  /** 커스텀 아트 시트 레이어 경로 (null이면 절차 생성만 사용) */
-  static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = {
-    base: 'gunblader_base.png',
-    sword: 'gunblader_sword_katana.png',
-    gun: 'gunblader_gun_m1911.png',
-  }
+  /** 커스텀 아트 시트 경로 (null이면 절차 생성만 사용) */
+  static SHEET_URL: string | null = 'gunblader.png'
+  /** 분리 파츠 아트는 모션·피벗 기준 확정 전까지 비활성화한다. */
+  static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = null
 
   object = new THREE.Group()
   private sprite: THREE.Sprite
@@ -86,6 +84,30 @@ export class CharacterSprite {
     this.object.add(this.shadow)
 
     // 아트 시트 3장(base+sword+gun) 비동기 로드 → 캔버스에 합성 후 교체
+    if (CharacterSprite.SHEET_URL) {
+      new THREE.TextureLoader().load(
+        CharacterSprite.SHEET_URL,
+        (loaded) => {
+          loaded.magFilter = THREE.NearestFilter
+          loaded.minFilter = THREE.NearestFilter
+          loaded.generateMipmaps = false
+          loaded.colorSpace = THREE.SRGBColorSpace
+          this.spec = ART_SPEC
+          loaded.repeat.set(1 / this.spec.n, 1)
+          const old = this.mat.map
+          this.mat.map = loaded
+          this.mat.needsUpdate = true
+          this.artActive = true
+          this.applyScale()
+          old?.dispose()
+        },
+        undefined,
+        () => {
+          /* 로드 실패 시 절차 시트 유지 */
+        },
+      )
+    }
+
     if (CharacterSprite.SHEET_LAYERS) {
       const { base, sword, gun } = CharacterSprite.SHEET_LAYERS
       Promise.all([loadImage(base), loadImage(sword), loadImage(gun)])

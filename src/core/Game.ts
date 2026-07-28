@@ -364,7 +364,15 @@ export class Game {
     this.audio.levelup()
     const gold = 35 + this.run.depth * 12
     this.run.addGold(gold)
-    this.hud.showLevelUp('ELITE CLEAR!', `고급 특성을 선택하세요 · 골드 +${gold}`, rollChoices(3, false, this.player.traitStacks), (u) => {
+    const choices = rollChoices(3, false, this.player.traitStacks)
+    if (choices.length === 0) {
+      this.state = 'play'
+      this.hud.banner_(`골드 +${gold} · 획득 가능한 특성이 없습니다`)
+      this.openDoors()
+      this.clock.getDelta()
+      return
+    }
+    this.hud.showLevelUp('ELITE CLEAR!', `고급 특성을 선택하세요 · 골드 +${gold}`, choices, (u) => {
       this.applyTrait(u)
       this.audio.pick()
       this.state = 'play'
@@ -471,7 +479,16 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    this.hud.showLevelUp('첫 번째 특성', '이번 런을 이끌 특성 하나를 선택하세요', rollChoices(3, false, this.player.traitStacks), (u) => {
+    const choices = rollChoices(3, false, this.player.traitStacks)
+    if (choices.length === 0) {
+      this.startingTraitTaken = true
+      altar.markUsed()
+      this.state = 'play'
+      this.hud.banner_('획득 가능한 특성이 없습니다')
+      this.clock.getDelta()
+      return
+    }
+    this.hud.showLevelUp('첫 번째 특성', '이번 런을 이끌 특성 하나를 선택하세요', choices, (u) => {
       this.applyTrait(u)
       this.startingTraitTaken = true
       altar.markUsed()
@@ -574,7 +591,14 @@ export class Game {
     if (Math.random() < 0.6) {
       this.state = 'levelup'
       this.input.clearAll()
-      this.hud.showLevelUp('보물 발견!', '특성 하나를 선택하세요', rollChoices(3, false, this.player.traitStacks), (u) => {
+      const choices = rollChoices(3, false, this.player.traitStacks)
+      if (choices.length === 0) {
+        this.state = 'play'
+        this.hud.banner_('획득 가능한 특성이 없습니다')
+        this.clock.getDelta()
+        return
+      }
+      this.hud.showLevelUp('보물 발견!', '특성 하나를 선택하세요', choices, (u) => {
         this.applyTrait(u)
         this.state = 'play'
         this.clock.getDelta()
@@ -1215,7 +1239,18 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', rollChoices(3, false, this.player.traitStacks), (u) => {
+    const choices = rollChoices(3, false, this.player.traitStacks)
+    if (choices.length === 0) {
+      while (this.player.gainXp(0)) {
+        // 특성이 모두 소진된 뒤 남은 경험치는 선택창 없이 정상적으로 처리한다.
+      }
+      this.hud.setXp(this.player.xp, this.player.xpToNext)
+      this.state = 'play'
+      this.hud.banner_('모든 특성이 최대 스택에 도달했습니다')
+      this.clock.getDelta()
+      return
+    }
+    this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', choices, (u) => {
       this.applyTrait(u)
       // 레벨이 더 쌓였으면 연속 처리
       if (this.player.gainXp(0)) {
