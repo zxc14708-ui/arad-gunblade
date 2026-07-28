@@ -285,7 +285,7 @@ def check_orphan_assets():
         total_kb = sum(os.path.getsize(os.path.join(PUBLIC, f)) for f in orphans) / 1024
         for f in orphans:
             warnings.append(f'미사용 에셋(고아 파일): {f}')
-        print(f'고아 에셋 {len(orphans)}개, {total_kb:.1f}KB — 경고 처리(DESIGN_LOG.md D1 참고)')
+        print(f'고아 에셋 {len(orphans)}개, {total_kb:.1f}KB - 경고 처리(DESIGN_LOG.md D1 참고)')
     else:
         print('고아 에셋 없음')
 

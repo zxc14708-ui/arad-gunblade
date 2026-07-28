@@ -3,6 +3,7 @@ import { CONFIG } from '../config'
 import { Input } from '../core/Input'
 import { CharacterSprite } from './CharacterSprite'
 import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
+import { MetaBonuses } from '../systems/MetaProgression'
 
 /** 무기 정의 × 특성 배수로 산출되는 실효 스탯 */
 export interface PlayerStats {
@@ -99,6 +100,11 @@ export class Player {
   traitStacks = new Map<string, number>()
   gun: GunDef = START_GUN
   sword: SwordDef = START_SWORD
+  private meta: MetaBonuses
+  private revivesRemaining = 0
+  private wardReady = false
+  /** 마지막 피격의 영구 성장 이벤트. HUD 연출에서만 읽고 게임 로직에는 의존하지 않는다. */
+  lastDamageEvent: 'none' | 'ward' | 'hit' | 'revive' | 'dead' = 'none'
 
   level = 1
   xp = 0
@@ -126,7 +132,10 @@ export class Player {
   private reloadTimer = 0
   private swordReloadBurstShotsLeft = 0
 
-  constructor() {
+  constructor(meta: MetaBonuses = { gunDamageMultiplier: 1, swordDamageMultiplier: 1, maxHpFlat: 0, revives: 0, wardReady: false }) {
+    this.meta = meta
+    this.revivesRemaining = meta.revives
+    this.wardReady = meta.wardReady
     this.char = new CharacterSprite(this.gun.id, this.sword.id)
     this.group = this.char.object
     this.stats = {} as PlayerStats
@@ -141,10 +150,10 @@ export class Player {
     const g = this.gun
     const s = this.sword
     this.stats = {
-      maxHp: CONFIG.player.maxHp + m.maxHp,
+      maxHp: CONFIG.player.maxHp + this.meta.maxHpFlat + m.maxHp,
       moveSpeed: CONFIG.player.speed * m.moveSpeed,
       dashCooldown: Math.max(CONFIG.player.dashCooldown * 0.45, CONFIG.player.dashCooldown * m.dashCooldown),
-      gunDamage: g.damage * m.gunDamage,
+      gunDamage: g.damage * this.meta.gunDamageMultiplier * m.gunDamage,
       gunCooldown: Math.max(g.cooldown * 0.35, g.cooldown * m.gunCooldown),
       bulletSpeed: g.bulletSpeed * m.bulletSpeed,
       pierce: g.pierce + m.pierce,
@@ -152,7 +161,7 @@ export class Player {
       spread: g.spread,
       magSize: g.magSize,
       reloadTime: g.reloadTime * m.reloadTime,
-      swordDamage: s.damage * m.swordDamage,
+      swordDamage: s.damage * this.meta.swordDamageMultiplier * m.swordDamage,
       swordRange: s.range * m.swordRange,
       swordCooldown: Math.max(s.cooldown * 0.4, s.cooldown * m.swordCooldown),
       swordArc: s.arc,
@@ -193,6 +202,13 @@ export class Player {
       this.recompute()
     }
     this.char.setWeapons(this.gun.id, this.sword.id)
+  }
+
+  applyMetaBonuses(meta: MetaBonuses) {
+    this.meta = meta
+    this.revivesRemaining = meta.revives
+    this.wardReady = meta.wardReady
+    this.recompute()
   }
 
   get isDashing() {
@@ -402,15 +418,37 @@ export class Player {
   }
 
   takeDamage(amount: number): boolean {
+    this.lastDamageEvent = 'none'
     if (this.invulnerable || !this.alive) return false
+    if (this.wardReady) {
+      this.wardReady = false
+      this.lastDamageEvent = 'ward'
+      return false
+    }
     this.hp -= amount
     this.invuln = CONFIG.player.invulnAfterHit
     this.hitFlash = 0.15
     if (this.hp <= 0) {
-      this.hp = 0
-      this.alive = false
+      if (this.revivesRemaining > 0) {
+        this.revivesRemaining--
+        this.hp = this.stats.maxHp * 0.5
+        this.invuln = CONFIG.player.invulnAfterHit
+        this.lastDamageEvent = 'revive'
+      } else {
+        this.hp = 0
+        this.alive = false
+        this.lastDamageEvent = 'dead'
+      }
+    } else {
+      this.lastDamageEvent = 'hit'
     }
     return true
+  }
+
+  consumeDamageEvent() {
+    const event = this.lastDamageEvent
+    this.lastDamageEvent = 'none'
+    return event
   }
 
   heal(amount: number) {

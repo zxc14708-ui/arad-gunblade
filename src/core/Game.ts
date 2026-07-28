@@ -15,10 +15,12 @@ import { rollChoices, Upgrade, forgeSwapCandidates } from '../systems/Upgrades'
 import { Shop, ShopItem } from '../systems/Shop'
 import { AudioManager } from '../systems/Audio'
 import { ELITE_AFFIX } from '../systems/EliteAffixes'
+import { MetaProgression } from '../systems/MetaProgression'
+import { weaponById } from '../systems/Weapons'
 import { preloadAssets } from '../rendering/assets'
 import { HUD } from '../ui/HUD'
 
-type State = 'start' | 'play' | 'levelup' | 'reward' | 'shop' | 'clear' | 'gameover'
+type State = 'start' | 'play' | 'levelup' | 'reward' | 'shop' | 'meta' | 'loadout' | 'clear' | 'gameover'
 type Mode = 'town' | 'dungeon'
 
 export class Game {
@@ -42,7 +44,7 @@ export class Game {
 
   private run = new RunState()
   /** 마을 상인 전용 재고. 런 시작부터 런 종료까지 유지한다. */
-  private townShop: Shop | null = null
+  private meta = new MetaProgression()
   /** 던전 상점방 전용 재고. 방 id 기준으로 재방문 시 유지한다. */
   private shop: Shop | null = null
   private shopRoomId: string | null = null
@@ -155,6 +157,8 @@ export class Game {
       } else if (e.code === 'Escape') {
         if (this.settingsOpen) this.closeSettings()
         else if (this.state === 'shop') this.closeShop()
+        else if (this.state === 'meta') this.closeMeta()
+        else if (this.state === 'loadout') this.closeLoadout()
       }
     })
 
@@ -195,7 +199,7 @@ export class Game {
     this.hud.closeSettings()
 
     if (this.player) this.scene.remove(this.player.group)
-    this.player = new Player()
+    this.player = new Player(this.meta.bonuses())
     this.scene.add(this.player.group)
 
     this.audio.init()
@@ -230,7 +234,6 @@ export class Game {
     this.roomCleared = true
     this.curPlan = null
     this.run.reset()
-    this.townShop = null
     this.shop = null
     this.shopRoomId = null
 
@@ -239,13 +242,13 @@ export class Game {
     this.interactables.push(
       new Interactable('portal', p.x, p.z, `던전 입장 — ${this.run.cfg.name}`).addTo(this.scene),
     )
-    // 마을 상인 (무료 아님 — 골드 있으면 구매 가능)
-    this.interactables.push(new Interactable('merchant', -10, -2, '상인과 거래').addTo(this.scene))
+    // 마을 상인은 런 골드가 아닌 영구 재화로 무기를 해금한다.
+    this.interactables.push(new Interactable('merchant', -10, -2, '모험가 상점 — 무기 설계도').addTo(this.scene))
     // 회복 분수
     this.interactables.push(new Interactable('fountain', 10, -2, '분수에서 회복').addTo(this.scene))
     // 특성 시설 (런당 1회)
     this.interactables.push(new Interactable('traitAltar', -6, 6, '시작 특성 선택').addTo(this.scene))
-    this.interactables.push(new Interactable('traitForge', 6, 6, '특성 제련 — 보유 특성 강화').addTo(this.scene))
+    this.interactables.push(new Interactable('metaAltar', 6, 6, '힘의 제단 — 영구 강화').addTo(this.scene))
 
     const e = this.room.entryPoint()
     this.player.pos.set(e.x, 0, e.z)
@@ -259,7 +262,6 @@ export class Game {
   /** 던전 1스테이지 시작 */
   private enterDungeon() {
     this.run.reset(1)
-    if (!this.townShop) this.townShop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
     this.mode = 'dungeon'
     const plan = this.run.enterFirst()
     this.loadRoom(plan)
@@ -364,10 +366,11 @@ export class Game {
     this.audio.levelup()
     const gold = 35 + this.run.depth * 12
     this.run.addGold(gold)
+    this.meta.grantEliteToken()
     const choices = rollChoices(3, false, this.player.traitStacks)
     if (choices.length === 0) {
       this.state = 'play'
-      this.hud.banner_(`골드 +${gold} · 획득 가능한 특성이 없습니다`)
+      this.hud.banner_(`골드 +${gold} · 모험가 증표 +1 · 획득 가능한 특성이 없습니다`)
       this.openDoors()
       this.clock.getDelta()
       return
@@ -385,7 +388,8 @@ export class Game {
   private onStageClear() {
     this.state = 'clear'
     this.audio.levelup()
-    this.hud.showStageClear(this.run.stage, this.kills, this.run.gold, this.player.level)
+    const reward = this.meta.grantStageClear()
+    this.hud.showStageClear(this.run.stage, this.kills, this.run.gold, this.player.level, reward)
   }
 
   /**
@@ -442,7 +446,7 @@ export class Game {
 
     switch (target.kind) {
       case 'portal':
-        this.enterDungeon()
+        this.openLoadout()
         break
       case 'door':
         if (target.targetRoomId && target.direction) {
@@ -456,13 +460,17 @@ export class Game {
         this.useFountain(target)
         break
       case 'merchant':
-        this.openShop()
+        if (this.mode === 'town') this.openMetaShop()
+        else this.openShop()
         break
       case 'traitAltar':
         this.useTraitAltar(target)
         break
       case 'traitForge':
         this.useTraitForge(target)
+        break
+      case 'metaAltar':
+        this.openMetaAltar()
         break
       case 'dungeonForge':
         this.useDungeonForge(target)
@@ -641,9 +649,7 @@ export class Game {
   // ══════════════════ 상점 ══════════════════
 
   private openShop() {
-    if (this.mode === 'town') {
-      if (!this.townShop) this.townShop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
-    } else if (!this.shop) {
+    if (!this.shop) {
       this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
     }
     this.state = 'shop'
@@ -652,7 +658,7 @@ export class Game {
   }
 
   private activeShop() {
-    return this.mode === 'town' ? this.townShop : this.shop
+    return this.shop
   }
 
   private renderShop() {
@@ -735,6 +741,70 @@ export class Game {
   private closeShop() {
     if (this.state !== 'shop') return
     this.hud.closeShop()
+    this.state = 'play'
+    this.clock.getDelta()
+  }
+
+  private openMetaAltar() {
+    this.state = 'meta'
+    this.input.clearAll()
+    this.renderMetaAltar()
+  }
+
+  private renderMetaAltar() {
+    const profile = this.meta.snapshot
+    this.hud.showMetaAltar(profile.crystals, this.meta.upgradeViews(), (id) => {
+      if (!this.meta.buyUpgrade(id)) return
+      this.player.applyMetaBonuses(this.meta.bonuses())
+      this.audio.pick()
+      this.hud.banner_('영구 강화 완료 — 이번 출발부터 적용됩니다')
+      this.renderMetaAltar()
+    }, () => this.closeMeta())
+  }
+
+  private openMetaShop() {
+    this.state = 'meta'
+    this.input.clearAll()
+    this.renderMetaShop()
+  }
+
+  private renderMetaShop() {
+    const profile = this.meta.snapshot
+    this.hud.showMetaShop(profile.tokens, this.meta.weaponViews(), (id) => {
+      if (!this.meta.unlockWeapon(id)) return
+      const weapon = weaponById(id)
+      this.audio.pick()
+      this.hud.banner_(`${weapon?.name ?? '무기'} 설계도 해금!`)
+      this.renderMetaShop()
+    }, () => this.closeMeta())
+  }
+
+  private closeMeta() {
+    if (this.state !== 'meta') return
+    this.hud.closeMeta()
+    this.state = 'play'
+    this.clock.getDelta()
+  }
+
+  private openLoadout() {
+    const loadout = this.meta.loadoutWeapons()
+    this.state = 'loadout'
+    this.input.clearAll()
+    this.hud.showLoadout(loadout.guns, loadout.swords, loadout.selected, (gunId, swordId) => {
+      if (!this.meta.setLoadout(gunId, swordId)) return
+      const gun = weaponById(gunId)
+      const sword = weaponById(swordId)
+      if (!gun || !sword || gun.kind !== 'gun' || sword.kind !== 'sword') return
+      this.player.equip(gun)
+      this.player.equip(sword)
+      this.hud.closeLoadout()
+      this.enterDungeon()
+    }, () => this.closeLoadout())
+  }
+
+  private closeLoadout() {
+    if (this.state !== 'loadout') return
+    this.hud.closeLoadout()
     this.state = 'play'
     this.clock.getDelta()
   }
@@ -904,6 +974,10 @@ export class Game {
     this.hud.setDash(this.player.dashCooldownRatio, this.player.dashReady)
     this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading, this.player.reloadRatio, this.player.gun.name)
     this.hud.setStats(this.player.level, this.mode === 'town' ? 0 : this.run.depth, this.kills, this.run.gold)
+
+    const damageEvent = this.player.consumeDamageEvent()
+    if (damageEvent === 'ward') this.hud.banner_('수호막이 피해를 막았습니다!')
+    else if (damageEvent === 'revive') this.hud.banner_('불굴 발동 — 체력 50%로 부활!')
 
     if (!this.player.alive) this.gameOver()
   }
