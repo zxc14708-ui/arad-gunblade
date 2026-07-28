@@ -170,9 +170,14 @@ export class CharacterSprite {
     st: { moving: boolean; dashing: boolean; swinging: boolean; shooting: boolean; invulnerable: boolean },
     hitFlash: number,
   ) {
-    // 조준 x성분으로 좌우 전환 (데드존 좁게 → 방향 전환이 굼뜨지 않게)
-    if (Math.sin(aimAngle) < -0.05) this.flip = -1
-    else if (Math.sin(aimAngle) > 0.05) this.flip = 1
+    // 조준 x성분으로 좌우 전환 (데드존 좁게 → 방향 전환이 굼뜨지 않게).
+    // 사격 모션 중(st.shooting)엔 갱신하지 않는다 — 조준선이 캐릭터 정면축(각도 0/π)
+    // 가까이 있으면 sin(aimAngle)이 데드존 경계를 프레임마다 넘나들어 총 쏠 때마다
+    // 몸이 좌우로 튀어 보였다. 발사 순간의 방향으로 고정해 그 튐을 없앤다.
+    if (!st.shooting) {
+      if (Math.sin(aimAngle) < -0.05) this.flip = -1
+      else if (Math.sin(aimAngle) > 0.05) this.flip = 1
+    }
     const faceLeft = this.flip < 0
 
     // 우선순위: 베기 > 사격 > 걷기 > 대기
