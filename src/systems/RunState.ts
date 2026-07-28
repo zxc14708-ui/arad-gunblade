@@ -32,6 +32,8 @@ export interface RoomPlan {
   x: number
   y: number
   depth: number
+  /** 이 방에 분수를 배치할지 — 맵 생성 시점에 정해져 재방문해도 유지된다 */
+  hasFountain: boolean
 }
 
 interface RoomNode {
@@ -147,9 +149,9 @@ export class RunState {
     const m = this.muls(depth)
     if (kind === 'boss') {
       const adds: EnemyKind[] = ['imp', 'imp', 'brute', 'shooter', 'shooter']
-      return { id, kind, enemies: ['boss', ...adds], chests: 0, x, y, depth, ...m }
+      return { id, kind, enemies: ['boss', ...adds], chests: 0, x, y, depth, hasFountain: false, ...m }
     }
-    if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, ...m }
+    if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
     if (kind === 'elite') {
       const affix = rollEliteAffix(this.previousEliteAffix)
       this.previousEliteAffix = affix
@@ -160,12 +162,12 @@ export class RunState {
         else if (Math.random() < 0.55) enemies.push('shooter')
         else enemies.push('imp')
       }
-      return { id, kind, enemies, chests: 0, x, y, depth, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
+      return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
     }
     if (kind === 'treasure') {
       const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))
       const enemies: EnemyKind[] = Array.from({ length: n }, () => (Math.random() < 0.5 ? 'imp' : 'shooter'))
-      return { id, kind, enemies, chests: 2, x, y, depth, ...m }
+      return { id, kind, enemies, chests: 2, x, y, depth, hasFountain: false, ...m }
     }
 
     const count = Math.ceil((4 + Math.floor(depth * 1.2) + Math.floor(Math.random() * 3)) * CONFIG.spawn.roomDensity)
@@ -176,7 +178,7 @@ export class RunState {
       else if (depth >= 2 && r < 0.5) enemies.push('shooter')
       else enemies.push('imp')
     }
-    return { id, kind, enemies, chests: Math.random() < 0.4 ? 1 : 0, x, y, depth, ...m }
+    return { id, kind, enemies, chests: Math.random() < 0.4 ? 1 : 0, x, y, depth, hasFountain: false, ...m }
   }
 
   private key(x: number, y: number) {
@@ -229,6 +231,37 @@ export class RunState {
         if (neighbor && neighbor !== node && !node.exits[direction]) this.connect(node, direction, neighbor)
       }
     }
+
+    this.assignFountains(roomCount)
+  }
+
+  /**
+   * 분수 배치 — 확률이 아니라 개수를 보장한다(런마다 0개가 나오는 걸 막는다).
+   * 상점방은 makePlan()에서 이미 hasFountain: true로 고정된다. 나머지
+   * (fountainRoomCount - 1)개는 전투방 중에서 고르되, 첫 분수를 후반부에서만
+   * 만나는 일이 없도록 최소 1개는 전반부(depth가 전체 방 수의 절반 이하)
+   * 전투방에서 뽑는다. 전투방이 부족하면 있는 만큼만 배치한다.
+   */
+  private assignFountains(roomCount: number) {
+    const extraNeeded = CONFIG.economy.fountainRoomCount - 1
+    if (extraNeeded <= 0) return
+
+    const combatPlans = [...this.nodes.values()].map((n) => n.plan).filter((p) => p.kind === 'combat')
+    if (combatPlans.length === 0) return
+
+    const earlyCutoff = roomCount / 2
+    const earlyPool = combatPlans.filter((p) => p.depth <= earlyCutoff)
+    const chosen: RoomPlan[] = []
+    if (earlyPool.length > 0) chosen.push(earlyPool[Math.floor(Math.random() * earlyPool.length)])
+
+    const remaining = combatPlans.filter((p) => !chosen.includes(p))
+    while (chosen.length < extraNeeded && remaining.length > 0) {
+      const idx = Math.floor(Math.random() * remaining.length)
+      chosen.push(remaining[idx])
+      remaining.splice(idx, 1)
+    }
+
+    for (const p of chosen) p.hasFountain = true
   }
 
   /** 새 스테이지 지도 생성 후 시작 방으로 진입 */

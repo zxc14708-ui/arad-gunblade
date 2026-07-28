@@ -290,15 +290,22 @@ export class Game {
       this.interactables.push(new Interactable('chest', p.x, p.z, '상자 열기').addTo(this.scene))
     }
 
-    // 상점 방: 상인 + 회복 분수 (보스 입구)
+    // 상점 방: 상인 + 제련소 (분수는 별도 — 상점방 포함 여러 방에 배치될 수 있다)
     if (plan.kind === 'shop') {
       if (this.shopRoomId !== plan.id) {
         this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
         this.shopRoomId = plan.id
       }
       this.interactables.push(new Interactable('merchant', -6, -1, '상인과 거래').addTo(this.scene))
-      this.interactables.push(new Interactable('fountain', 6, -1, this.fountainLabel()).addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
+    }
+
+    // 회복 분수 — RunState.generateMap()이 맵 생성 시점에 hasFountain을 정해
+    // 재방문해도 나타났다 사라지지 않는다(상점방 1개 + 전투방 일부, DESIGN_LOG
+    // B5 "분수 사문화" 해결).
+    if (plan.hasFountain) {
+      const p = plan.kind === 'shop' ? { x: 6, z: -1 } : this.room.randomPoint(5)
+      this.interactables.push(new Interactable('fountain', p.x, p.z, this.fountainLabel()).addTo(this.scene))
     }
 
     // 플레이어 진입 위치

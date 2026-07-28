@@ -106,6 +106,10 @@ export const CONFIG = {
     // 던전 분수: 런 전체 첫 사용은 무료, 두 번째 사용부터 유료(방당 1회 제한은 별도).
     fountainBasePrice: 60,
     fountainPriceRatio: 1.6,
+    // 분수가 배치되는 방의 총 개수(상점방 1개 포함) — RunState.generateMap()이
+    // 맵 생성 시점에 이 개수를 보장한다. 확률 배치로 두면 런마다 0개가 나올 수
+    // 있어 개수 보장 방식으로 고정했다(DESIGN_LOG B5 "분수 사문화" 해결).
+    fountainRoomCount: 3,
   },
 
   // 총검사 역할 분리 (DESIGN_LOG B4 — 멀면 총, 붙으면 검)
