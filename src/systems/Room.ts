@@ -8,6 +8,9 @@ const TORCH_FRAMES = 3
 // 방보다 카메라 시야가 넓은 경우(특히 소형 방)가 있어, 벽 바깥으로 카메라가
 // 넘어가면 그 너머가 검게 비어 보인다. 바닥만 넉넉히 연장해 항상 시야를 채운다.
 const FLOOR_BLEED = 28
+// 카메라와 가까운 남쪽 벽은 화면 아래 전경을 차지하므로, 전투 개체가 그 뒤로
+// 들어가 완전히 가려지지 않도록 플레이 가능 경계를 안쪽으로 당긴다.
+const FOREGROUND_SAFE_INSET = 2.4
 
 export type RoomVisualKind = 'dungeon' | 'boss' | 'town'
 
@@ -206,7 +209,7 @@ export class Room {
   clamp(pos: THREE.Vector3, radius: number) {
     const b = this.bounds
     pos.x = Math.min(b.maxX - radius, Math.max(b.minX + radius, pos.x))
-    pos.z = Math.min(b.maxZ - radius, Math.max(b.minZ + radius, pos.z))
+    pos.z = Math.min(b.maxZ - radius - FOREGROUND_SAFE_INSET, Math.max(b.minZ + radius, pos.z))
   }
 
   dispose() {

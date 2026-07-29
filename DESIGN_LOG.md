@@ -1,5 +1,11 @@
 # Design Log — ARAD: Gunblade
 
+### 2026-07-29 발도·화염 고블린·무기 피드백 개선
+- **의도**: Q를 단순 돌진에서 경로를 가르며 통과하는 무적 발도로 바꾸고, 화염 고블린이 한 지점에 겹쳐 서는 문제와 화면 아래 전경 벽에 전투 개체가 가려지는 문제를 함께 해소한다.
+- **결과**: 발도는 이동 경로 전체를 검 공격력 기반으로 판정하고 이동 중 무적을 제공한다. 화염 고블린은 적정 거리에서 서로 다른 방향으로 측면 이동하며 화염구의 가시성이 커졌다. 화면 하단의 전경 안전 경계, 붉은 치명타 숫자, 경험치 획득량 특성, 무기별 임시 외형·합성 효과음을 추가했다.
+- **준비 장소**: 보스방 직전의 적 없는 준비 장소는 기존 구조를 유지하고, 상점과 회복 우물이 더 명확히 읽히도록 명칭과 입장 배너를 정리했다.
+- **임시 아트**: `public/assets/fx/iaido_flash_temp_v2.png`는 ImageGen 결과를 15색·이진 알파의 256×64 픽셀 검광으로 정리한 임시 발도 이펙트이며 최종 모션 시트가 들어오면 교체한다. 기본 장비 외 무기 외형은 최종 파츠 시트 전까지 절차 픽셀 시트를 사용한다.
+
 ### 2026-07-29 HUD readability and ultimate presentation
 - **Target**: `HUD.ts`, `style.css`, `Input.ts`, `Player.ts`, `Game.ts`, temporary effect asset
 - **Intent**: Separate overlapping health and active-skill HUD elements, make dash/ammo legible, and let players store their keyboard preferences in the browser.

@@ -63,6 +63,7 @@ export class Game {
   /** 히트스톱 잔여 시간 — 겹치면 더하지 않고 더 긴 쪽으로 갱신(triggerHitstop) */
   private hitstopTimer = 0
   private wasDashing = false
+  private wasIaido = false
   private ghostTimer = 0
   private settingsOpen = false
   private acquired = new Map<string, { upgrade: Upgrade; count: number }>()
@@ -196,6 +197,9 @@ export class Game {
     this.acquired.clear()
     this.startingTraitTaken = false
     this.traitForgeUsed = false
+    this.wasIaido = false
+    this.wasDashing = false
+    this.ghostTimer = 0
     this.settingsOpen = false
     this.hud.closeSettings()
 
@@ -299,7 +303,7 @@ export class Game {
         this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
         this.shopRoomId = plan.id
       }
-      this.interactables.push(new Interactable('merchant', -6, -1, plan.kind === 'rest' ? '보스전 물자 준비' : '상인과 거래').addTo(this.scene))
+      this.interactables.push(new Interactable('merchant', -6, -1, plan.kind === 'rest' ? '보스전 상점' : '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
     }
 
@@ -308,7 +312,7 @@ export class Game {
     // B5 "분수 사문화" 해결).
     if (plan.hasFountain) {
       const p = plan.kind === 'shop' || plan.kind === 'rest' ? { x: 6, z: -1 } : this.room.randomPoint(5)
-      this.interactables.push(new Interactable('fountain', p.x, p.z, plan.kind === 'rest' ? `보스전 ${this.fountainLabel()}` : this.fountainLabel()).addTo(this.scene))
+      this.interactables.push(new Interactable('fountain', p.x, p.z, plan.kind === 'rest' ? `보스전 회복 우물 · ${this.fountainLabel()}` : this.fountainLabel()).addTo(this.scene))
     }
 
     // 플레이어 진입 위치
@@ -320,6 +324,8 @@ export class Game {
     if (plan.kind === 'boss') {
       this.audio.bossWarn()
       this.hud.banner_('⚠ 보스 ⚠')
+    } else if (plan.kind === 'rest') {
+      this.hud.banner_('보스 준비 장소 · 회복 우물과 상점')
     } else {
       this.hud.banner_(`${this.run.depth}번째 방 · ${roomLabel(plan)}`)
     }
@@ -901,23 +907,23 @@ export class Game {
       this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
     }
     if (bullets.length > 0) {
-      this.audio.gunshot()
+      this.audio.gunshot(this.player.gun.id)
       // More than one projectile (double shot / ultimate) needs a muzzle flash in each real firing direction.
       for (const bullet of bullets) this.effects.muzzleFlash(this.player.pos, Math.atan2(bullet.dir.x, bullet.dir.z))
     }
     if (startedReload) this.audio.reload()
     if (slash) {
-      this.audio.slash()
+      this.audio.slash(this.player.sword.id)
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
       this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
     }
     if (chargeSlash) {
-      this.audio.slash()
-      this.effects.slash(chargeSlash.pos, chargeSlash.angle, chargeSlash.arc, chargeSlash.range)
-      this.resolveSlash(chargeSlash.pos, chargeSlash.angle, chargeSlash.arc, chargeSlash.range, chargeSlash.damage, chargeSlash.crit, chargeSlash.knockback)
+      this.audio.iaido(this.player.sword.id)
+      this.effects.iaido(chargeSlash.start, this.player.pos)
+      this.resolveIaido(chargeSlash.start, this.player.pos, chargeSlash.damage, chargeSlash.crit, chargeSlash.knockback)
     }
     if (ultimate) {
-      this.audio.slash()
+      this.audio.slash(this.player.sword.id)
       for (const slashPart of ultimate.slashes) {
         this.effects.slash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range)
         this.resolveSlash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range, slashPart.damage, slashPart.crit, slashPart.knockback)
@@ -928,20 +934,22 @@ export class Game {
     }
 
     // 대시 잔상
-    if (this.player.isDashing) {
+    if (this.player.isDashing || this.player.isIaido) {
       this.ghostTimer -= dt
       if (this.ghostTimer <= 0) {
-        this.ghostTimer = 0.045
+        this.ghostTimer = this.player.isIaido ? 0.03 : 0.045
         this.effects.ghost(this.player.ghostParams(), this.player.pos)
       }
     } else {
       this.ghostTimer = 0
     }
     if (this.player.isDashing && !this.wasDashing) this.audio.dash()
+    if (this.player.isIaido && !this.wasIaido) this.audio.iaidoStart()
     if (!this.player.isDashing && this.wasDashing && this.player.mods.dashStrike > 0) {
       this.aoeDamage(this.player.pos.x, this.player.pos.z, 4.5, this.player.mods.dashStrike, COLORS.slash)
     }
     this.wasDashing = this.player.isDashing
+    this.wasIaido = this.player.isIaido
 
     // ── 룸 적 스폰 ──
     if (this.spawnQueue.length > 0 && this.entrySafeTimer <= 0) {
@@ -969,7 +977,7 @@ export class Game {
     this.resolveEnemyBullets()
 
     const got = this.pickups.update(dt, this.player.pos, this.player.stats.magnetRange, CONFIG.xp.orbSpeed)
-    if (got.xp > 0) this.gainXp(got.xp)
+    if (got.xp > 0) this.gainXp(got.xp * this.player.stats.xpGain)
     if (got.gold > 0) this.run.addGold(got.gold)
 
     // ── 방 장식 / 상호작용 오브젝트 ──
@@ -1047,7 +1055,7 @@ export class Game {
         }
         if (e.isBossCharging) this.pushPlayerAway(e.pos.x, e.pos.z, e.radius + CONFIG.player.radius)
       }
-      if (d < e.radius + CONFIG.player.radius && !this.player.isDashing) {
+      if (d < e.radius + CONFIG.player.radius && !this.player.isDashing && !this.player.isIaido) {
         const push = (e.radius + CONFIG.player.radius - d) * 0.5
         if (d > 0.01) {
           e.pos.x += (dx / d) * push
@@ -1264,6 +1272,40 @@ export class Game {
       }
     }
     // 검 적중 시 총알 장전(기본 메커니즘) — 여러 적을 맞혀도 스윙당 1회만
+    if (hitAny) this.player.reloadFromSwordHit()
+  }
+
+  /** 발도 경로(시작점→실제 종료점)를 캡슐 형태로 판정해 스친 모든 적을 한 번씩 벤다. */
+  private resolveIaido(start: THREE.Vector3, end: THREE.Vector3, damage: number, crit: boolean, knockback: number) {
+    const abx = end.x - start.x
+    const abz = end.z - start.z
+    const lenSq = abx * abx + abz * abz
+    let hitAny = false
+    for (const enemy of this.enemies) {
+      if (!enemy.alive) continue
+      const apx = enemy.pos.x - start.x
+      const apz = enemy.pos.z - start.z
+      const t = lenSq > 0.0001 ? Math.max(0, Math.min(1, (apx * abx + apz * abz) / lenSq)) : 0
+      const closestX = start.x + abx * t
+      const closestZ = start.z + abz * t
+      const distance = Math.hypot(enemy.pos.x - closestX, enemy.pos.z - closestZ)
+      if (distance > enemy.radius + CONFIG.player.radius) continue
+
+      hitAny = true
+      const reflected = enemy.takeDamage(damage, 'melee', crit)
+      enemy.knockback(start.x, start.z, knockback)
+      this.audio.hit()
+      this.triggerHitstop(crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
+      this.effects.shake(crit ? CONFIG.effects.shakeCrit : CONFIG.effects.shakeSwordHit)
+      this.applyLifesteal(damage)
+      this.effects.hitImpact(enemy.pos.x, enemy.pos.z, crit ? 2.0 : 1.4)
+      this.effects.damageNumber(new THREE.Vector3(enemy.pos.x, 1.8, enemy.pos.z), damage, crit)
+      if (reflected > 0 && this.player.takeDamage(reflected)) {
+        this.audio.hurt()
+        this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
+        this.effects.shake(CONFIG.effects.shakePlayerHit)
+      }
+    }
     if (hitAny) this.player.reloadFromSwordHit()
   }
 

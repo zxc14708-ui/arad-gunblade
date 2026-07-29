@@ -3,12 +3,12 @@ import { CONFIG, COLORS } from '../config'
 import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
 
-export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit' | 'ultimateCross'
+export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit' | 'ultimateCross' | 'iaido'
 export type GroundFxKind = 'warning' | 'shockwave' | 'tealMagic'
 
 /** 이펙트별 재생 속도(fps) */
 // Four temporary ultimate frames need to remain readable through the final impact beat.
-const FX_FPS: Record<FxKind, number> = { slash: 26, slashWind: 26, death: 16, muzzle: 26, hit: 22, ultimateCross: 8 }
+const FX_FPS: Record<FxKind, number> = { slash: 26, slashWind: 26, death: 16, muzzle: 26, hit: 22, ultimateCross: 8, iaido: 7 }
 
 type Particle = {
   mesh: THREE.Sprite
@@ -169,6 +169,24 @@ export class Effects {
   /** 궁극기 마무리용 임시 십자 베기 시트. 캐릭터 높이(3.7)의 정확히 두 배로 표시한다. */
   ultimateCross(pos: THREE.Vector3) {
     this.playFx('ultimateCross', pos.x, 1.35, pos.z, 7.4)
+  }
+
+  /** 발도 이동 경로 전체에 임시 픽셀 번개 검광을 표시한다. */
+  iaido(start: THREE.Vector3, end: THREE.Vector3) {
+    const dx = end.x - start.x
+    const dz = end.z - start.z
+    const distance = Math.max(1, Math.hypot(dx, dz))
+    const angle = Math.atan2(dx, dz)
+    const frames = frameTextures(ASSET.fx.iaido.path, ASSET.fx.iaido.frames)
+    const mat = new THREE.SpriteMaterial({ map: frames[0], transparent: true, depthWrite: false })
+    mat.rotation = -angle + Math.PI / 2
+    const sp = new THREE.Sprite(mat)
+    sp.position.set((start.x + end.x) / 2, 1.2, (start.z + end.z) / 2)
+    // 원본은 넓은 검광이 정사각 캔버스 중앙에 들어 있으므로 경로 길이에 맞춰
+    // 가로만 늘리고 세로는 캐릭터 높이보다 살짝 작게 고정한다.
+    sp.scale.set(distance * 1.2, 5.2, 1)
+    this.scene.add(sp)
+    this.fx.push({ sp, kind: 'iaido', time: 0, frames, fps: FX_FPS.iaido })
   }
 
   /** 총구 화염 (총구 앞쪽에 배치) — 높이는 gunblader_gun_m1911.png 발사 프레임의

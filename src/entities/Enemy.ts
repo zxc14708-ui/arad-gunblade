@@ -83,6 +83,8 @@ export class Enemy {
   private hitFlashCrit = false
   private def: KindDef
   private bob = Math.random() * Math.PI * 2
+  /** 원거리 적이 같은 거리 지점에 멈춰 겹치지 않도록 개체마다 반대 공전 방향을 준다. */
+  private rangedStrafeSign = 1
   private sprite: EnemySprite
   private eliteBarFill: THREE.Sprite | null = null
   private shieldBarFill: THREE.Sprite | null = null
@@ -111,6 +113,7 @@ export class Enemy {
     affix?: EliteAffix,
   ) {
     this.kind = kind
+    this.rangedStrafeSign = this.id % 2 === 0 ? 1 : -1
     this.def = DEFS[kind]
     this.sprite = new EnemySprite(kind)
     this.group = this.sprite.group
@@ -178,6 +181,12 @@ export class Enemy {
         moving = true
       } else if (dist < desired - 2) {
         this.pos.addScaledVector(dir, -this.speed * dt)
+        moving = true
+      } else {
+        // 적정 사거리에서는 정지하지 않고 플레이어 둘레를 좌/우로 공전한다.
+        // 개체별 방향이 갈려 화염 고블린이 한 점에 포개지는 현상을 줄인다.
+        const strafe = new THREE.Vector3(-dir.z * this.rangedStrafeSign, 0, dir.x * this.rangedStrafeSign)
+        this.pos.addScaledVector(strafe, this.speed * dt)
         moving = true
       }
       this.shootTimer -= dt

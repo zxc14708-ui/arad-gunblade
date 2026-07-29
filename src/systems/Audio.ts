@@ -147,11 +147,39 @@ export class AudioManager {
   }
 
   // ── 효과음 ──
-  gunshot() {
-    // M1911 .45 — 묵직한 발사음
-    this.noise(0.11, { type: 'lowpass', freq: 2200, slideTo: 300, gain: 0.4, q: 1 })
-    this.tone(180, 0.08, { type: 'square', gain: 0.16, slideTo: 60 })
-    this.noise(0.03, { type: 'highpass', freq: 4000, gain: 0.18 }) // 총구 크랙
+  gunshot(weaponId = 'm1911') {
+    // 임시 무기별 합성음. 최종 녹음 에셋이 들어오면 호출부를 유지한 채 교체할 수 있다.
+    switch (weaponId) {
+      case 'smg':
+        this.noise(0.055, { type: 'highpass', freq: 3200, gain: 0.24 })
+        this.tone(260, 0.045, { type: 'square', gain: 0.1, slideTo: 120 })
+        break
+      case 'shotgun':
+        this.noise(0.22, { type: 'lowpass', freq: 1800, slideTo: 180, gain: 0.5 })
+        this.tone(100, 0.18, { type: 'sawtooth', gain: 0.2, slideTo: 42 })
+        break
+      case 'rifle':
+        this.noise(0.08, { type: 'highpass', freq: 5200, gain: 0.32 })
+        this.tone(240, 0.11, { type: 'square', gain: 0.18, slideTo: 72 })
+        break
+      case 'magnum':
+        this.noise(0.16, { type: 'lowpass', freq: 2600, slideTo: 220, gain: 0.52 })
+        this.tone(125, 0.16, { type: 'sawtooth', gain: 0.24, slideTo: 38 })
+        break
+      case 'crossbow':
+        this.noise(0.07, { type: 'bandpass', freq: 1700, slideTo: 4200, gain: 0.22, q: 4 })
+        this.tone(520, 0.1, { type: 'triangle', gain: 0.12, slideTo: 180 })
+        break
+      case 'autocannon':
+        this.noise(0.09, { type: 'lowpass', freq: 2800, slideTo: 260, gain: 0.4 })
+        this.tone(92, 0.08, { type: 'square', gain: 0.2, slideTo: 48 })
+        break
+      default:
+        // M1911 .45 — 묵직한 발사음
+        this.noise(0.11, { type: 'lowpass', freq: 2200, slideTo: 300, gain: 0.4, q: 1 })
+        this.tone(180, 0.08, { type: 'square', gain: 0.16, slideTo: 60 })
+        this.noise(0.03, { type: 'highpass', freq: 4000, gain: 0.18 })
+    }
   }
 
   /** 재장전: 탄창 분리 → 삽입 → 슬라이드 (딸깍-철컥) */
@@ -170,9 +198,35 @@ export class AudioManager {
     this.noise(0.02, { type: 'highpass', freq: 5000, gain: 0.12 })
   }
 
-  slash() {
-    this.noise(0.22, { type: 'bandpass', freq: 900, slideTo: 3200, gain: 0.3, q: 1.2 })
-    this.tone(600, 0.18, { type: 'triangle', gain: 0.1, slideTo: 1400 })
+  slash(weaponId = 'katana') {
+    const heavy = weaponId === 'greatsword' || weaponId === 'warhammer'
+    const fast = weaponId === 'daggers' || weaponId === 'rapier'
+    const spectral = weaponId === 'moonblade'
+    this.noise(heavy ? 0.34 : fast ? 0.13 : 0.22, {
+      type: 'bandpass',
+      freq: heavy ? 430 : fast ? 1600 : 900,
+      slideTo: spectral ? 5200 : heavy ? 1800 : 3200,
+      gain: heavy ? 0.4 : 0.3,
+      q: spectral ? 2.4 : 1.2,
+    })
+    this.tone(spectral ? 880 : heavy ? 280 : 600, heavy ? 0.25 : 0.18, {
+      type: spectral ? 'sine' : 'triangle',
+      gain: spectral ? 0.18 : 0.1,
+      slideTo: spectral ? 1760 : heavy ? 620 : 1400,
+    })
+  }
+
+  /** 발도 시작의 짧은 칼집 마찰음. */
+  iaidoStart() {
+    this.noise(0.09, { type: 'highpass', freq: 2800, slideTo: 6200, gain: 0.22, q: 3 })
+    this.tone(980, 0.08, { type: 'triangle', gain: 0.1, slideTo: 1500 })
+  }
+
+  /** 발도 경로 타격음 — 기본 검 소리보다 짧고 강한 번개 파열을 겹친다. */
+  iaido(weaponId = 'katana') {
+    this.slash(weaponId)
+    this.noise(0.16, { type: 'bandpass', freq: 900, slideTo: 6400, gain: 0.3, q: 2.8 })
+    this.tone(1200, 0.12, { type: 'square', gain: 0.12, slideTo: 260 })
   }
 
   hit() {

@@ -112,7 +112,7 @@ export class HUD {
       </div>
 
       <div class="hud-skills" aria-label="액티브 스킬">
-        <div class="skill ready" id="skillQ"><kbd>Q</kbd><span>돌진</span><i></i></div>
+        <div class="skill ready" id="skillQ"><kbd>Q</kbd><span>발도</span><i></i></div>
         <div class="skill ready" id="skillE"><kbd>E</kbd><span>더블 샷</span><i></i></div>
         <div class="skill ready ultimate" id="skillR"><kbd>R</kbd><span>폭렬 난무</span><i></i></div>
       </div>
@@ -130,7 +130,7 @@ export class HUD {
         <div class="helptext">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp; <kbd>마우스</kbd> 조준<br/>
           <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>T</kbd> 장전 &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
-          <kbd>Q</kbd> 돌진 &nbsp;·&nbsp; <kbd>E</kbd> 더블 샷 &nbsp;·&nbsp; <kbd>R</kbd> 폭렬 난무<br/>
+          <kbd>Q</kbd> 발도 &nbsp;·&nbsp; <kbd>E</kbd> 더블 샷 &nbsp;·&nbsp; <kbd>R</kbd> 폭렬 난무<br/>
           <kbd>Shift</kbd> 대시 (무적) &nbsp;·&nbsp; <kbd>E</kbd> 상호작용 &nbsp;·&nbsp; <kbd>Tab</kbd> 설정<br/><br/>
           마을의 <b style="color:#c8b0ff">포탈</b>로 던전에 입장하라.<br/>
           방을 클리어하고 <b style="color:#ffd070">문</b>을 골라 전진 —
