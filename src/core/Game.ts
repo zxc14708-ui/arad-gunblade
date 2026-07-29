@@ -889,7 +889,10 @@ export class Game {
     this.entrySafeTimer = Math.max(0, this.entrySafeTimer - dt)
 
     // ── 플레이어 ──
-    const { bullets, slash, startedReload } = this.player.update(dt, this.input, this.aimGround)
+    // 상호작용 키 E와 충돌하지 않도록 액티브 스킬은 적이 살아 있는 전투 중에만 쓴다.
+    // 방 정리 후, 상점/분수/문 앞에서는 E가 언제나 상호작용으로 동작한다.
+    const activeSkillsEnabled = this.mode === 'dungeon' && this.enemies.some((enemy) => enemy.alive)
+    const { bullets, slash, chargeSlash, ultimate, startedReload } = this.player.update(dt, this.input, this.aimGround, activeSkillsEnabled)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
@@ -904,6 +907,18 @@ export class Game {
       this.audio.slash()
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
       this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
+    }
+    if (chargeSlash) {
+      this.audio.slash()
+      this.effects.slash(chargeSlash.pos, chargeSlash.angle, chargeSlash.arc, chargeSlash.range)
+      this.resolveSlash(chargeSlash.pos, chargeSlash.angle, chargeSlash.arc, chargeSlash.range, chargeSlash.damage, chargeSlash.crit, chargeSlash.knockback)
+    }
+    if (ultimate) {
+      this.audio.slash()
+      this.effects.slash(ultimate.slash.pos, ultimate.slash.angle, ultimate.slash.arc, ultimate.slash.range)
+      this.resolveSlash(ultimate.slash.pos, ultimate.slash.angle, ultimate.slash.arc, ultimate.slash.range, ultimate.slash.damage, ultimate.slash.crit, ultimate.slash.knockback)
+      this.effects.playGroundFx('shockwave', this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius * 2)
+      this.aoeDamage(this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius, ultimate.shockwaveDamage, COLORS.slash)
     }
 
     // 대시 잔상
@@ -972,6 +987,12 @@ export class Game {
     // ── HUD ──
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setDash(this.player.dashCooldownRatio, this.player.dashReady)
+    this.hud.setActiveSkills(
+      this.player.activeSkillCooldowns,
+      activeSkillsEnabled && this.player.chargeReady,
+      activeSkillsEnabled && this.player.doubleShotReady,
+      activeSkillsEnabled && this.player.ultimateReady,
+    )
     this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading, this.player.reloadRatio, this.player.gun.name)
     this.hud.setStats(this.player.level, this.mode === 'town' ? 0 : this.run.depth, this.kills, this.run.gold)
 
