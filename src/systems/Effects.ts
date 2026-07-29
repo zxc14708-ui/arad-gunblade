@@ -179,7 +179,9 @@ export class Effects {
     const angle = Math.atan2(dx, dz)
     const frames = frameTextures(ASSET.fx.iaido.path, ASSET.fx.iaido.frames)
     const mat = new THREE.SpriteMaterial({ map: frames[0], transparent: true, depthWrite: false })
-    mat.rotation = -angle + Math.PI / 2
+    // 스프라이트 원본은 오른쪽을 향한다. 화면에서 +Z 이동은 아래쪽이므로
+    // 월드 진행 각도의 상하 부호를 뒤집지 않고 오른쪽 기준만 보정한다.
+    mat.rotation = angle - Math.PI / 2
     const sp = new THREE.Sprite(mat)
     sp.position.set((start.x + end.x) / 2, 1.2, (start.z + end.z) / 2)
     // 원본은 넓은 검광이 정사각 캔버스 중앙에 들어 있으므로 경로 길이에 맞춰

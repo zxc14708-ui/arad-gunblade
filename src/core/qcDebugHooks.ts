@@ -28,6 +28,7 @@ interface GameInternals {
     speed: number
     invuln: number
     equip: (weapon: NonNullable<ReturnType<typeof weaponById>>) => void
+    char: { spec: { n: number } }
   }
   boss: Enemy | null
   hud: { showBoss(show: boolean): void }
@@ -93,6 +94,6 @@ export function installQcDebugHooks(game: Game) {
     if (!gun || gun.kind !== 'gun' || !sword || sword.kind !== 'sword') return false
     g.player.equip(gun)
     g.player.equip(sword)
-    return true
+    return g.player.char.spec.n === 27
   }
 }

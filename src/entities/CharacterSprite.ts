@@ -13,9 +13,9 @@ import * as THREE from 'three'
  *   발끝이 셀 바닥에 오도록 정렬되어 있다.
  *   대기 0-3 / 걷기 4-10 / 검 공격 11-18 / 총 공격 19-26
  * 로드 실패 시(또는 로드 전) 절차 생성 픽셀 시트(9프레임)로 폴백.
- * 기본 카타나/M1911은 완성 아트를 유지하고, 다른 무기를 장착하면 무기별 외형이
- * 들어 있는 절차 픽셀 시트로 전환한다. 이 시트는 최종 무기 파츠 아트 전까지 쓰는
- * 임시 일러스트다.
+ * 장착 무기와 관계없이 기존 완성 아트를 유지한다. 절차 픽셀 시트는 아트가 아직
+ * 로드되지 않았거나 로드에 실패했을 때만 보이는 폴백이다. 무기별 외형 변화는
+ * 최종 파츠 아트가 준비된 뒤 다시 연결한다.
  */
 interface SheetSpec {
   n: number
@@ -45,7 +45,7 @@ const ART_SPEC: SheetSpec = {
 }
 
 export class CharacterSprite {
-  /** 커스텀 아트 시트 경로 (null이면 절차 생성만 사용) */
+  /** 확정된 기존 캐릭터 시트. null이면 절차 생성만 사용하며 장착 무기는 외형을 바꾸지 않는다. */
   static SHEET_URL: string | null = 'gunblader.png'
   /** 분리 파츠 아트는 모션·피벗 기준 확정 전까지 비활성화한다. */
   static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = null
@@ -94,7 +94,7 @@ export class CharacterSprite {
           loaded.generateMipmaps = false
           loaded.colorSpace = THREE.SRGBColorSpace
           this.artTexture = loaded
-          if (this.usesDefaultWeapons()) this.setTexture(loaded, ART_SPEC)
+          this.setTexture(loaded, ART_SPEC)
         },
         undefined,
         () => {
@@ -124,7 +124,7 @@ export class CharacterSprite {
           }
           const loaded = makeTexture(cv)
           this.artTexture = loaded
-          if (this.usesDefaultWeapons()) this.setTexture(loaded, ART_SPEC)
+          this.setTexture(loaded, ART_SPEC)
         })
         .catch(() => {
           /* 로드 실패 → 절차 시트 유지 */
@@ -134,10 +134,6 @@ export class CharacterSprite {
 
   private applyScale() {
     this.sprite.scale.set(this.baseH * this.spec.aspect, this.baseH, 1)
-  }
-
-  private usesDefaultWeapons() {
-    return this.gunId === 'm1911' && this.swordId === 'katana'
   }
 
   private setTexture(tex: THREE.Texture, spec: SheetSpec) {
@@ -155,7 +151,7 @@ export class CharacterSprite {
   setWeapons(gunId: string, swordId: string) {
     this.gunId = gunId
     this.swordId = swordId
-    if (this.usesDefaultWeapons() && this.artTexture) {
+    if (this.artTexture) {
       this.setTexture(this.artTexture, ART_SPEC)
       return
     }
