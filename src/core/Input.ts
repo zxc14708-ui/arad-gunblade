@@ -7,6 +7,33 @@
  *   blur/visibilitychange/pagehide에서 초기화하고, 매 프레임 document.hasFocus()로
  *   이벤트가 유실된 경우까지 복구한다.
  */
+export type KeyAction =
+  | 'moveUp' | 'moveDown' | 'moveLeft' | 'moveRight'
+  | 'dash' | 'slash' | 'reload' | 'charge' | 'doubleShot' | 'ultimate' | 'interact'
+
+export type KeyBindings = Record<KeyAction, string>
+
+export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
+  moveUp: '위로 이동', moveDown: '아래로 이동', moveLeft: '왼쪽 이동', moveRight: '오른쪽 이동',
+  dash: '대시', slash: '베기', reload: '장전', charge: '돌진', doubleShot: '더블 샷', ultimate: '궁극기', interact: '상호작용',
+}
+
+const DEFAULT_BINDINGS: KeyBindings = {
+  moveUp: 'KeyW', moveDown: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
+  dash: 'ShiftLeft', slash: 'Space', reload: 'KeyT', charge: 'KeyQ', doubleShot: 'KeyE', ultimate: 'KeyR', interact: 'KeyE',
+}
+
+export function keyLabel(code: string) {
+  const names: Record<string, string> = {
+    Space: 'Space', ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift',
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+  }
+  if (names[code]) return names[code]
+  if (code.startsWith('Key')) return code.slice(3)
+  if (code.startsWith('Digit')) return code.slice(5)
+  return code
+}
+
 export class Input {
   keys = new Set<string>()
   /** 이번 프레임까지 '눌린 적 있는' 키 — 빠른 탭이 프레임 사이에 유실되지 않게 래치 */
@@ -17,6 +44,7 @@ export class Input {
   ndc = { x: 0, y: 0 }
   private el: HTMLElement
   private hadFocus = true
+  private bindings: KeyBindings = { ...DEFAULT_BINDINGS }
 
   constructor(el: HTMLElement) {
     this.el = el
@@ -33,6 +61,40 @@ export class Input {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.clearAll()
     })
+    try {
+      const saved = JSON.parse(localStorage.getItem('arad_keybinds') || '{}') as Partial<KeyBindings>
+      for (const action of Object.keys(DEFAULT_BINDINGS) as KeyAction[]) {
+        if (typeof saved[action] === 'string' && saved[action]) this.bindings[action] = saved[action]!
+      }
+    } catch {
+      /* Keep defaults when browser storage is unavailable or invalid. */
+    }
+  }
+
+  get keyBindings(): KeyBindings {
+    return { ...this.bindings }
+  }
+
+  rebind(action: KeyAction, code: string) {
+    if (!code || code === 'Escape' || code === 'Tab') return false
+    const occupied = (Object.keys(this.bindings) as KeyAction[]).find((name) => name !== action && this.bindings[name] === code)
+    if (occupied) return false
+    this.bindings[action] = code
+    try {
+      localStorage.setItem('arad_keybinds', JSON.stringify(this.bindings))
+    } catch {
+      /* The active session still keeps the newly selected key. */
+    }
+    this.clearAll()
+    return true
+  }
+
+  downAction(action: KeyAction) {
+    return this.down(this.bindings[action])
+  }
+
+  consumeAction(action: KeyAction) {
+    return this.consumePress(this.bindings[action])
   }
 
   /** 눌린 키·버튼 전부 해제 */
@@ -94,10 +156,10 @@ export class Input {
   moveVector() {
     let x = 0
     let z = 0
-    if (this.down('KeyW') || this.down('ArrowUp')) z -= 1
-    if (this.down('KeyS') || this.down('ArrowDown')) z += 1
-    if (this.down('KeyA') || this.down('ArrowLeft')) x -= 1
-    if (this.down('KeyD') || this.down('ArrowRight')) x += 1
+    if (this.downAction('moveUp') || this.down('ArrowUp')) z -= 1
+    if (this.downAction('moveDown') || this.down('ArrowDown')) z += 1
+    if (this.downAction('moveLeft') || this.down('ArrowLeft')) x -= 1
+    if (this.downAction('moveRight') || this.down('ArrowRight')) x += 1
     return { x, z }
   }
 }

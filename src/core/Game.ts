@@ -144,6 +144,7 @@ export class Game {
       else this.audio.setSfxVolume(v)
     })
     this.hud.onShakeToggle((on) => this.effects.setShakeEnabled(on))
+    this.hud.onKeybind((action, code) => this.input.rebind(action, code))
     this.hud.onShop(
       (i) => this.buyShopItem(i),
       () => this.rerollShop(),
@@ -423,7 +424,7 @@ export class Game {
 
   private handleInteract() {
     // 엣지 트리거 — 빠른 E 탭도 놓치지 않음
-    const justPressed = this.input.consumePress('KeyE')
+    const justPressed = this.input.consumeAction('interact')
 
     // 가장 가까운 상호작용 대상 찾기
     let target: Interactable | null = null
@@ -830,6 +831,7 @@ export class Game {
           swordIcon: this.player.sword.icon,
         },
         this.effects.shakeIsEnabled,
+        this.input.keyBindings,
       )
     }
   }
@@ -900,7 +902,8 @@ export class Game {
     }
     if (bullets.length > 0) {
       this.audio.gunshot()
-      this.effects.muzzleFlash(this.player.pos, this.player.angle) // 총구 앞쪽 화염
+      // More than one projectile (double shot / ultimate) needs a muzzle flash in each real firing direction.
+      for (const bullet of bullets) this.effects.muzzleFlash(this.player.pos, Math.atan2(bullet.dir.x, bullet.dir.z))
     }
     if (startedReload) this.audio.reload()
     if (slash) {
@@ -915,8 +918,11 @@ export class Game {
     }
     if (ultimate) {
       this.audio.slash()
-      this.effects.slash(ultimate.slash.pos, ultimate.slash.angle, ultimate.slash.arc, ultimate.slash.range)
-      this.resolveSlash(ultimate.slash.pos, ultimate.slash.angle, ultimate.slash.arc, ultimate.slash.range, ultimate.slash.damage, ultimate.slash.crit, ultimate.slash.knockback)
+      for (const slashPart of ultimate.slashes) {
+        this.effects.slash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range)
+        this.resolveSlash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range, slashPart.damage, slashPart.crit, slashPart.knockback)
+      }
+      this.effects.ultimateCross(this.player.pos)
       this.effects.playGroundFx('shockwave', this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius * 2)
       this.aoeDamage(this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius, ultimate.shockwaveDamage, COLORS.slash)
     }

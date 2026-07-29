@@ -1,6 +1,7 @@
 import { Upgrade } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
+import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
 
 export interface MiniMapRoom {
   id: string
@@ -42,6 +43,8 @@ export class HUD {
   private lastMag = -1
   private volCb: ((kind: 'master' | 'music' | 'sfx', v: number) => void) | null = null
   private shakeCb: ((on: boolean) => void) | null = null
+  private keybindCb: ((action: KeyAction, code: string) => boolean) | null = null
+  private listeningAction: KeyAction | null = null
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div')
@@ -69,6 +72,7 @@ export class HUD {
     this.ammoText = this.q('#ammoText')
     this.ammoPips = this.q('#ammoPips')
     this.ammoBox = this.q('#ammoBox')
+    window.addEventListener('keydown', (e) => this.captureKeybind(e), true)
   }
 
   private q<T extends HTMLElement>(sel: string): T {
@@ -145,6 +149,9 @@ export class HUD {
           <div class="slider-row"><label>효과음</label><input type="range" id="volSfx" min="0" max="100" value="85"/><span class="slval" id="volSfxV">85%</span></div>
           <div class="settings-sec">🎬 화면 효과</div>
           <div class="toggle-row"><label for="shakeToggle">화면 흔들림</label><input type="checkbox" id="shakeToggle" checked/></div>
+          <div class="settings-sec">⌨ 조작 키</div>
+          <div class="keybind-note" id="keybindNote">버튼을 누른 뒤 원하는 키를 누르세요. 같은 키는 중복 지정할 수 없습니다.</div>
+          <div class="keybinds" id="keybinds"></div>
           <div class="settings-sec">🗡️ 장착 무기</div>
           <div class="equipped" id="equipped"></div>
           <div class="settings-sec">✨ 획득 특성 <span class="traits-count" id="traitsCount"></span></div>
@@ -260,11 +267,78 @@ export class HUD {
     el.onchange = () => cb(el.checked)
   }
 
+  onKeybind(cb: (action: KeyAction, code: string) => boolean) {
+    this.keybindCb = cb
+  }
+
+  private renderKeybinds(bindings: KeyBindings) {
+    const box = this.q('#keybinds')
+    box.innerHTML = ''
+    const order: KeyAction[] = ['moveUp', 'moveDown', 'moveLeft', 'moveRight', 'dash', 'slash', 'reload', 'charge', 'doubleShot', 'ultimate', 'interact']
+    for (const action of order) {
+      const row = document.createElement('div')
+      row.className = 'keybind-row'
+      const label = document.createElement('span')
+      label.textContent = KEY_ACTION_LABELS[action]
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'keybind-btn'
+      button.dataset.action = action
+      button.textContent = keyLabel(bindings[action])
+      button.onclick = () => {
+        this.listeningAction = action
+        this.q('#keybindNote').textContent = `${KEY_ACTION_LABELS[action]}: 새 키를 누르세요. Esc는 취소입니다.`
+        box.querySelectorAll('.keybind-btn').forEach((el) => el.classList.remove('listening'))
+        button.classList.add('listening')
+        button.focus()
+      }
+      row.append(label, button)
+      box.appendChild(row)
+    }
+    this.setSkillKeys(bindings)
+  }
+
+  private captureKeybind(e: KeyboardEvent) {
+    if (!this.listeningAction) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    const action = this.listeningAction
+    const box = this.q('#keybinds')
+    this.listeningAction = null
+    box.querySelectorAll('.keybind-btn').forEach((el) => el.classList.remove('listening'))
+    if (e.code === 'Escape') {
+      this.q('#keybindNote').textContent = '키 변경을 취소했습니다.'
+      return
+    }
+    if (this.keybindCb?.(action, e.code)) {
+      const button = box.querySelector(`[data-action="${action}"]`) as HTMLButtonElement | null
+      if (button) button.textContent = keyLabel(e.code)
+      this.q('#keybindNote').textContent = `${KEY_ACTION_LABELS[action]}: ${keyLabel(e.code)}로 변경했습니다.`
+      const bindings = Object.fromEntries([...box.querySelectorAll<HTMLButtonElement>('.keybind-btn')].map((button) => [button.dataset.action!, button.textContent!])) as Partial<KeyBindings>
+      this.setSkillKeys({
+        moveUp: bindings.moveUp ?? 'W', moveDown: bindings.moveDown ?? 'S', moveLeft: bindings.moveLeft ?? 'A', moveRight: bindings.moveRight ?? 'D',
+        dash: bindings.dash ?? 'Left Shift', slash: bindings.slash ?? 'Space', reload: bindings.reload ?? 'T', charge: bindings.charge ?? 'Q',
+        doubleShot: bindings.doubleShot ?? 'E', ultimate: bindings.ultimate ?? 'R', interact: bindings.interact ?? 'E',
+      })
+    } else {
+      this.q('#keybindNote').textContent = '이미 다른 조작에 쓰는 키입니다. 다른 키를 선택하세요.'
+    }
+  }
+
+  private setSkillKeys(bindings: KeyBindings) {
+    ;(this.skillButtons.q.querySelector('kbd') as HTMLElement).textContent = keyLabel(bindings.charge)
+    ;(this.skillButtons.e.querySelector('kbd') as HTMLElement).textContent = keyLabel(bindings.doubleShot)
+    ;(this.skillButtons.r.querySelector('kbd') as HTMLElement).textContent = keyLabel(bindings.ultimate)
+    const ammoKey = this.q('#ammoBox .ammo-label kbd')
+    if (ammoKey) ammoKey.textContent = keyLabel(bindings.reload)
+  }
+
   openSettings(
     traits: { upgrade: Upgrade; count: number }[],
     vol: { master: number; music: number; sfx: number },
     equip?: { gun: string; gunIcon: string; sword: string; swordIcon: string },
     shakeEnabled = true,
+    bindings?: KeyBindings,
   ) {
     // 슬라이더를 현재 음량에 맞춤
     const set = (id: string, valId: string, v: number) => {
@@ -275,6 +349,7 @@ export class HUD {
     set('#volMusic', '#volMusicV', vol.music)
     set('#volSfx', '#volSfxV', vol.sfx)
     ;(this.q('#shakeToggle') as HTMLInputElement).checked = shakeEnabled
+    if (bindings) this.renderKeybinds(bindings)
 
     // 장착 무기
     if (equip) {
@@ -308,6 +383,7 @@ export class HUD {
   }
 
   closeSettings() {
+    this.listeningAction = null
     this.settingsOv.classList.remove('show')
   }
 

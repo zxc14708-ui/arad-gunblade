@@ -3,11 +3,12 @@ import { CONFIG, COLORS } from '../config'
 import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
 
-export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit'
+export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit' | 'ultimateCross'
 export type GroundFxKind = 'warning' | 'shockwave' | 'tealMagic'
 
 /** 이펙트별 재생 속도(fps) */
-const FX_FPS: Record<FxKind, number> = { slash: 26, slashWind: 26, death: 16, muzzle: 26, hit: 22 }
+// Four temporary ultimate frames need to remain readable through the final impact beat.
+const FX_FPS: Record<FxKind, number> = { slash: 26, slashWind: 26, death: 16, muzzle: 26, hit: 22, ultimateCross: 8 }
 
 type Particle = {
   mesh: THREE.Sprite
@@ -163,6 +164,11 @@ export class Effects {
     const z = pos.z + fwd.z * range * 0.45
     this.playFx('slashWind', x, 1.1, z, range * 1.5, angle)
     this.playFx('slash', x, 1.1, z, range * 1.5, angle)
+  }
+
+  /** 궁극기 마무리용 임시 십자 베기 시트. 캐릭터 높이(3.7)의 정확히 두 배로 표시한다. */
+  ultimateCross(pos: THREE.Vector3) {
+    this.playFx('ultimateCross', pos.x, 1.35, pos.z, 7.4)
   }
 
   /** 총구 화염 (총구 앞쪽에 배치) — 높이는 gunblader_gun_m1911.png 발사 프레임의
