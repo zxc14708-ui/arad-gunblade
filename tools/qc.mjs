@@ -155,7 +155,7 @@ const STEPS = [
   },
   {
     name: 'settings',
-    what: '설정창 — 음량 3종 + 획득 특성 목록',
+    what: '설정창 — 음량 3종 + 화면 효과 + 키 설정 + 획득 특성 목록',
     async run(p) {
       await p.keyboard.press('Tab')
       await p.waitForTimeout(400)

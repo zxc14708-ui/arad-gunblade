@@ -1,5 +1,11 @@
 # Design Log — ARAD: Gunblade
 
+### 2026-07-29 HUD readability and ultimate presentation
+- **Target**: `HUD.ts`, `style.css`, `Input.ts`, `Player.ts`, `Game.ts`, temporary effect asset
+- **Intent**: Separate overlapping health and active-skill HUD elements, make dash/ammo legible, and let players store their keyboard preferences in the browser.
+- **Result**: Active skills sit above the health/XP bars; dash and ammo widgets are 1.5× their previous visual size. The settings panel supports persistent key rebinding with duplicate-key prevention. R now fires the existing six ultimate shots evenly around 360° and ends in two perpendicular sword hits plus a temporary four-frame cross-slash sprite at 2× character height.
+- **Asset note**: `public/assets/fx/ultimate_cross_temp_4f.png` is an ImageGen temporary sprite sheet, to be replaced by final art later.
+
 기획 의도와 판단 근거를 남기는 문서. **수치 자체는 여기 적지 않는다** —
 `src/config.ts`, `src/systems/Weapons.ts`, `src/systems/Upgrades.ts`가 원본이다.
 여기에는 "왜 그렇게 바꿨는가", "무엇을 시도했다가 되돌렸는가", "무엇이 아직 안 풀렸는가"만 기록한다.
