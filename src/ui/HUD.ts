@@ -27,6 +27,7 @@ export class HUD {
   private hpLabel!: HTMLElement
   private xpFill!: HTMLElement
   private dashRing!: HTMLElement
+  private skillButtons!: Record<'q' | 'e' | 'r', HTMLElement>
   private banner!: HTMLElement
   private bossBar!: HTMLElement
   private bossFill!: HTMLElement
@@ -57,6 +58,7 @@ export class HUD {
     this.hpLabel = this.q('#hpLabel')
     this.xpFill = this.q('#xpFill')
     this.dashRing = this.q('#dashRing')
+    this.skillButtons = { q: this.q('#skillQ'), e: this.q('#skillE'), r: this.q('#skillR') }
     this.banner = this.q('#banner')
     this.bossBar = this.q('#bossBar')
     this.bossFill = this.q('#bossFill')
@@ -102,7 +104,13 @@ export class HUD {
       <div class="hud-ammo" id="ammoBox">
         <div class="ammo-pips" id="ammoPips"></div>
         <div class="ammo-text" id="ammoText">7 / 7</div>
-        <div class="ammo-label"><span id="gunName">M1911</span> · <kbd>R</kbd> 장전</div>
+        <div class="ammo-label"><span id="gunName">M1911</span> · <kbd>T</kbd> 장전</div>
+      </div>
+
+      <div class="hud-skills" aria-label="액티브 스킬">
+        <div class="skill ready" id="skillQ"><kbd>Q</kbd><span>돌진</span><i></i></div>
+        <div class="skill ready" id="skillE"><kbd>E</kbd><span>더블 샷</span><i></i></div>
+        <div class="skill ready ultimate" id="skillR"><kbd>R</kbd><span>폭렬 난무</span><i></i></div>
       </div>
 
       <div class="hud-dash">
@@ -117,7 +125,8 @@ export class HUD {
         <div class="subtitle">던전앤파이터 팬 게임 · 총검사</div>
         <div class="helptext">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp; <kbd>마우스</kbd> 조준<br/>
-          <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>R</kbd> 장전 &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
+          <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>T</kbd> 장전 &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
+          <kbd>Q</kbd> 돌진 &nbsp;·&nbsp; <kbd>E</kbd> 더블 샷 &nbsp;·&nbsp; <kbd>R</kbd> 폭렬 난무<br/>
           <kbd>Shift</kbd> 대시 (무적) &nbsp;·&nbsp; <kbd>E</kbd> 상호작용 &nbsp;·&nbsp; <kbd>Tab</kbd> 설정<br/><br/>
           마을의 <b style="color:#c8b0ff">포탈</b>로 던전에 입장하라.<br/>
           방을 클리어하고 <b style="color:#ffd070">문</b>을 골라 전진 —
@@ -399,6 +408,19 @@ export class HUD {
   setDash(ratio: number, ready: boolean) {
     this.dashRing.style.setProperty('--p', Math.round(ratio * 100) + '%')
     this.dashRing.classList.toggle('ready', ready)
+  }
+
+  setActiveSkills(cooldowns: { charge: number; doubleShot: number; ultimate: number }, chargeReady: boolean, doubleShotReady: boolean, ultimateReady: boolean) {
+    const states: [keyof typeof this.skillButtons, number, boolean][] = [
+      ['q', cooldowns.charge, chargeReady],
+      ['e', cooldowns.doubleShot, doubleShotReady],
+      ['r', cooldowns.ultimate, ultimateReady],
+    ]
+    for (const [key, cooldown, ready] of states) {
+      const el = this.skillButtons[key]
+      el.classList.toggle('ready', ready)
+      el.style.setProperty('--cd', `${Math.round(Math.min(1, cooldown) * 100)}%`)
+    }
   }
 
   banner_(text: string) {

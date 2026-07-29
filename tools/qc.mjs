@@ -121,7 +121,7 @@ const STEPS = [
     name: 'reload',
     what: '장전 — 탄창 UI 가 7/7 로 복귀하는가',
     async run(p) {
-      await p.keyboard.press('KeyR')
+      await p.keyboard.press('KeyT')
       await p.waitForTimeout(1400)
     },
     check: async (p) => {
@@ -253,6 +253,44 @@ const STEPS = [
   // 보장이 없어(보스방은 8개 방 완주, 특정 접두사는 확률) 정상 플레이 경로로는
   // 결정적으로 재현할 수 없다. qcDebugHooks.ts(QC_DEBUG=1 빌드에만 포함)로
   // 현재 방에 직접 스폰해 상태머신 타이밍·접두사 효과를 검증한다.
+  {
+    name: 'active-skills',
+    what: 'Q 돌진 · E 더블 샷 · R 폭렬 난무 — 이동/탄약/쿨다운/마무리 충격파',
+    async run(p) {
+      await dismissLevelUp(p)
+      await aim(p, 400)
+      await p.evaluate(() => {
+        const g = window.__game
+        // 전투방 중앙에서는 E를 상호작용에 빼앗기지 않는다.
+        g.player.pos.set(0, 0, 0)
+        g.player.ammo = g.player.magSize
+        g.player.reloading = false
+        g.debugClearEnemies()
+        g.debugSpawnBoss()
+        window.__qcSkills = { x: g.player.pos.x, z: g.player.pos.z, ammo: g.player.ammo }
+      })
+      await p.keyboard.press('KeyQ')
+      await p.waitForTimeout(180)
+      await p.keyboard.press('KeyE')
+      await p.waitForTimeout(90)
+      await p.keyboard.press('KeyR')
+      await p.waitForTimeout(900)
+    },
+    check: async (p) => p.evaluate(() => {
+      const g = window.__game
+      const before = window.__qcSkills
+      const moved = Math.hypot(g.player.pos.x - before.x, g.player.pos.z - before.z) > 1
+      const eAmmo = before.ammo - g.player.ammo >= 2
+      const cds = g.player.activeSkillCooldowns
+      const shockwave = g.effects.groundFx?.some((fx) => fx.duration > 0) ?? false
+      const buttons = ['skillQ', 'skillE', 'skillR'].every((id) => document.querySelector(`#${id}`))
+      if (!moved) return 'Q 돌진 이동이 확인되지 않음'
+      if (!eAmmo) return 'E 더블 샷이 탄약 2발을 소비하지 않음'
+      if (!(cds.charge > 0 && cds.doubleShot > 0 && cds.ultimate > 0)) return '스킬 쿨다운이 시작되지 않음'
+      if (!shockwave) return 'R 마무리 충격파가 생성되지 않음'
+      return buttons ? null : '스킬 HUD가 없음'
+    }),
+  },
   {
     name: 'boss-prep',
     what: '보스 준비 장소 — 적 없이 상점·분수로 보스방 하나만 연결되는가',

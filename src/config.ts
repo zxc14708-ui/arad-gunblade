@@ -73,6 +73,33 @@ export const CONFIG = {
     lunge: 4.5, // 베기 시 전방 대시
   },
 
+  // 액티브 스킬 수치. 무기/특성의 실제 공격력에 배수를 적용하므로,
+  // 장비를 바꿔도 스킬의 역할은 유지된다.
+  skills: {
+    charge: {
+      cooldown: 4,
+      duration: 0.24,
+      speed: 28,
+      damageMultiplier: 1.5,
+    },
+    doubleShot: {
+      cooldown: 5,
+      ammoCost: 2,
+      angleOffset: 0.055,
+      damageMultiplier: 1,
+    },
+    ultimate: {
+      cooldown: 24,
+      bulletCount: 6,
+      bulletInterval: 0.11,
+      bulletSpread: 0.14,
+      bulletDamageMultiplier: 0.8,
+      slashDamageMultiplier: 2.4,
+      shockwaveDamageMultiplier: 1.6,
+      shockwaveRadius: 5,
+    },
+  },
+
   enemy: {
     baseHp: 30,
     baseSpeed: 4.2,
