@@ -88,7 +88,7 @@ export interface SlashSpec {
 }
 
 export interface UltimateSpec {
-  slash: SlashSpec
+  slashes: [SlashSpec, SlashSpec]
   shockwaveDamage: number
   shockwaveRadius: number
 }
@@ -342,7 +342,7 @@ export class Player {
         this.walkPhase += dt * 13 // 걷기 다리 회전
       }
       // 대시 시작
-      if (input.down('ShiftLeft') && this.dashReady && (mv.x !== 0 || mv.z !== 0)) {
+      if (input.downAction('dash') && this.dashReady && (mv.x !== 0 || mv.z !== 0)) {
         this.dashDir.set(mv.x, 0, mv.z).normalize()
         this.dashTimer = CONFIG.player.dashDuration
         this.dashCdTimer = this.stats.dashCooldown
@@ -358,7 +358,7 @@ export class Player {
         this.reloading = false
         this.ammo = this.magSize
       }
-    } else if (input.consumePress('KeyT')) {
+    } else if (input.consumeAction('reload')) {
       // 수동 장전 (R)
       startedReload = this.startReload()
     }
@@ -366,7 +366,7 @@ export class Player {
     // 총 발사 (좌클릭 홀드로 연사 — 탄창 소진 시 자동 장전)
     // Q: 검으로 베며 앞으로 돌진한다. 기본 대시와 달리 피해용 이동기이며
     // 무적은 부여하지 않는다.
-    if (activeSkillsEnabled && input.consumePress('KeyQ') && this.chargeReady && this.chargeTimer <= 0) {
+    if (activeSkillsEnabled && input.consumeAction('charge') && this.chargeReady && this.chargeTimer <= 0) {
       this.chargeCdTimer = CONFIG.skills.charge.cooldown
       this.chargeTimer = CONFIG.skills.charge.duration
       this.chargeDir.set(Math.sin(this.angle), 0, Math.cos(this.angle))
@@ -380,7 +380,7 @@ export class Player {
     }
 
     // E: 탄약 두 발을 동시에 소비하고, 조준선 양 옆으로 100% 위력의 탄환을 발사한다.
-    if (activeSkillsEnabled && input.consumePress('KeyE') && this.doubleShotReady && !this.reloading && this.ammo >= CONFIG.skills.doubleShot.ammoCost) {
+    if (activeSkillsEnabled && input.consumeAction('doubleShot') && this.doubleShotReady && !this.reloading && this.ammo >= CONFIG.skills.doubleShot.ammoCost) {
       this.doubleShotCdTimer = CONFIG.skills.doubleShot.cooldown
       this.ammo -= CONFIG.skills.doubleShot.ammoCost
       this.shootAnim = Math.max(0.16, this.stats.gunCooldown)
@@ -397,7 +397,7 @@ export class Player {
     }
 
     // R: 폭렬 난무. 발동 순간의 조준 방향을 잠그고 탄막 뒤에 넓은 검격과 충격파를 낸다.
-    if (activeSkillsEnabled && input.consumePress('KeyR') && this.ultimateReady && this.ultimateShotsLeft === 0) {
+    if (activeSkillsEnabled && input.consumeAction('ultimate') && this.ultimateReady && this.ultimateShotsLeft === 0) {
       this.ultimateCdTimer = CONFIG.skills.ultimate.cooldown
       this.ultimateShotsLeft = CONFIG.skills.ultimate.bulletCount
       this.ultimateShotTimer = 0
@@ -408,8 +408,8 @@ export class Player {
       this.ultimateShotTimer -= dt
       if (this.ultimateShotTimer <= 0) {
         const shotIndex = CONFIG.skills.ultimate.bulletCount - this.ultimateShotsLeft
-        const centered = shotIndex - (CONFIG.skills.ultimate.bulletCount - 1) / 2
-        const dir = this.ultimateDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), centered * CONFIG.skills.ultimate.bulletSpread)
+        // 고정 조준선이 아니라 360도를 균등하게 훑어, 궁극기의 "사방 난사"를 만든다.
+        const dir = this.ultimateDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), (Math.PI * 2 * shotIndex) / CONFIG.skills.ultimate.bulletCount)
         const crit = this.rollCrit()
         bullets.push({
           pos: new THREE.Vector3(this.pos.x, 2.6, this.pos.z).addScaledVector(dir, 0.9), dir,
@@ -420,11 +420,11 @@ export class Player {
         if (this.ultimateShotsLeft === 0) {
           const finaleCrit = this.rollCrit()
           ultimate = {
-            slash: {
-              pos: this.pos.clone(), angle: Math.atan2(this.ultimateDir.x, this.ultimateDir.z), arc: Math.PI * 1.35, range: this.stats.swordRange * 1.2,
+            slashes: [0, Math.PI / 2].map((turn) => ({
+              pos: this.pos.clone(), angle: Math.atan2(this.ultimateDir.x, this.ultimateDir.z) + turn, arc: Math.PI * 1.35, range: this.stats.swordRange * 1.2,
               damage: this.stats.swordDamage * CONFIG.skills.ultimate.slashDamageMultiplier * (finaleCrit ? this.stats.critMult : 1),
               crit: finaleCrit, knockback: this.stats.knockback,
-            },
+            })) as [SlashSpec, SlashSpec],
             shockwaveDamage: this.stats.swordDamage * CONFIG.skills.ultimate.shockwaveDamageMultiplier,
             shockwaveRadius: CONFIG.skills.ultimate.shockwaveRadius,
           }
@@ -472,7 +472,7 @@ export class Player {
     }
 
     // 검 베기 (우클릭 또는 스페이스)
-    if ((input.rightDown || input.down('Space')) && this.swordTimer <= 0) {
+    if ((input.rightDown || input.downAction('slash')) && this.swordTimer <= 0) {
       this.swordTimer = this.stats.swordCooldown
       const crit = this.rollCrit()
       slash = {
