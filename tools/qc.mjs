@@ -171,7 +171,7 @@ const STEPS = [
   },
   {
     name: 'weapon-variants',
-    what: '임시 무기 외형 — 산탄총·대검 장착 시 캐릭터 외형이 기본 장비와 구분되는가',
+    what: '캐릭터 원화 유지 — 산탄총·대검 장착 뒤에도 기존 27프레임 캐릭터가 유지되는가',
     async run(p) {
       await p.evaluate(() => {
         window.__qcWeaponVariant = window.__game.debugEquipWeapons('shotgun', 'greatsword')
@@ -345,6 +345,12 @@ const STEPS = [
           targetIds: [first.id, second.id],
           outsideId: outside.id,
         }
+        // 원본 검광은 오른쪽을 향한다. +Z(화면 아래) 진행은 -90도로 보여야 한다.
+        const probeStart = g.player.pos.clone()
+        const probeEnd = probeStart.clone()
+        probeEnd.z += 5
+        g.effects.iaido(probeStart, probeEnd)
+        window.__qcIaido.southEffectRotation = g.effects.fx.at(-1)?.sp.material.rotation
       })
       await aim(p, 400)
       await p.keyboard.press('KeyQ')
@@ -363,6 +369,9 @@ const STEPS = [
       const targets = before.targetIds.map((id) => g.enemies.find((enemy) => enemy.id === id))
       const outside = g.enemies.find((enemy) => enemy.id === before.outsideId)
       const movedDistance = Math.hypot(g.player.pos.x - before.x, g.player.pos.z - before.z)
+      if (Math.abs(before.southEffectRotation + Math.PI / 2) > 0.01) {
+        return `발도 검광이 진행 방향과 어긋남 (회전 ${before.southEffectRotation})`
+      }
       if (movedDistance < 12) return `발도 이동거리가 짧음 (${movedDistance.toFixed(1)})`
       if (!before.duringInvulnerable) return '발도 이동 중 무적이 적용되지 않음'
       if (!before.afterInvulnerable) return '발도 종료 직후 보호가 적용되지 않음'
