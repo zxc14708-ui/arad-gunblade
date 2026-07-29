@@ -13,8 +13,9 @@ import * as THREE from 'three'
  *   발끝이 셀 바닥에 오도록 정렬되어 있다.
  *   대기 0-3 / 걷기 4-10 / 검 공격 11-18 / 총 공격 19-26
  * 로드 실패 시(또는 로드 전) 절차 생성 픽셀 시트(9프레임)로 폴백.
- * 절차 시트는 무기별 드로잉을 지원하므로 폴백 상태에선 무기 교체가 반영된다.
- * (아트 시트는 카타나/M1911 고정 — 다른 무기 장착 시에도 외형은 바뀌지 않는다.)
+ * 기본 카타나/M1911은 완성 아트를 유지하고, 다른 무기를 장착하면 무기별 외형이
+ * 들어 있는 절차 픽셀 시트로 전환한다. 이 시트는 최종 무기 파츠 아트 전까지 쓰는
+ * 임시 일러스트다.
  */
 interface SheetSpec {
   n: number
@@ -55,7 +56,7 @@ export class CharacterSprite {
   private shadow: THREE.Mesh
   private readonly baseH = 3.7
   private spec: SheetSpec = PROC_SPEC
-  private artActive = false
+  private artTexture: THREE.Texture | null = null
   private animTime = 0
   private flip = 1
   private lastState = ''
@@ -92,14 +93,8 @@ export class CharacterSprite {
           loaded.minFilter = THREE.NearestFilter
           loaded.generateMipmaps = false
           loaded.colorSpace = THREE.SRGBColorSpace
-          this.spec = ART_SPEC
-          loaded.repeat.set(1 / this.spec.n, 1)
-          const old = this.mat.map
-          this.mat.map = loaded
-          this.mat.needsUpdate = true
-          this.artActive = true
-          this.applyScale()
-          old?.dispose()
+          this.artTexture = loaded
+          if (this.usesDefaultWeapons()) this.setTexture(loaded, ART_SPEC)
         },
         undefined,
         () => {
@@ -128,14 +123,8 @@ export class CharacterSprite {
             drawFixedGunCell(ctx, gunImg, Number(frameStr) * ART_CELL, off.dx, off.dy)
           }
           const loaded = makeTexture(cv)
-          this.spec = ART_SPEC
-          loaded.repeat.set(1 / this.spec.n, 1)
-          const old = this.mat.map
-          this.mat.map = loaded
-          this.mat.needsUpdate = true
-          this.artActive = true
-          this.applyScale()
-          old?.dispose()
+          this.artTexture = loaded
+          if (this.usesDefaultWeapons()) this.setTexture(loaded, ART_SPEC)
         })
         .catch(() => {
           /* 로드 실패 → 절차 시트 유지 */
@@ -147,17 +136,31 @@ export class CharacterSprite {
     this.sprite.scale.set(this.baseH * this.spec.aspect, this.baseH, 1)
   }
 
-  /** 무기 교체 — 아트 시트 사용 중엔 시트 고정, 폴백(절차) 상태에서만 재생성 */
+  private usesDefaultWeapons() {
+    return this.gunId === 'm1911' && this.swordId === 'katana'
+  }
+
+  private setTexture(tex: THREE.Texture, spec: SheetSpec) {
+    const old = this.mat.map
+    this.spec = spec
+    tex.repeat.set(1 / spec.n, 1)
+    this.mat.map = tex
+    this.mat.needsUpdate = true
+    this.applyScale()
+    // 기본 완성 아트는 다시 장착할 수 있도록 보관한다. 절차 텍스처만 폐기한다.
+    if (old && old !== tex && old !== this.artTexture) old.dispose()
+  }
+
+  /** 무기 교체 — 기본 장비는 완성 아트, 그 외 장비는 무기별 임시 픽셀 시트. */
   setWeapons(gunId: string, swordId: string) {
     this.gunId = gunId
     this.swordId = swordId
-    if (this.artActive) return
-    const old = this.mat.map
+    if (this.usesDefaultWeapons() && this.artTexture) {
+      this.setTexture(this.artTexture, ART_SPEC)
+      return
+    }
     const tex = makeTexture(makeSheet(gunId, swordId))
-    tex.repeat.set(1 / this.spec.n, 1)
-    this.mat.map = tex
-    this.mat.needsUpdate = true
-    old?.dispose()
+    this.setTexture(tex, PROC_SPEC)
   }
 
   /** 대시 잔상용: 현재 프레임의 텍스처/UV/크기 정보 */

@@ -79,7 +79,8 @@ export const CONFIG = {
     charge: {
       cooldown: 4,
       duration: 0.24,
-      speed: 28,
+      // 캐릭터 표시 높이(3.7)의 약 4배. 이동속도는 duration으로부터 계산한다.
+      distance: 14.8,
       damageMultiplier: 1.5,
     },
     doubleShot: {

@@ -124,6 +124,7 @@ export const ASSET = {
     muzzle: { path: 'assets/fx/muzzle_flash_strip.png', frames: 8 },
     hit: { path: 'assets/stage1/stage1_combat_effects/goblin_hit_impact_4f.png', frames: 4 },
     ultimateCross: { path: 'assets/fx/ultimate_cross_temp_4f.png', frames: 4 },
+    iaido: { path: 'assets/fx/iaido_flash_temp_v2.png', frames: 1 },
   },
   monsters: {
     imp: {

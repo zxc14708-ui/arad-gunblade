@@ -31,6 +31,7 @@ export interface PlayerStats {
   critMult: number
   lifesteal: number
   magnetRange: number
+  xpGain: number
 }
 
 /** 특성이 누적하는 배수/가산치 + 레전더리 특수 효과 플래그 */
@@ -51,6 +52,7 @@ export interface Mods {
   critMult: number // 기본 2, +
   lifesteal: number // +
   magnetRange: number // ×
+  xpGain: number // ×
   // 레전더리 특수
   explodeOnKill: number // >0이면 처치 시 폭발 데미지
   swordReloads: boolean // 검을 휘두르면 총 즉시 장전 (총검일체 전용, 발도장전은 기본 메커니즘으로 이관)
@@ -64,7 +66,7 @@ function freshMods(): Mods {
   return {
     gunDamage: 1, gunCooldown: 1, bulletSpeed: 1, reloadTime: 1, pierce: 0, multishot: 0,
     swordDamage: 1, swordRange: 1, swordCooldown: 1, moveSpeed: 1, dashCooldown: 1,
-    maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0, magnetRange: 1,
+    maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0, magnetRange: 1, xpGain: 1,
     explodeOnKill: 0, swordReloads: false, dashStrike: 0,
     swordReloadAmount: 1, swordReloadBurstBonus: 0,
   }
@@ -82,6 +84,13 @@ export interface SlashSpec {
   angle: number
   arc: number
   range: number
+  damage: number
+  crit: boolean
+  knockback: number
+}
+
+export interface IaidoSpec {
+  start: THREE.Vector3
   damage: number
   crit: boolean
   knockback: number
@@ -127,6 +136,10 @@ export class Player {
   private chargeTimer = 0
   private chargeCdTimer = 0
   private chargeDir = new THREE.Vector3()
+  private chargeStart = new THREE.Vector3()
+  private chargeDamage = 0
+  private chargeCrit = false
+  private chargeKnockback = 0
   private doubleShotCdTimer = 0
   private ultimateCdTimer = 0
   private ultimateShotsLeft = 0
@@ -185,6 +198,7 @@ export class Player {
       critMult: m.critMult,
       lifesteal: m.lifesteal,
       magnetRange: CONFIG.xp.orbMagnetRange * m.magnetRange,
+      xpGain: m.xpGain,
     }
     this.magSize = this.stats.magSize
     if (this.hp > 0) this.hp = Math.min(this.hp, this.stats.maxHp)
@@ -228,8 +242,13 @@ export class Player {
   get isDashing() {
     return this.dashTimer > 0
   }
+  get isIaido() {
+    return this.chargeTimer > 0
+  }
   get invulnerable() {
-    return this.invuln > 0 || (this.isDashing && this.dashTimer > CONFIG.player.dashDuration - CONFIG.player.dashIFrames)
+    return this.invuln > 0
+      || this.isIaido
+      || (this.isDashing && this.dashTimer > CONFIG.player.dashDuration - CONFIG.player.dashIFrames)
   }
   get dashReady() {
     return this.dashCdTimer <= 0
@@ -289,10 +308,10 @@ export class Player {
     input: Input,
     aimGround: THREE.Vector3,
     activeSkillsEnabled = true,
-  ): { bullets: BulletSpec[]; slash: SlashSpec | null; chargeSlash: SlashSpec | null; ultimate: UltimateSpec | null; startedReload: boolean } {
+  ): { bullets: BulletSpec[]; slash: SlashSpec | null; chargeSlash: IaidoSpec | null; ultimate: UltimateSpec | null; startedReload: boolean } {
     const bullets: BulletSpec[] = []
     let slash: SlashSpec | null = null
-    let chargeSlash: SlashSpec | null = null
+    let chargeSlash: IaidoSpec | null = null
     let ultimate: UltimateSpec | null = null
     let startedReload = false
 
@@ -314,12 +333,27 @@ export class Player {
     if (this.invuln > 0) this.invuln -= dt
     if (this.hitFlash > 0) this.hitFlash -= dt
 
-    // 대시
+    // 발도 이동 — 설정된 총 이동거리를 duration 동안 정확히 나눠 이동한다.
+    // 이동이 끝난 프레임에 실제 시작점~현재 위치 선분을 한 번만 타격한다.
     if (this.chargeTimer > 0) {
+      const stepTime = Math.min(dt, this.chargeTimer)
+      const speed = CONFIG.skills.charge.distance / CONFIG.skills.charge.duration
+      this.pos.addScaledVector(this.chargeDir, speed * stepTime)
       this.chargeTimer -= dt
-      this.pos.addScaledVector(this.chargeDir, CONFIG.skills.charge.speed * dt)
       this.moving = true
       this.walkPhase += dt * 24
+      if (this.chargeTimer <= 0) {
+        chargeSlash = {
+          start: this.chargeStart.clone(),
+          damage: this.chargeDamage,
+          crit: this.chargeCrit,
+          knockback: this.chargeKnockback,
+        }
+        // 발도로 적을 관통한 직후 적 무리 안에서 즉시 피격되는 불합리함을 막는다.
+        // 이동 종료 뒤에는 대시와 같은 짧은 후속 무적만 남긴다.
+        this.invuln = Math.max(this.invuln, CONFIG.player.dashIFrames)
+        this.swingAnim = 0.3
+      }
     } else if (this.dashTimer > 0) {
       this.dashTimer -= dt
       this.pos.addScaledVector(this.dashDir, CONFIG.player.dashSpeed * dt)
@@ -364,19 +398,16 @@ export class Player {
     }
 
     // 총 발사 (좌클릭 홀드로 연사 — 탄창 소진 시 자동 장전)
-    // Q: 검으로 베며 앞으로 돌진한다. 기본 대시와 달리 피해용 이동기이며
-    // 무적은 부여하지 않는다.
+    // Q: 발도 — 적을 스쳐 지나간 뒤 이동 경로 전체를 한 번에 벤다.
     if (activeSkillsEnabled && input.consumeAction('charge') && this.chargeReady && this.chargeTimer <= 0) {
       this.chargeCdTimer = CONFIG.skills.charge.cooldown
       this.chargeTimer = CONFIG.skills.charge.duration
       this.chargeDir.set(Math.sin(this.angle), 0, Math.cos(this.angle))
-      const crit = this.rollCrit()
-      chargeSlash = {
-        pos: this.pos.clone(), angle: this.angle, arc: this.stats.swordArc, range: this.stats.swordRange,
-        damage: this.stats.swordDamage * CONFIG.skills.charge.damageMultiplier * (crit ? this.stats.critMult : 1),
-        crit, knockback: this.stats.knockback,
-      }
-      this.swingAnim = 0.3
+      this.chargeStart.copy(this.pos)
+      this.chargeCrit = this.rollCrit()
+      this.chargeDamage = this.stats.swordDamage * CONFIG.skills.charge.damageMultiplier
+        * (this.chargeCrit ? this.stats.critMult : 1)
+      this.chargeKnockback = this.stats.knockback
     }
 
     // E: 탄약 두 발을 동시에 소비하고, 조준선 양 옆으로 100% 위력의 탄환을 발사한다.
@@ -510,7 +541,8 @@ export class Player {
       this.angle,
       {
         moving: this.moving,
-        dashing: this.isDashing,
+        // 발도 중에는 걷기 대신 전진 자세를 사용해 이동기임을 즉시 읽을 수 있게 한다.
+        dashing: this.isDashing || this.isIaido,
         swinging: this.swingAnim > 0,
         shooting: this.shootAnim > 0,
         invulnerable: this.invulnerable,

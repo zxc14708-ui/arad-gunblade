@@ -66,7 +66,8 @@ export class Projectiles {
   spawnEnemyBullet(pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number) {
     const mesh = new THREE.Sprite(this.ebMat)
     mesh.position.copy(pos)
-    mesh.scale.setScalar(0.8)
+    // 화염구 고블린 투사체는 기존 표시 크기의 정확히 2배.
+    mesh.scale.setScalar(1.6)
     this.scene.add(mesh)
     this.enemyBullets.push({ mesh, pos: pos.clone(), dir: dir.clone().normalize(), speed, life: 4, damage })
   }

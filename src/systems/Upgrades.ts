@@ -31,8 +31,8 @@ const RAW_POOL: Array<Omit<Upgrade, 'maxStacks'>> = [
     apply: (p) => { p.mods.moveSpeed *= 1.15; p.recompute() } },
   { id: 'hp', name: '강인한 육체', desc: '최대 체력 +25, 완전 회복', icon: '❤️', rarity: 'common',
     apply: (p) => { p.mods.maxHp += 25; p.recompute(); p.hp = p.stats.maxHp } },
-  { id: 'magnet', name: '자력장', desc: '경험치 흡수 범위 +60%', icon: '🧲', rarity: 'common',
-    apply: (p) => { p.mods.magnetRange *= 1.6; p.recompute() } },
+  { id: 'xp_gain', name: '전투의 깨달음', desc: '경험치 획득량 +10%', icon: '📘', rarity: 'common',
+    apply: (p) => { p.mods.xpGain *= 1.1; p.recompute() } },
 
   // ── Rare ──
   { id: 'pierce', name: '관통탄', desc: '탄환이 적 +1명 관통', icon: '➤', rarity: 'rare',

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Enemy, EnemyKind } from '../entities/Enemy'
 import type { EliteAffix } from '../systems/EliteAffixes'
+import { weaponById } from '../systems/Weapons'
 import type { Game } from './Game'
 
 /**
@@ -22,7 +23,12 @@ import type { Game } from './Game'
 interface GameInternals {
   enemies: Enemy[]
   scene: THREE.Scene
-  player: { pos: THREE.Vector3; speed: number; invuln: number }
+  player: {
+    pos: THREE.Vector3
+    speed: number
+    invuln: number
+    equip: (weapon: NonNullable<ReturnType<typeof weaponById>>) => void
+  }
   boss: Enemy | null
   hud: { showBoss(show: boolean): void }
   mode: 'town' | 'dungeon'
@@ -36,7 +42,9 @@ function internals(game: Game): GameInternals {
 export function installQcDebugHooks(game: Game) {
   const api = game as unknown as {
     debugSpawnBoss: () => Enemy
+    debugSpawnEnemy: (kind: EnemyKind) => Enemy
     debugSpawnElite: (kind: EnemyKind, affix: EliteAffix) => Enemy
+    debugEquipWeapons: (gunId: string, swordId: string) => boolean
     debugClearEnemies: () => void
   }
 
@@ -62,11 +70,29 @@ export function installQcDebugHooks(game: Game) {
     return e
   }
 
+  api.debugSpawnEnemy = (kind) => {
+    const g = internals(game)
+    const e = new Enemy(kind, g.player.pos.x, g.player.pos.z - 8, 1, 1, 1, false)
+    g.enemies.push(e)
+    g.scene.add(e.group)
+    return e
+  }
+
   api.debugSpawnElite = (kind, affix) => {
     const g = internals(game)
     const e = new Enemy(kind, g.player.pos.x, g.player.pos.z - 4, 1, 1, 1, true, affix)
     g.enemies.push(e)
     g.scene.add(e.group)
     return e
+  }
+
+  api.debugEquipWeapons = (gunId, swordId) => {
+    const g = internals(game)
+    const gun = weaponById(gunId)
+    const sword = weaponById(swordId)
+    if (!gun || gun.kind !== 'gun' || !sword || sword.kind !== 'sword') return false
+    g.player.equip(gun)
+    g.player.equip(sword)
+    return true
   }
 }

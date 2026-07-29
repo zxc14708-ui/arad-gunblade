@@ -170,6 +170,27 @@ const STEPS = [
     },
   },
   {
+    name: 'weapon-variants',
+    what: '임시 무기 외형 — 산탄총·대검 장착 시 캐릭터 외형이 기본 장비와 구분되는가',
+    async run(p) {
+      await p.evaluate(() => {
+        window.__qcWeaponVariant = window.__game.debugEquipWeapons('shotgun', 'greatsword')
+      })
+      await aim(p, 400)
+      await p.waitForTimeout(350)
+    },
+    check: async (p) => p.evaluate(() => {
+      const g = window.__game
+      if (!window.__qcWeaponVariant) return 'QC 무기 교체 훅이 실패함'
+      if (g.player.gun.id !== 'shotgun' || g.player.sword.id !== 'greatsword') return '대체 무기가 장착되지 않음'
+      return null
+    }),
+    async after(p) {
+      await p.evaluate(() => window.__game.debugEquipWeapons('m1911', 'katana'))
+      await p.waitForTimeout(250)
+    },
+  },
+  {
     name: 'town-meta',
     what: '마을 영구 성장 — 제단 강화·무기 설계도 해금 UI와 브라우저 프로필 반영',
     async run(p) {
@@ -255,7 +276,7 @@ const STEPS = [
   // 현재 방에 직접 스폰해 상태머신 타이밍·접두사 효과를 검증한다.
   {
     name: 'active-skills',
-    what: 'Q 돌진 · E 더블 샷 · R 폭렬 난무 — 이동/탄약/쿨다운/마무리 충격파',
+    what: 'Q 발도 · E 더블 샷 · R 폭렬 난무 — 경로 이동/무적/탄약/쿨다운/마무리 충격파',
     async run(p) {
       await dismissLevelUp(p)
       await aim(p, 400)
@@ -270,7 +291,11 @@ const STEPS = [
         window.__qcSkills = { x: g.player.pos.x, z: g.player.pos.z, ammo: g.player.ammo }
       })
       await p.keyboard.press('KeyQ')
-      await p.waitForTimeout(180)
+      await p.waitForTimeout(100)
+      await p.evaluate(() => {
+        window.__qcSkills.qInvulnerable = window.__game.player.invulnerable
+      })
+      await p.waitForTimeout(120)
       await p.keyboard.press('KeyE')
       await p.waitForTimeout(90)
       await p.keyboard.press('KeyR')
@@ -279,16 +304,152 @@ const STEPS = [
     check: async (p) => p.evaluate(() => {
       const g = window.__game
       const before = window.__qcSkills
-      const moved = Math.hypot(g.player.pos.x - before.x, g.player.pos.z - before.z) > 1
+      const movedDistance = Math.hypot(g.player.pos.x - before.x, g.player.pos.z - before.z)
       const eAmmo = before.ammo - g.player.ammo >= 2
       const cds = g.player.activeSkillCooldowns
       const shockwave = g.effects.groundFx?.some((fx) => fx.duration > 0) ?? false
       const buttons = ['skillQ', 'skillE', 'skillR'].every((id) => document.querySelector(`#${id}`))
-      if (!moved) return 'Q 돌진 이동이 확인되지 않음'
+      if (movedDistance < 12) return `Q 발도 이동거리가 짧음 (${movedDistance.toFixed(1)})`
+      if (!before.qInvulnerable) return 'Q 발도 이동 중 무적이 적용되지 않음'
       if (!eAmmo) return 'E 더블 샷이 탄약 2발을 소비하지 않음'
       if (!(cds.charge > 0 && cds.doubleShot > 0 && cds.ultimate > 0)) return '스킬 쿨다운이 시작되지 않음'
       if (!shockwave) return 'R 마무리 충격파가 생성되지 않음'
       return buttons ? null : '스킬 HUD가 없음'
+    }),
+  },
+  {
+    name: 'iaido',
+    what: '발도 — 적을 관통해 검 공격력 비례 피해를 주고 이동 중 무적·종료 직후 보호가 적용되는가',
+    async run(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0)
+        g.player.chargeCdTimer = 0
+        g.player.stats.critChance = 0
+        const first = g.debugSpawnEnemy('brute')
+        const second = g.debugSpawnEnemy('brute')
+        const outside = g.debugSpawnEnemy('brute')
+        first.pos.set(5, 0, 0)
+        second.pos.set(10, 0, 0)
+        outside.pos.set(7, 0, 3)
+        for (const target of [first, second, outside]) {
+          target.hp = 9999
+          target.maxHp = 9999
+        }
+        window.__qcIaido = {
+          x: g.player.pos.x,
+          z: g.player.pos.z,
+          expectedDamage: g.player.stats.swordDamage * 1.5,
+          hp: 9999,
+          targetIds: [first.id, second.id],
+          outsideId: outside.id,
+        }
+      })
+      await aim(p, 400)
+      await p.keyboard.press('KeyQ')
+      await p.waitForTimeout(100)
+      await p.evaluate(() => {
+        window.__qcIaido.duringInvulnerable = window.__game.player.invulnerable
+      })
+      await p.waitForTimeout(170)
+      await p.evaluate(() => {
+        window.__qcIaido.afterInvulnerable = window.__game.player.invulnerable
+      })
+    },
+    check: async (p) => p.evaluate(() => {
+      const g = window.__game
+      const before = window.__qcIaido
+      const targets = before.targetIds.map((id) => g.enemies.find((enemy) => enemy.id === id))
+      const outside = g.enemies.find((enemy) => enemy.id === before.outsideId)
+      const movedDistance = Math.hypot(g.player.pos.x - before.x, g.player.pos.z - before.z)
+      if (movedDistance < 12) return `발도 이동거리가 짧음 (${movedDistance.toFixed(1)})`
+      if (!before.duringInvulnerable) return '발도 이동 중 무적이 적용되지 않음'
+      if (!before.afterInvulnerable) return '발도 종료 직후 보호가 적용되지 않음'
+      if (targets.some((target) => !target)) return '발도 경로의 복수 적을 유지하지 못함'
+      for (const target of targets) {
+        const dealt = before.hp - target.hp
+        if (Math.abs(dealt - before.expectedDamage) > 0.01) {
+          return `발도 피해 배율이 150%가 아님 (${dealt.toFixed(2)} / ${before.expectedDamage.toFixed(2)})`
+        }
+      }
+      if (!outside || outside.hp !== before.hp) return '발도 경로 밖의 적까지 피해를 받음'
+      return null
+    }),
+  },
+  {
+    name: 'fire-goblin',
+    what: '화염구 고블린 — 적정 거리에서 측면 이동하고 2배 크기 화염구를 발사하는가',
+    async run(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        g.player.pos.set(0, 0, 0)
+        const shooters = Array.from({ length: 6 }, (_, index) => {
+          const shooter = g.debugSpawnEnemy('shooter')
+          shooter.pos.set((index - 2.5) * 0.08, 0, -12)
+          shooter.shootTimer = index === 0 ? 0 : 99
+          return shooter
+        })
+        window.__qcFireGoblin = {
+          starts: shooters.map((shooter) => ({ id: shooter.id, x: shooter.pos.x, z: shooter.pos.z })),
+        }
+      })
+      await p.waitForTimeout(150)
+      await p.evaluate(() => {
+        window.__qcFireGoblin.bulletScale = window.__game.projectiles.enemyBullets[0]?.mesh.scale.x ?? null
+      })
+      await p.waitForTimeout(750)
+    },
+    check: async (p) => p.evaluate(() => {
+      const g = window.__game
+      const shooters = g.enemies.filter((enemy) => enemy.kind === 'shooter')
+      if (shooters.length !== 6) return `화염구 고블린 수가 달라짐 (${shooters.length})`
+      const movedSideways = shooters.every((shooter) => {
+        const start = window.__qcFireGoblin.starts.find((item) => item.id === shooter.id)
+        return start && Math.abs(shooter.pos.x - start.x) > 0.05
+      })
+      if (!movedSideways) return '일부 화염구 고블린이 적정 거리에서 정지함'
+      let minDistance = Infinity
+      for (let i = 0; i < shooters.length; i++) {
+        for (let j = i + 1; j < shooters.length; j++) {
+          minDistance = Math.min(minDistance, shooters[i].pos.distanceTo(shooters[j].pos))
+        }
+      }
+      if (minDistance < 0.45) return `화염구 고블린이 여전히 한곳에 뭉침 (${minDistance.toFixed(2)})`
+      const bulletScale = window.__qcFireGoblin.bulletScale
+      if (bulletScale == null) return '화염구를 발사하지 않음'
+      if (Math.abs(bulletScale - 1.6) > 0.01) return `화염구 크기가 2배가 아님 (${bulletScale})`
+      return null
+    }),
+  },
+  {
+    name: 'critical-south-edge',
+    what: '치명타 숫자·하단 가림 — 원거리 치명타도 붉고 적이 남쪽 전경 안쪽에 제한되는가',
+    async run(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const enemy = g.debugSpawnEnemy('brute')
+        enemy.pos.set(0, 0, g.room.bounds.maxZ)
+        window.__qcSouthEdgeId = enemy.id
+        g.effects.damageNumber(g.player.pos.clone().setY(2), 999, true, true)
+      })
+      await p.waitForTimeout(100)
+    },
+    check: async (p) => p.evaluate(() => {
+      const g = window.__game
+      const enemy = g.enemies.find((item) => item.id === window.__qcSouthEdgeId)
+      if (!enemy) return '하단 경계 검사용 적이 없음'
+      const southLimit = g.room.bounds.maxZ - enemy.radius * 0.6 - 2.3
+      if (enemy.pos.z > southLimit) return `적이 하단 전경 영역에 들어감 (${enemy.pos.z.toFixed(2)} > ${southLimit.toFixed(2)})`
+      const crit = document.querySelector('.floater.crit.range')
+      if (!crit) return '원거리 치명타 숫자가 생성되지 않음'
+      if (getComputedStyle(crit).color !== 'rgb(255, 63, 63)') {
+        return `원거리 치명타 숫자가 붉은색이 아님 (${getComputedStyle(crit).color})`
+      }
+      return null
     }),
   },
   {
@@ -650,7 +811,7 @@ if (!url) {
   // npx.cmd는 배치 파일이라 shell:false로 직접 spawn하면 Windows에서 EINVAL이
   // 난다 — .cmd/.bat 실행은 cmd.exe를 통해야 하므로 win32에서는 shell:true.
   const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
-  server = spawn(npxCmd, ['vite', 'preview', '--port', String(port), '--strictPort'], {
+  server = spawn(npxCmd, ['vite', 'preview', '--configLoader', 'runner', '--port', String(port), '--strictPort'], {
     cwd: ROOT,
     stdio: 'ignore',
     detached: true,
