@@ -1,70 +1,34 @@
-# ARAD: Gunblade — 현재 진행 상황
+# Current Project Status
 
-## 1920×1080 화면·아트 기준
+Last updated: 2026-07-30
 
-- 내부 렌더링과 UI 좌표 기준을 1920×1080(16:9)으로 고정했다.
-- 다른 브라우저 크기에서는 화면을 자르지 않고 전체 스테이지를 비율 유지 축소한다.
-- HUD와 메뉴는 1920×1080 안전 영역 기준으로 재배치했다.
-- 신규·교체 에셋은 `ART_GUIDE.md`를 따르며, 기존 캐릭터 27프레임 시트는 유지한다.
-- 픽셀 텍스처의 필터·색공간과 월드 스프라이트의 하단 기준점·종횡비 계산은
-  `src/rendering/pixelArt.ts`의 공통 계약을 사용한다.
-- QC가 내부 캔버스 해상도와 16:9 축소 배치를 자동 검사한다.
+## Playable now
 
-마지막 갱신: 2026-07-30
+- Stage 1 random connected dungeon run, elite/treasure/shop rooms, and boss
+  preparation room (merchant + healing fountain).
+- Boss and elite affix systems, active skills (Q/E/R), dash, reload, loadout,
+  traits, town meta progression, and keyboard rebinding.
+- Fixed 1920×1080 presentation with aspect-safe browser scaling.
+- Pixel texture/filter, sprite anchoring, and prop aspect rules are centralized
+  in `src/rendering/pixelArt.ts`.
+- Default M1911 + katana uses the finished original character sheet. Other
+  loadouts use temporary weapon visuals; see `docs/systems/weapon-visuals.md`.
 
-이 문서는 새 작업자가 현재 구현 범위와 다음 우선순위를 빠르게 파악하기 위한
-인계 자료다. 협업 역할과 작업 규칙은 `AGENTS.md`, 검증 절차는 `CLAUDE.md`,
-설계 판단과 변경 이력은 `DESIGN_LOG.md`를 기준으로 한다.
+## Verification baseline
 
-## 현재 플레이 가능한 범위
+- `npm run qc`: 22 scenarios passed on 2026-07-30.
+- Asset integrity passed; browser console/network errors: 0.
+- `qc-out/contact.png` was inspected after the 1920×1080 and pixel-rendering
+  updates.
 
-- 마을에서 시작해 무작위 연결형 스테이지 1 던전을 진행한다.
-- 전투·엘리트·보물·상점·보스 준비 장소·보스방이 연결되며, 정리한 방은
-  재방문해도 적과 보상이 중복 생성되지 않는다.
-- 보스 준비 장소에는 런 상점과 회복 분수가 있고 이 장소를 거쳐 보스방에 진입한다.
-- Q 발도, E 더블 샷, R 폭렬 난무, T 수동 장전과 키 재설정을 지원한다.
-- 특성은 스택 상한과 쿨다운 하한을 적용하며 희귀도를 먼저 뽑는 2단계 추첨을 사용한다.
-- 엘리트 방은 재생·신속·가시·분열·폭발·보호막 접두사 중 하나를 공유한다.
-- 타우 족장은 돌진·슬램·사격 패턴과 2페이즈 전환을 사용한다.
-- 힘의 결정, 영구 능력 제단, 무기 설계도 해금은 브라우저 저장소에 보존된다.
+## Next approved implementation work
 
-## 캐릭터와 임시 아트 정책
+1. Finish the temporary per-weapon visual pass and visually QC each loadout.
+2. Define Stage 2–7 themes, enemies, bosses, and escalating boss rewards.
+3. Replace temporary weapon/effect art with final motion sheets once delivered.
 
-- 플레이어는 기존 27프레임 `public/gunblader.png`를 사용한다.
-- 다른 무기를 장착해도 캐릭터 원화는 바뀌지 않고 전투 수치와 사운드만 바뀐다.
-- 무기별 외형은 최종 캐릭터·무기 파츠 시트가 준비된 뒤 다시 연결한다.
-- `public/assets/fx/iaido_flash_temp_v2.png`와
-  `public/assets/fx/ultimate_cross_temp_4f.png`는 교체 예정인 임시 이펙트다.
+## Before starting work
 
-## 챕터 1 확정 방향
-
-- 챕터 1은 스테이지 1부터 스테이지 7까지 순서대로 진행한다.
-- 스테이지가 바뀌어도 레벨·특성·장비·런 골드·현재 체력을 유지한다.
-- 회복은 각 보스 직전 준비 장소의 분수로 해결한다.
-- 각 스테이지 보스가 영구 보상을 지급하며 높은 스테이지의 추가 보상은
-  스테이지별 콘셉트가 확정될 때 결정한다.
-- 현재는 스테이지 1만 구현되어 있다. 스테이지 2~7은 콘셉트와 에셋 확정 후 진행한다.
-
-## 검증 상태
-
-- `npm run build` 통과.
-- `npm run qc` 22단계 통과.
-- 콘솔·네트워크 오류 0건.
-- `qc-out/contact.png`에서 기존 캐릭터 원화 유지와 전투/UI 구성을 확인했다.
-- QC는 다른 무기 장착 뒤 27프레임 원화 유지와 발도 상하 진행 각도를 자동 검사한다.
-
-## 다음 우선순위
-
-1. 최종 캐릭터·무기별 모션/파츠 시트를 받아 임시 아트 교체.
-2. 스테이지 2~7의 배경·적·보스 콘셉트와 보상 규칙 확정.
-3. 총과 검의 실전 기여도를 재측정하고 `DESIGN_LOG.md`의 B4를 조정.
-4. 브라우저 저장 데이터를 계정 기반 클라우드 저장으로 옮길지 결정.
-5. 접근성 옵션과 런 종료 통계 화면 확장.
-
-## 작업 재개 절차
-
-1. `main`을 최신화하고 새 작업 브랜치를 만든다.
-2. `DESIGN_LOG.md`에서 확정된 결정 또는 사용자의 명시적 요청만 구현한다.
-3. `npm run qc`를 실행한다.
-4. `qc-out/contact.png`를 눈으로 확인한다.
-5. 관련 문서와 변경 이력을 함께 갱신한 뒤 커밋·PR을 만든다.
+Read `AGENTS.md`, `HANDOFF.md`, then only the relevant document named in
+`docs/INDEX.md`. Open design decisions live in `DESIGN_LOG.md`; resolved
+history lives in `docs/archive/`.

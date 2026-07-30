@@ -56,8 +56,8 @@ export const GUNS: GunDef[] = [
   },
   {
     kind: 'gun', id: 'rifle', name: '저격소총', icon: '🎯', rarity: 'epic',
-    desc: '고속 관통탄 · 정확 · 높은 데미지',
-    damage: 25, cooldown: 0.28, bulletSpeed: 62, magSize: 10, reloadTime: 1.6, pellets: 1, spread: 0.008, pierce: 2,
+    desc: '스코프 관통탄 · 5발 장전 · 3명 관통',
+    damage: 50, cooldown: 0.56, bulletSpeed: 62, magSize: 5, reloadTime: 3.2, pellets: 1, spread: 0.008, pierce: 3,
   },
   {
     kind: 'gun', id: 'magnum', name: '매그넘 리볼버', icon: '💥', rarity: 'epic',
@@ -83,8 +83,8 @@ export const SWORDS: SwordDef[] = [
     damage: 27, cooldown: 0.42, range: 3.6, arc: Math.PI * 0.7, knockback: 9, lunge: 4.5,
   },
   {
-    kind: 'sword', id: 'daggers', name: '쌍단검', icon: '🔪', rarity: 'rare',
-    desc: '초고속 난도질 · 짧은 사거리',
+    kind: 'sword', id: 'daggers', name: '한손검', icon: '🗡️', rarity: 'rare',
+    desc: '초고속 연속 베기 · 짧은 사거리',
     damage: 12, cooldown: 0.18, range: 2.7, arc: Math.PI * 0.6, knockback: 4, lunge: 6,
   },
   {
