@@ -12,6 +12,8 @@
 - 중요한 안내, 보스 체력, 선택 창은 화면 중앙 80% 안에 둔다.
 - 실제 픽셀 아트에는 브라우저 보간을 적용하지 않는다. 코드에서는
   `NearestFilter`, `image-rendering: pixelated`, mipmap 비활성화를 유지한다.
+- Three.js 텍스처·캔버스 텍스처·하단 기준 스프라이트를 만들 때는
+  `src/rendering/pixelArt.ts`의 공통 함수를 사용한다.
 
 ## 2. 공통 스프라이트 규칙
 
