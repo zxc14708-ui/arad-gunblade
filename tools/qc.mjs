@@ -171,18 +171,23 @@ const STEPS = [
   },
   {
     name: 'weapon-variants',
-    what: '캐릭터 원화 유지 — 산탄총·대검 장착 뒤에도 기존 27프레임 캐릭터가 유지되는가',
+    what: '무기 임시 시트 — 스코프 소총·한손검 장착 뒤에도 캐릭터 원화와 27프레임이 유지되는가',
     async run(p) {
       await p.evaluate(() => {
-        window.__qcWeaponVariant = window.__game.debugEquipWeapons('shotgun', 'greatsword')
+        window.__qcWeaponVariant = window.__game.debugEquipWeapons('rifle', 'daggers')
       })
       await aim(p, 400)
-      await p.waitForTimeout(350)
+      await p.waitForTimeout(700)
     },
     check: async (p) => p.evaluate(() => {
       const g = window.__game
       if (!window.__qcWeaponVariant) return 'QC 무기 교체 훅이 실패함'
-      if (g.player.gun.id !== 'shotgun' || g.player.sword.id !== 'greatsword') return '대체 무기가 장착되지 않음'
+      if (g.player.gun.id !== 'rifle' || g.player.sword.id !== 'daggers') return '대체 무기가 장착되지 않음'
+      const rifle = g.player.gun
+      if (rifle.damage !== 50 || rifle.magSize !== 5 || rifle.pierce !== 3
+        || rifle.cooldown !== 0.56 || rifle.reloadTime !== 3.2) {
+        return '저격소총 지정 수치(피해·장탄·관통·연사·장전)가 적용되지 않음'
+      }
       return null
     }),
     async after(p) {

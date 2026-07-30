@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { bulletTex } from '../rendering/pixelfx'
 import { ASSET, cloneTex } from '../rendering/assets'
 
 export interface Bullet {
@@ -30,8 +29,8 @@ export class Projectiles {
   scene: THREE.Scene
   bullets: Bullet[] = []
   enemyBullets: EnemyBullet[] = []
-  private bulletMat = new THREE.SpriteMaterial({ map: bulletTex(), transparent: true, depthWrite: false })
-  private critMat = new THREE.SpriteMaterial({ map: bulletTex(), color: 0xffffff, transparent: true, depthWrite: false })
+  private bulletMaterials = new Map<string, THREE.SpriteMaterial>()
+  private critMaterials = new Map<string, THREE.SpriteMaterial>()
   private ebMat = this.makeEnemyBulletMaterial()
 
   constructor(scene: THREE.Scene) {
@@ -44,10 +43,33 @@ export class Projectiles {
     return new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })
   }
 
-  spawnBullet(pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number, crit: boolean, pierce: number) {
-    const mesh = new THREE.Sprite(crit ? this.critMat : this.bulletMat)
+  private bulletMaterial(gunId: string, crit: boolean) {
+    const cache = crit ? this.critMaterials : this.bulletMaterials
+    let material = cache.get(gunId)
+    if (!material) {
+      const texture = cloneTex(ASSET.player.projectiles)
+      const index = GUN_PROJECTILE_INDEX[gunId] ?? 0
+      texture.repeat.set(1 / 7, 1)
+      texture.offset.set(index / 7, 0)
+      material = new THREE.SpriteMaterial({
+        map: texture,
+        color: crit ? 0xff5b5b : 0xffffff,
+        transparent: true,
+        depthWrite: false,
+      })
+      cache.set(gunId, material)
+    }
+    return material
+  }
+
+  spawnBullet(pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number, crit: boolean, pierce: number, gunId = 'm1911') {
+    // Rotation is per projectile, so each sprite gets a material clone while
+    // sharing the cached texture/style definition for its weapon.
+    const material = this.bulletMaterial(gunId, crit).clone()
+    const mesh = new THREE.Sprite(material)
     mesh.position.copy(pos)
-    mesh.scale.setScalar(crit ? 0.9 : 0.6)
+    mesh.scale.setScalar((crit ? 0.9 : 0.6) * (GUN_PROJECTILE_SCALE[gunId] ?? 1))
+    material.rotation = -Math.atan2(dir.x, dir.z) + Math.PI / 2
     this.scene.add(mesh)
     this.bullets.push({
       mesh,
@@ -94,6 +116,7 @@ export class Projectiles {
 
   removeBullet(i: number) {
     this.scene.remove(this.bullets[i].mesh)
+    ;(this.bullets[i].mesh.material as THREE.Material).dispose()
     this.bullets.splice(i, 1)
   }
   removeEnemyBullet(i: number) {
@@ -102,9 +125,30 @@ export class Projectiles {
   }
 
   clear() {
-    for (const b of this.bullets) this.scene.remove(b.mesh)
+    for (const b of this.bullets) {
+      this.scene.remove(b.mesh)
+      ;(b.mesh.material as THREE.Material).dispose()
+    }
     for (const b of this.enemyBullets) this.scene.remove(b.mesh)
     this.bullets = []
     this.enemyBullets = []
   }
+}
+
+const GUN_PROJECTILE_INDEX: Record<string, number> = {
+  m1911: 0,
+  smg: 1,
+  shotgun: 2,
+  rifle: 3,
+  magnum: 4,
+  crossbow: 5,
+  autocannon: 6,
+}
+
+const GUN_PROJECTILE_SCALE: Record<string, number> = {
+  shotgun: 0.8,
+  rifle: 1.2,
+  magnum: 1.15,
+  crossbow: 1.05,
+  autocannon: 1.1,
 }

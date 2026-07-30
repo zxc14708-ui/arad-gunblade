@@ -908,7 +908,7 @@ export class Game {
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
-      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
+      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce, this.player.gun.id)
     }
     if (bullets.length > 0) {
       this.audio.gunshot(this.player.gun.id)
@@ -918,7 +918,7 @@ export class Game {
     if (startedReload) this.audio.reload()
     if (slash) {
       this.audio.slash(this.player.sword.id)
-      this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
+      this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range, this.player.sword.id)
       this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
     }
     if (chargeSlash) {
@@ -929,7 +929,7 @@ export class Game {
     if (ultimate) {
       this.audio.slash(this.player.sword.id)
       for (const slashPart of ultimate.slashes) {
-        this.effects.slash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range)
+        this.effects.slash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range, this.player.sword.id)
         this.resolveSlash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range, slashPart.damage, slashPart.crit, slashPart.knockback)
       }
       this.effects.ultimateCross(this.player.pos)

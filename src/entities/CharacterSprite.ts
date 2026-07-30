@@ -5,6 +5,7 @@ import {
   makePixelCanvasTexture,
   setSpriteWorldHeight,
 } from '../rendering/pixelArt'
+import { ASSET } from '../rendering/assets'
 
 /**
  * 2D 주인공 빌보드 — SD 총검사 아트 시트 3장(base+sword+gun 레이어) 합성 사용.
@@ -53,6 +54,8 @@ const ART_SPEC: SheetSpec = {
 export class CharacterSprite {
   /** 확정된 기존 캐릭터 시트. null이면 절차 생성만 사용하며 장착 무기는 외형을 바꾸지 않는다. */
   static SHEET_URL: string | null = 'gunblader.png'
+  /** Weapon-neutral body sheet used whenever a temporary equipped-weapon overlay is needed. */
+  static BASE_SHEET_URL = 'gunblader_base.png'
   /** 분리 파츠 아트는 모션·피벗 기준 확정 전까지 비활성화한다. */
   static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = null
 
@@ -68,6 +71,7 @@ export class CharacterSprite {
   private lastState = ''
   private gunId: string
   private swordId: string
+  private artRequest = 0
 
   constructor(gunId = 'm1911', swordId = 'katana') {
     this.gunId = gunId
@@ -90,20 +94,7 @@ export class CharacterSprite {
     this.object.add(this.shadow)
 
     // 아트 시트 3장(base+sword+gun) 비동기 로드 → 캔버스에 합성 후 교체
-    if (CharacterSprite.SHEET_URL) {
-      new THREE.TextureLoader().load(
-        CharacterSprite.SHEET_URL,
-        (loaded) => {
-          configurePixelTexture(loaded)
-          this.artTexture = loaded
-          this.setTexture(loaded, ART_SPEC)
-        },
-        undefined,
-        () => {
-          /* 로드 실패 시 절차 시트 유지 */
-        },
-      )
-    }
+    this.loadOriginalArt()
 
     if (CharacterSprite.SHEET_LAYERS) {
       const { base, sword, gun } = CharacterSprite.SHEET_LAYERS
@@ -153,12 +144,54 @@ export class CharacterSprite {
   setWeapons(gunId: string, swordId: string) {
     this.gunId = gunId
     this.swordId = swordId
-    if (this.artTexture) {
-      this.setTexture(this.artTexture, ART_SPEC)
-      return
-    }
-    const tex = makeTexture(makeSheet(gunId, swordId))
-    this.setTexture(tex, PROC_SPEC)
+    if (gunId === 'm1911' && swordId === 'katana') this.loadOriginalArt()
+    else this.loadTemporaryWeaponArt(gunId, swordId)
+  }
+
+  private loadOriginalArt() {
+    if (!CharacterSprite.SHEET_URL) return
+    const request = ++this.artRequest
+    new THREE.TextureLoader().load(
+      CharacterSprite.SHEET_URL,
+      (loaded) => {
+        if (request !== this.artRequest) return
+        configurePixelTexture(loaded)
+        this.artTexture = loaded
+        this.setTexture(loaded, ART_SPEC)
+      },
+      undefined,
+      () => {
+        /* The procedural fallback stays visible when original art cannot load. */
+      },
+    )
+  }
+
+  private loadTemporaryWeaponArt(gunId: string, swordId: string) {
+    const request = ++this.artRequest
+    const weapons = ASSET.player.weapons
+    const gunPath = weapons[gunId as keyof typeof weapons] ?? weapons.m1911
+    const swordPath = weapons[swordId as keyof typeof weapons] ?? weapons.katana
+    Promise.all([loadImage(CharacterSprite.BASE_SHEET_URL), loadImage(gunPath), loadImage(swordPath)])
+      .then(([base, gun, sword]) => {
+        if (request !== this.artRequest) return
+        const canvas = document.createElement('canvas')
+        canvas.width = base.width
+        canvas.height = base.height
+        const ctx = canvas.getContext('2d')!
+        ctx.imageSmoothingEnabled = false
+        for (let frame = 0; frame < ART_SPEC.n; frame++) {
+          const frameX = frame * ART_CELL
+          ctx.drawImage(base, frameX, 0, ART_CELL, ART_CELL_H, frameX, 0, ART_CELL, ART_CELL_H)
+          drawTemporaryWeapon(ctx, sword, frameX, frame, swordId, 'sword')
+          drawTemporaryWeapon(ctx, gun, frameX, frame, gunId, 'gun')
+        }
+        const texture = makeTexture(canvas)
+        this.artTexture = texture
+        this.setTexture(texture, ART_SPEC)
+      })
+      .catch(() => {
+        // A temporary visual may fail independently; never hide a playable sprite for it.
+      })
   }
 
   /** 대시 잔상용: 현재 프레임의 텍스처/UV/크기 정보 */
@@ -273,6 +306,59 @@ function drawFixedGunCell(ctx: CanvasRenderingContext2D, gunImg: HTMLImageElemen
   t.scale(GUN_SHOOT_SCALE, GUN_SHOOT_SCALE)
   t.drawImage(gunImg, frameX, 0, ART_CELL, ART_CELL_H, 0, 0, ART_CELL, ART_CELL_H)
   ctx.drawImage(tmp, frameX, 0)
+}
+
+/**
+ * Places a small temporary equipment sprite over the original weapon-neutral
+ * body sheet.  The source sprites point right; mirrored character frames are
+ * mirrored by the existing texture UV, so one placement works for both sides.
+ */
+function drawTemporaryWeapon(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  frameX: number,
+  frame: number,
+  id: string,
+  kind: 'gun' | 'sword',
+) {
+  const shooting = frame >= 19
+  const swordAttack = frame >= 11 && frame < 19
+  const profile = TEMP_WEAPON_PROFILE[id] ?? TEMP_WEAPON_PROFILE.m1911
+  const width = kind === 'gun'
+    ? shooting ? profile.width * 1.18 : profile.width
+    : swordAttack ? profile.width * 1.18 : profile.width
+  const height = width * (image.height / image.width)
+  let x = kind === 'gun' ? (shooting ? 72 : 60) : (swordAttack ? 64 : 55)
+  let y = kind === 'gun' ? (shooting ? 35 : 39) : (swordAttack ? 36 : 29)
+  let rotation = kind === 'gun' ? (shooting ? -0.04 : 0.28) : (swordAttack ? 0.08 : -0.9)
+  if (kind === 'gun' && swordAttack) {
+    x = 54
+    y = 41
+    rotation = 0.42
+  }
+
+  ctx.save()
+  ctx.translate(frameX + x, y)
+  ctx.rotate(rotation)
+  ctx.drawImage(image, -width * profile.gripX, -height * profile.gripY, width, height)
+  ctx.restore()
+}
+
+const TEMP_WEAPON_PROFILE: Record<string, { width: number; gripX: number; gripY: number }> = {
+  m1911: { width: 27, gripX: 0.3, gripY: 0.68 },
+  smg: { width: 31, gripX: 0.36, gripY: 0.72 },
+  shotgun: { width: 36, gripX: 0.24, gripY: 0.65 },
+  rifle: { width: 42, gripX: 0.28, gripY: 0.55 },
+  magnum: { width: 31, gripX: 0.23, gripY: 0.7 },
+  crossbow: { width: 34, gripX: 0.28, gripY: 0.62 },
+  autocannon: { width: 38, gripX: 0.14, gripY: 0.53 },
+  katana: { width: 36, gripX: 0.14, gripY: 0.5 },
+  daggers: { width: 31, gripX: 0.17, gripY: 0.5 },
+  rapier: { width: 38, gripX: 0.12, gripY: 0.5 },
+  greatsword: { width: 40, gripX: 0.1, gripY: 0.5 },
+  warhammer: { width: 32, gripX: 0.13, gripY: 0.5 },
+  glaive: { width: 42, gripX: 0.09, gripY: 0.5 },
+  moonblade: { width: 36, gripX: 0.14, gripY: 0.5 },
 }
 
 function makeTexture(canvas: HTMLCanvasElement): THREE.Texture {
