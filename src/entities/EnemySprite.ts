@@ -3,6 +3,7 @@ import { CONFIG } from '../config'
 import type { EnemyKind } from './Enemy'
 import { noOutline } from '../rendering/toon'
 import { ASSET, cloneTex } from '../rendering/assets'
+import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
 
 export type EnemyAnimState = 'idle' | 'walk' | 'attack' | 'charge'
 type StandardEnemyAnimState = Exclude<EnemyAnimState, 'charge'>
@@ -69,10 +70,9 @@ export class EnemySprite {
     }
 
     this.mat = new THREE.SpriteMaterial({ map: this.texes.idle, transparent: true, depthWrite: false })
-    this.sprite = new THREE.Sprite(this.mat)
-    this.sprite.center.set(0.5, 0) // 발이 셀 아래변에 있으므로 앵커도 바닥
+    this.sprite = makeBottomAnchoredSprite(this.mat)
     const sc = SCALE[kind]
-    this.sprite.scale.set(sc, sc, 1)
+    setSpriteWorldHeight(this.sprite, sc)
     this.group.add(this.sprite)
 
     // 발밑 그림자

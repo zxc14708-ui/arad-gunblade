@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { makePixelCanvasTexture } from './pixelArt'
 
 /** 픽셀 이펙트용 캔버스 텍스처 (총알/적탄/파티클/베기) — 니어리스트 필터, 캐시 */
 const cache = new Map<string, THREE.Texture>()
@@ -11,11 +12,7 @@ function make(key: string, size: number, draw: (x: CanvasRenderingContext2D, s: 
     const ctx = c.getContext('2d')!
     ctx.imageSmoothingEnabled = false
     draw(ctx, size)
-    t = new THREE.CanvasTexture(c)
-    t.magFilter = THREE.NearestFilter
-    t.minFilter = THREE.NearestFilter
-    t.generateMipmaps = false
-    t.colorSpace = THREE.SRGBColorSpace
+    t = makePixelCanvasTexture(c)
     cache.set(key, t)
   }
   return t

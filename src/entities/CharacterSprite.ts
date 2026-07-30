@@ -1,4 +1,10 @@
 import * as THREE from 'three'
+import {
+  configurePixelTexture,
+  makeBottomAnchoredSprite,
+  makePixelCanvasTexture,
+  setSpriteWorldHeight,
+} from '../rendering/pixelArt'
 
 /**
  * 2D 주인공 빌보드 — SD 총검사 아트 시트 3장(base+sword+gun 레이어) 합성 사용.
@@ -71,8 +77,7 @@ export class CharacterSprite {
     const tex = makeTexture(makeSheet(gunId, swordId))
     tex.repeat.set(1 / this.spec.n, 1)
     this.mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
-    this.sprite = new THREE.Sprite(this.mat)
-    this.sprite.center.set(0.5, 0)
+    this.sprite = makeBottomAnchoredSprite(this.mat)
     this.applyScale()
     this.object.add(this.sprite)
 
@@ -89,10 +94,7 @@ export class CharacterSprite {
       new THREE.TextureLoader().load(
         CharacterSprite.SHEET_URL,
         (loaded) => {
-          loaded.magFilter = THREE.NearestFilter
-          loaded.minFilter = THREE.NearestFilter
-          loaded.generateMipmaps = false
-          loaded.colorSpace = THREE.SRGBColorSpace
+          configurePixelTexture(loaded)
           this.artTexture = loaded
           this.setTexture(loaded, ART_SPEC)
         },
@@ -133,7 +135,7 @@ export class CharacterSprite {
   }
 
   private applyScale() {
-    this.sprite.scale.set(this.baseH * this.spec.aspect, this.baseH, 1)
+    setSpriteWorldHeight(this.sprite, this.baseH, this.spec.aspect)
   }
 
   private setTexture(tex: THREE.Texture, spec: SheetSpec) {
@@ -274,12 +276,7 @@ function drawFixedGunCell(ctx: CanvasRenderingContext2D, gunImg: HTMLImageElemen
 }
 
 function makeTexture(canvas: HTMLCanvasElement): THREE.Texture {
-  const t = new THREE.CanvasTexture(canvas)
-  t.magFilter = THREE.NearestFilter
-  t.minFilter = THREE.NearestFilter
-  t.generateMipmaps = false
-  t.colorSpace = THREE.SRGBColorSpace
-  return t
+  return makePixelCanvasTexture(canvas)
 }
 
 // ══════════════════ 절차 생성 폴백 시트 (아트 로드 실패 시) ══════════════════

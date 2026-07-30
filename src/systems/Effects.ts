@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { CONFIG, COLORS } from '../config'
 import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
+import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
 import { DISPLAY } from '../rendering/viewport'
 
 export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit' | 'ultimateCross' | 'iaido'
@@ -90,9 +91,8 @@ export class Effects {
   /** 적 사망 산화: 흰 섬광 → 주황 틴트로 주저앉으며 소멸 */
   deathDissolve(pos: THREE.Vector3, map: THREE.Texture, scale: number) {
     const mat = new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })
-    const sp = new THREE.Sprite(mat)
-    sp.center.set(0.5, 0)
-    sp.scale.set(scale, scale, 1)
+    const sp = makeBottomAnchoredSprite(mat)
+    setSpriteWorldHeight(sp, scale)
     sp.position.set(pos.x, 0.02, pos.z)
     this.scene.add(sp)
     this.deaths.push({ sp, life: 0.38, max: 0.38, base: scale })
@@ -114,8 +114,7 @@ export class Effects {
       color: 0x9fd8ff,
       depthWrite: false,
     })
-    const sp = new THREE.Sprite(mat)
-    sp.center.set(0.5, 0)
+    const sp = makeBottomAnchoredSprite(mat)
     sp.scale.set(p.sx, p.sy, 1)
     sp.position.set(pos.x, p.bobY, pos.z)
     this.scene.add(sp)
