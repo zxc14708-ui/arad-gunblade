@@ -18,6 +18,7 @@ import { ELITE_AFFIX } from '../systems/EliteAffixes'
 import { MetaProgression } from '../systems/MetaProgression'
 import { weaponById } from '../systems/Weapons'
 import { preloadAssets } from '../rendering/assets'
+import { DISPLAY, fitStage } from '../rendering/viewport'
 import { HUD } from '../ui/HUD'
 
 type State = 'start' | 'play' | 'levelup' | 'reward' | 'shop' | 'meta' | 'loadout' | 'clear' | 'gameover'
@@ -29,7 +30,7 @@ export class Game {
   private scene: THREE.Scene
   private camera!: THREE.OrthographicCamera
   private viewSize = 14
-  private pixelScale = 3
+  private stage: HTMLDivElement
   private input: Input
   private hud: HUD
 
@@ -78,7 +79,11 @@ export class Game {
   private camOffset = new THREE.Vector3(0, 24, 17)
 
   constructor(container: HTMLElement) {
-    // 렌더러 (픽셀아트: 저해상도 렌더 → CSS 확대)
+    this.stage = document.createElement('div')
+    this.stage.className = 'game-stage'
+    container.appendChild(this.stage)
+
+    // 1920×1080 고정 렌더러. 브라우저 적응은 .game-stage 전체 스케일로 처리한다.
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(1)
     this.renderer.shadowMap.enabled = true
@@ -86,7 +91,7 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.1
     this.renderer.domElement.classList.add('pixelated')
-    container.appendChild(this.renderer.domElement)
+    this.stage.appendChild(this.renderer.domElement)
 
     this.outline = new OutlineEffect(this.renderer, {
       defaultThickness: 0.004,
@@ -130,7 +135,7 @@ export class Game {
     this.projectiles = new Projectiles(this.scene)
     this.pickups = new Pickups(this.scene)
     this.input = new Input(this.renderer.domElement)
-    this.hud = new HUD(container)
+    this.hud = new HUD(this.stage)
     this.effects = new Effects(this.scene, this.hud.floaterLayer)
 
     this.hud.onStart(() => this.startGame())
@@ -175,18 +180,18 @@ export class Game {
   private onResize = () => this.setRenderSize()
 
   private setRenderSize() {
-    const w = window.innerWidth
-    const h = window.innerHeight
-    const aspect = w / h
-    this.camera.left = -aspect * this.viewSize
-    this.camera.right = aspect * this.viewSize
+    this.camera.left = -DISPLAY.aspect * this.viewSize
+    this.camera.right = DISPLAY.aspect * this.viewSize
     this.camera.top = this.viewSize
     this.camera.bottom = -this.viewSize
     this.camera.updateProjectionMatrix()
-    const rw = Math.ceil(w / this.pixelScale)
-    const rh = Math.ceil(h / this.pixelScale)
-    this.renderer.setSize(rw, rh, false)
-    this.outline.setSize(rw, rh)
+
+    this.renderer.setSize(DISPLAY.width, DISPLAY.height, false)
+    this.outline.setSize(DISPLAY.width, DISPLAY.height)
+
+    const layout = fitStage(window.innerWidth, window.innerHeight)
+    this.stage.style.transform = `translate3d(${layout.left}px, ${layout.top}px, 0) scale(${layout.scale})`
+    this.stage.dataset.scale = String(layout.scale)
   }
 
   // ══════════════════ 게임 시작 / 씬 전환 ══════════════════
@@ -886,8 +891,7 @@ export class Game {
       this.camera.lookAt(look)
     }
 
-    const rect = this.renderer.domElement.getBoundingClientRect()
-    this.effects.update(running ? dt : 0, this.camera, rect)
+    this.effects.update(running ? dt : 0, this.camera)
 
     this.outline.render(this.scene, this.camera)
   }

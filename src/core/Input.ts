@@ -144,8 +144,11 @@ export class Input {
 
   private updateNdc(e: MouseEvent) {
     const r = this.el.getBoundingClientRect()
-    this.ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1
-    this.ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1
+    if (r.width <= 0 || r.height <= 0) return
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+    const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+    this.ndc.x = x * 2 - 1
+    this.ndc.y = -(y * 2 - 1)
   }
 
   down(code: string) {

@@ -25,8 +25,8 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = join(ROOT, 'qc-out')
 const PORT = 4390
-const VIEW = { width: 1280, height: 760 }
-const ZOOM = { w: 300, h: 190 } // 플레이어 주변 확대 크롭 크기
+const VIEW = { width: 1920, height: 1080 }
+const ZOOM = { w: 450, h: 285 } // 1920×1080 기준 플레이어 주변 확대 크롭
 
 const argv = process.argv.slice(2)
 const arg = (k) => {
@@ -710,13 +710,41 @@ async function dismissLevelUp(p) {
  */
 async function installQcSamplerFn(p) {
   await p.evaluate(() => {
-    window.startQcSampler = () => {
-      window.__qcT0 = performance.now()
-      window.__qcSamples = []
+    const beginSampling = () => {
       window.__qcTimer = setInterval(() => {
         const boss = window.__game.enemies.find((e) => e.kind === 'boss')
         window.__qcSamples.push({ t: performance.now() - window.__qcT0, state: boss?.bossState ?? null })
       }, 50)
+    }
+    window.startQcSampler = () => {
+      window.__qcT0 = performance.now()
+      window.__qcSamples = []
+      window.__qcSamplerActive = true
+      window.__qcPauseStarted = 0
+      beginSampling()
+    }
+    window.pauseQcSampler = () => {
+      const g = window.__game
+      if (g && window.__qcGameWasPaused == null) {
+        window.__qcGameWasPaused = g.settingsOpen
+        g.settingsOpen = true
+      }
+      if (window.__qcSamplerActive && !window.__qcPauseStarted) {
+        window.__qcPauseStarted = performance.now()
+        clearInterval(window.__qcTimer)
+      }
+    }
+    window.resumeQcSampler = () => {
+      const g = window.__game
+      if (g && window.__qcGameWasPaused != null) {
+        g.settingsOpen = window.__qcGameWasPaused
+        window.__qcGameWasPaused = null
+      }
+      if (window.__qcSamplerActive && window.__qcPauseStarted) {
+        window.__qcT0 += performance.now() - window.__qcPauseStarted
+        window.__qcPauseStarted = 0
+        beginSampling()
+      }
     }
   })
 }
@@ -724,6 +752,7 @@ async function installQcSamplerFn(p) {
 async function stopQcSampler(p) {
   return p.evaluate(() => {
     clearInterval(window.__qcTimer)
+    window.__qcSamplerActive = false
     return window.__qcSamples
   })
 }
@@ -841,7 +870,9 @@ mkdirSync(OUT, { recursive: true })
 
 const browser = await chromium.launch({
   executablePath: chromePath(),
-  args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
+  args: process.platform === 'win32'
+    ? ['--no-sandbox']
+    : ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
 })
 const ctx = await browser.newContext({ viewport: VIEW })
 const page = await ctx.newPage()
@@ -854,6 +885,8 @@ page.on('requestfailed', (r) => errors.push(`request: ${r.url()} — ${r.failure
 await page.goto(target, { waitUntil: 'networkidle' })
 await page.waitForTimeout(1200)
 await installQcSamplerFn(page)
+const displayFailure = await checkDisplayContract(page)
+if (displayFailure) errors.push(`display: ${displayFailure}`)
 
 let i = 0
 for (const s of STEPS) {
@@ -863,10 +896,15 @@ for (const s of STEPS) {
   let fail = null
   try {
     await s.run(page)
+    const checkBeforeCapture = s.name === 'critical-south-edge'
+    if (checkBeforeCapture && s.check) fail = await s.check(page)
+    await page.evaluate(() => window.pauseQcSampler?.())
     await page.screenshot({ path: join(OUT, `${tag}.png`) })
     await zoomShot(page, join(OUT, `${tag}-zoom.png`))
-    if (s.check) fail = await s.check(page)
+    await page.evaluate(() => window.resumeQcSampler?.())
+    if (!checkBeforeCapture && s.check) fail = await s.check(page)
   } catch (e) {
+    await page.evaluate(() => window.resumeQcSampler?.()).catch(() => {})
     fail = e.message.split('\n')[0]
   }
   if (s.after) await s.after(page).catch(() => {})
@@ -991,7 +1029,13 @@ async function zoomShot(page, path) {
       const v = g.player.pos.clone()
       v.y += 1.4
       v.project(g.camera)
-      return { x: ((v.x + 1) / 2) * innerWidth, y: ((-v.y + 1) / 2) * innerHeight }
+      const canvas = document.querySelector('canvas')
+      const rect = canvas?.getBoundingClientRect()
+      if (!rect) return null
+      return {
+        x: rect.left + ((v.x + 1) / 2) * rect.width,
+        y: rect.top + ((-v.y + 1) / 2) * rect.height,
+      }
     })
     .catch(() => null)
   const cx = pt ? pt.x : VIEW.width / 2
@@ -1006,6 +1050,53 @@ async function zoomShot(page, path) {
 }
 
 /** 전 단계를 한 장으로 — 리뷰어(사람이든 모델이든)가 처음 보는 화면 */
+/** 1920×1080 내부 해상도와 비율 유지 축소가 실제 브라우저에서 지켜지는지 확인한다. */
+async function checkDisplayContract(page) {
+  const inspect = () => page.evaluate(() => {
+    const canvas = document.querySelector('canvas')
+    const stage = document.querySelector('.game-stage')
+    if (!canvas || !stage) return null
+    const rect = stage.getBoundingClientRect()
+    return {
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      stageWidth: rect.width,
+      stageHeight: rect.height,
+      stageLeft: rect.left,
+      stageTop: rect.top,
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+    }
+  })
+
+  const full = await inspect()
+  if (!full) return 'canvas 또는 .game-stage가 없음'
+  if (full.canvasWidth !== 1920 || full.canvasHeight !== 1080) {
+    return `내부 캔버스가 1920×1080이 아님 (${full.canvasWidth}×${full.canvasHeight})`
+  }
+  if (Math.abs(full.stageWidth - 1920) > 1 || Math.abs(full.stageHeight - 1080) > 1) {
+    return `1920×1080 창에서 스테이지가 화면을 채우지 않음 (${full.stageWidth.toFixed(1)}×${full.stageHeight.toFixed(1)})`
+  }
+
+  await page.setViewportSize({ width: 1366, height: 768 })
+  await page.waitForTimeout(100)
+  const fitted = await inspect()
+  await page.setViewportSize(VIEW)
+  await page.waitForTimeout(100)
+  if (!fitted) return '축소 화면에서 .game-stage를 읽지 못함'
+  const ratio = fitted.stageWidth / fitted.stageHeight
+  if (Math.abs(ratio - 16 / 9) > 0.002) return `축소 시 16:9 비율이 깨짐 (${ratio.toFixed(4)})`
+  if (
+    fitted.stageLeft < -1 ||
+    fitted.stageTop < -1 ||
+    fitted.stageLeft + fitted.stageWidth > fitted.viewportWidth + 1 ||
+    fitted.stageTop + fitted.stageHeight > fitted.viewportHeight + 1
+  ) {
+    return '축소 시 스테이지가 브라우저 밖으로 잘림'
+  }
+  return null
+}
+
 async function contactSheet(page) {
   const cards = results
     .map((r) => {
