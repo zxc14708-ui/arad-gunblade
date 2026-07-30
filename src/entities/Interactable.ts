@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { ASSET, loadTex } from '../rendering/assets'
+import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
 import type { Direction } from '../systems/RunState'
 
 export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'door' | 'traitAltar' | 'traitForge' | 'dungeonForge' | 'metaAltar'
@@ -95,11 +96,10 @@ export class Interactable {
       depthWrite: false,
       depthTest: kind !== 'portal' && kind !== 'door',
     })
-    this.sprite = new THREE.Sprite(this.mat)
-    this.sprite.center.set(0.5, 0)
+    this.sprite = makeBottomAnchoredSprite(this.mat)
     this.sprite.renderOrder = kind === 'portal' || kind === 'door' ? 12 : 2
     const sc = SCALE[kind]
-    this.sprite.scale.set(sc * ASPECT[kind], sc, 1)
+    setSpriteWorldHeight(this.sprite, sc, ASPECT[kind])
     this.group.add(this.sprite)
 
     // 발밑 그림자
@@ -126,9 +126,8 @@ export class Interactable {
           depthTest: false,
         }),
       )
-      this.glow = new THREE.Sprite(gm)
-      this.glow.scale.setScalar(sc * (kind === 'fountain' || tint ? 1.25 : 1.5))
-      this.glow.center.set(0.5, 0)
+      this.glow = makeBottomAnchoredSprite(gm)
+      setSpriteWorldHeight(this.glow, sc * (kind === 'fountain' || tint ? 1.25 : 1.5), ASPECT[kind])
       this.glow.renderOrder = 11
       this.group.add(this.glow)
 
