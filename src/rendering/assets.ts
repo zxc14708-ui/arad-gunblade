@@ -68,8 +68,6 @@ export function preloadAssets(): Promise<void> {
     ASSET.stage1.floor,
     ...Object.values(ASSET.stage1.foreground),
     ...Object.values(ASSET.stage1.effects),
-    ASSET.player.projectiles,
-    ASSET.player.meleeFx,
   ]
   return Promise.all(
     paths.map(
@@ -95,26 +93,6 @@ export function preloadAssets(): Promise<void> {
 }
 
 export const ASSET = {
-  player: {
-    weapons: {
-      m1911: 'assets/player/weapons/m1911.png',
-      smg: 'assets/player/weapons/smg.png',
-      shotgun: 'assets/player/weapons/shotgun.png',
-      rifle: 'assets/player/weapons/rifle.png',
-      magnum: 'assets/player/weapons/magnum.png',
-      crossbow: 'assets/player/weapons/crossbow.png',
-      autocannon: 'assets/player/weapons/autocannon.png',
-      katana: 'assets/player/weapons/katana.png',
-      daggers: 'assets/player/weapons/daggers.png',
-      rapier: 'assets/player/weapons/rapier.png',
-      greatsword: 'assets/player/weapons/greatsword.png',
-      warhammer: 'assets/player/weapons/warhammer.png',
-      glaive: 'assets/player/weapons/glaive.png',
-      moonblade: 'assets/player/weapons/moonblade.png',
-    },
-    projectiles: 'assets/player/fx/weapon_projectiles_temp.png',
-    meleeFx: 'assets/player/fx/weapon_melee_fx_temp.png',
-  },
   tiles: {
     dungeonFloor: 'assets/tiles/dungeon_floor_01.png',
     dungeonWall: 'assets/tiles/dungeon_wall_01.png',

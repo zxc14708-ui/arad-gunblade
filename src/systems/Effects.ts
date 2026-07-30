@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { CONFIG, COLORS } from '../config'
 import { puffTex } from '../rendering/pixelfx'
-import { ASSET, cloneTex, frameTextures } from '../rendering/assets'
+import { ASSET, frameTextures } from '../rendering/assets'
 import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
 import { DISPLAY } from '../rendering/viewport'
 
@@ -42,7 +42,6 @@ export class Effects {
   private deaths: { sp: THREE.Sprite; life: number; max: number; base: number }[] = []
   private ghosts: { sp: THREE.Sprite; life: number; max: number }[] = []
   private groundFx: GroundFx[] = []
-  private weaponSlashes: { sp: THREE.Sprite; life: number; max: number }[] = []
   /** 스프라이트 시트 이펙트 (베기/사망/총구화염/타격) */
   private fx: { sp: THREE.Sprite; kind: FxKind; time: number; frames: THREE.Texture[]; fps: number }[] = []
   private layer: HTMLDivElement
@@ -159,28 +158,12 @@ export class Effects {
   }
 
   /** 베기 크레센트 (조준 방향, 사거리에 맞춰 전방 배치) — 바람 잔상을 겹쳐 타격감 보강 */
-  slash(pos: THREE.Vector3, angle: number, _arc: number, range: number, weaponId = 'katana') {
+  slash(pos: THREE.Vector3, angle: number, _arc: number, range: number) {
     const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
     const x = pos.x + fwd.x * range * 0.45
     const z = pos.z + fwd.z * range * 0.45
     this.playFx('slashWind', x, 1.1, z, range * 1.5, angle)
     this.playFx('slash', x, 1.1, z, range * 1.5, angle)
-    this.weaponSlash(x, z, angle, range, weaponId)
-  }
-
-  /** Equipped sword's compact temporary slash sheet, layered over the shared impact trail. */
-  private weaponSlash(x: number, z: number, angle: number, range: number, weaponId: string) {
-    const texture = cloneTex(ASSET.player.meleeFx)
-    const index = SWORD_FX_INDEX[weaponId] ?? 0
-    texture.repeat.set(1 / 7, 1)
-    texture.offset.set(index / 7, 0)
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
-    material.rotation = -angle + Math.PI / 2
-    const sprite = new THREE.Sprite(material)
-    sprite.position.set(x, 1.16, z)
-    sprite.scale.set(range * 1.05, range * 1.05, 1)
-    this.scene.add(sprite)
-    this.weaponSlashes.push({ sp: sprite, life: 0.18, max: 0.18 })
   }
 
   /** 궁극기 마무리용 임시 십자 베기 시트. 캐릭터 높이(3.7)의 정확히 두 배로 표시한다. */
@@ -359,20 +342,6 @@ export class Effects {
       }
     }
 
-    // Weapon-specific temporary slash layer
-    for (let i = this.weaponSlashes.length - 1; i >= 0; i--) {
-      const slash = this.weaponSlashes[i]
-      slash.life -= dt
-      ;(slash.sp.material as THREE.SpriteMaterial).opacity = Math.max(0, slash.life / slash.max)
-      if (slash.life <= 0) {
-        this.scene.remove(slash.sp)
-        const material = slash.sp.material as THREE.SpriteMaterial
-        material.map?.dispose()
-        material.dispose()
-        this.weaponSlashes.splice(i, 1)
-      }
-    }
-
     // 데미지 숫자
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i]
@@ -395,12 +364,6 @@ export class Effects {
   clear() {
     for (const p of this.particles) this.scene.remove(p.mesh)
     for (const s of this.slashes) this.scene.remove(s.mesh)
-    for (const s of this.weaponSlashes) {
-      this.scene.remove(s.sp)
-      const material = s.sp.material as THREE.SpriteMaterial
-      material.map?.dispose()
-      material.dispose()
-    }
     for (const f of this.floaters) f.el.remove()
     for (const d of this.deaths) this.scene.remove(d.sp)
     for (const g of this.ghosts) this.scene.remove(g.sp)
@@ -412,21 +375,10 @@ export class Effects {
     }
     this.particles = []
     this.slashes = []
-    this.weaponSlashes = []
     this.floaters = []
     this.deaths = []
     this.ghosts = []
     this.fx = []
     this.groundFx = []
   }
-}
-
-const SWORD_FX_INDEX: Record<string, number> = {
-  katana: 0,
-  daggers: 1,
-  rapier: 2,
-  greatsword: 3,
-  warhammer: 4,
-  glaive: 5,
-  moonblade: 6,
 }

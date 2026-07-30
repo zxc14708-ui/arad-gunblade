@@ -1,30 +1,31 @@
-# Temporary Weapon Visual System
+# Weapon Motion Sheet Handoff
 
-## Runtime behavior
+## Current status
 
-- The default M1911 + katana loadout keeps `public/gunblader.png` unchanged.
-- Any other equipped loadout starts from `public/gunblader_base.png` and adds
-  the selected gun and sword as temporary layers on the existing 27 frames.
-- This changes visuals only. Weapon stats still come exclusively from
-  `src/systems/Weapons.ts`.
+The temporary per-weapon runtime visual system is deliberately disabled. Every
+loadout currently uses the finished original character sheet at
+`public/gunblader.png`, so switching weapons cannot replace the player with the
+retired white-haired character.
 
-## Asset map
-
-- Source handoff atlas: `public/assets/player/weapon_atlas_temp.png`
-- Per-weapon runtime sprites: `public/assets/player/weapons/<weapon-id>.png`
-- Gun projectile style sheet: `public/assets/player/fx/weapon_projectiles_temp.png`
-- Sword effect style sheet: `public/assets/player/fx/weapon_melee_fx_temp.png`
-
-`rifle.png` is a scoped rifle. The legacy `daggers` id intentionally displays
-as a one-handed sword and is named **한손검** in the game UI.
+Weapon mechanics, including the scoped rifle's separate tuning, are independent
+of this decision and remain active.
 
 ## Final art delivery contract
 
-For a final replacement, deliver a transparent 3024×64 PNG strip: 27 frames
-of 112×64 pixels, in this order: idle 0–3, walk 4–10, sword attack 11–18,
-gun attack 19–26. The gun stays in one hand in every frame; no holster is
-needed. Keep the feet on the bottom edge and the hand/grip position stable.
+For each final loadout, deliver one transparent PNG motion strip:
 
-If final art arrives as modular parts, every layer uses the same 112×64 grid
-and frame order. Do not resize a source file to compensate for a pivot error;
-fix the grip position in the sheet instead.
+- Canvas: **3024 x 64 px**
+- Frames: **27 frames**, each **112 x 64 px**
+- Idle: frames **0-3**
+- Walk: frames **4-10**
+- Sword attack: frames **11-18**
+- Gun attack: frames **19-26**
+- The gun stays in one hand in every frame; do not draw a holster.
+- Keep feet on the bottom edge and keep the weapon grip aligned with the hand.
+- Match the pixel density, silhouette, and transparent background of
+  `public/gunblader.png`.
+
+Only after matching final sheets are delivered should a per-weapon visual system
+be reintroduced. Register the sheets in `src/rendering/assets.ts`, keep the
+runtime sprite on the same character body, and visually QC every loadout before
+shipping. Do not alter combat or weapon-stat logic to swap art.
