@@ -80,8 +80,12 @@ export class Room {
     wt.needsUpdate = true
     wt.wrapS = wt.wrapT = THREE.RepeatWrapping
     wt.repeat.set(this.w / 2, WH / 2)
+    // Forest rooms previously replaced the wall texture with an almost-black flat color.
+    // At 16:9 this produced wide black bands above and below the playable floor.
+    // Keep the wall darker than the floor, but retain the pixel-tile texture so the
+    // room boundary reads as scenery rather than missing geometry.
     const wallMat = useForestBackdrop
-      ? noOutline(new THREE.MeshStandardMaterial({ color: 0x1e2a20, roughness: 1 }))
+      ? noOutline(new THREE.MeshStandardMaterial({ map: wt, color: 0x9aa58f, roughness: 1 }))
       : noOutline(new THREE.MeshStandardMaterial({ map: wt, roughness: 1 }))
     const addWall = (cx: number, cz: number, sx: number, sz: number) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(sx, WH, sz), wallMat)

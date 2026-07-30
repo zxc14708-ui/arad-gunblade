@@ -25,6 +25,23 @@ body,
   color: #eee;
 }
 
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+.game-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: #05060a;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
 canvas {
   display: block;
   cursor: crosshair;
@@ -32,15 +49,19 @@ canvas {
 
 /* 픽셀아트: 저해상도 렌더 버퍼를 화면 전체로 확대(니어리스트) */
 canvas.pixelated {
-  width: 100% !important;
-  height: 100% !important;
+  position: absolute;
+  inset: 0;
+  width: 1920px !important;
+  height: 1080px !important;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
 #ui {
-  position: fixed;
+  position: absolute;
   inset: 0;
+  width: 1920px;
+  height: 1080px;
   pointer-events: none;
   z-index: 10;
 }
@@ -743,7 +764,7 @@ canvas.pixelated {
 
 /* 데미지 숫자 */
 .floater {
-  position: fixed;
+  position: absolute;
   left: 0;
   top: 0;
   font-size: 16px;
@@ -971,4 +992,285 @@ canvas.pixelated {
   .title { font-size: 38px; }
   .card { width: 150px; min-height: 180px; }
   .hud-bars { width: 200px; }
+}
+
+/* ===== 1920×1080 reference layout =====
+ * The whole .game-stage is scaled as one unit. Keep gameplay UI in logical
+ * pixels here instead of viewport units so every display sees the same layout.
+ */
+.hud-top {
+  top: 24px;
+  gap: 9px;
+}
+.stat-row {
+  gap: 28px;
+  font-size: 20px;
+  letter-spacing: 0.8px;
+}
+.room-track {
+  gap: 6px;
+  margin-top: 6px;
+}
+.room-track i {
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+  border-radius: 6px;
+}
+.minimap {
+  grid-auto-columns: 30px;
+  grid-auto-rows: 30px;
+  gap: 4px;
+  min-height: 30px;
+  margin-top: 10px;
+}
+.minimap-room {
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+  border-radius: 6px;
+}
+.minimap-link.east {
+  top: calc(50% - 2px);
+  width: 6px;
+  height: 3px;
+}
+.minimap-link.south {
+  left: calc(50% - 2px);
+  width: 3px;
+  height: 6px;
+}
+
+.hud-bars {
+  left: 32px;
+  bottom: 30px;
+  width: 450px;
+  max-width: none;
+}
+.bar {
+  height: 28px;
+  border-width: 2px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+.bar .label {
+  font-size: 17px;
+}
+#xpBar,
+#xpFill {
+  height: 16px;
+}
+
+.hud-skills {
+  left: 32px;
+  bottom: 116px;
+  gap: 12px;
+}
+.skill {
+  width: 108px;
+  height: 76px;
+  grid-template-columns: 32px 1fr;
+  gap: 6px;
+  padding: 0 10px;
+  border-width: 2px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.skill kbd {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+.hud-dash {
+  right: 36px;
+  bottom: 30px;
+}
+.dash-ring {
+  width: 126px;
+  height: 126px;
+  border-width: 4px;
+  font-size: 48px;
+}
+.dash-label {
+  margin-top: 7px;
+  font-size: 21px;
+}
+.hud-ammo {
+  right: 36px;
+  bottom: 194px;
+  transform: none;
+}
+.ammo-pips {
+  gap: 5px;
+  margin-bottom: 7px;
+}
+.ammo-pips i {
+  width: 9px;
+  height: 23px;
+  border-radius: 3px;
+}
+.ammo-text {
+  font-size: 24px;
+}
+.ammo-label {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.prompt {
+  bottom: 170px;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-size: 20px;
+}
+.prompt kbd {
+  padding: 3px 11px;
+}
+.icon-btn {
+  top: 24px;
+  right: 28px;
+  width: 58px;
+  height: 58px;
+  font-size: 27px;
+  border-width: 2px;
+}
+
+#bossBar {
+  top: 110px;
+  width: 900px;
+  max-width: none;
+}
+#bossBar .bar {
+  height: 24px;
+}
+#bossBar .name {
+  margin-bottom: 7px;
+  font-size: 21px;
+  letter-spacing: 3px;
+}
+#banner {
+  font-size: 58px;
+}
+.floater {
+  font-size: 23px;
+}
+.floater.crit {
+  font-size: 34px;
+}
+
+.shop-panel {
+  width: 1120px;
+  max-width: 1760px;
+  max-height: 960px;
+  border-radius: 18px;
+  padding: 34px 40px;
+}
+.shop-head {
+  font-size: 40px;
+}
+.shop-sub {
+  font-size: 19px;
+  margin: 9px 0 26px;
+}
+.shop-items {
+  gap: 18px;
+}
+.shop-item {
+  width: 198px;
+  min-height: 242px;
+  border-radius: 14px;
+  padding: 22px 15px 16px;
+  gap: 9px;
+}
+.shop-item .si-icon {
+  font-size: 46px;
+}
+.shop-item .si-name,
+.shop-item .si-price {
+  font-size: 20px;
+}
+.shop-item .si-desc {
+  font-size: 16px;
+}
+.shop-actions {
+  gap: 18px;
+  margin-top: 28px;
+}
+.shop-actions .btn.small {
+  font-size: 21px;
+  padding: 16px;
+}
+.meta-panel,
+.loadout-panel {
+  width: 1280px;
+}
+.settings-panel {
+  width: 660px;
+  max-width: 1760px;
+  max-height: 940px;
+  border-radius: 18px;
+  padding: 34px 40px;
+}
+.settings-title {
+  font-size: 38px;
+  margin-bottom: 24px;
+}
+.settings-sec {
+  font-size: 20px;
+  margin: 22px 0 13px;
+}
+
+.title {
+  font-size: 76px;
+  letter-spacing: 6px;
+}
+.subtitle {
+  margin-top: 9px;
+  font-size: 25px;
+}
+.helptext {
+  max-width: 720px;
+  margin-top: 34px;
+  font-size: 20px;
+}
+.btn {
+  margin-top: 36px;
+  padding: 19px 56px;
+  font-size: 27px;
+}
+.levelup-head {
+  font-size: 46px;
+}
+.levelup-sub {
+  margin-bottom: 38px;
+  font-size: 20px;
+}
+.cards {
+  gap: 28px;
+}
+.card {
+  width: 280px;
+  min-height: 294px;
+  border-radius: 16px;
+  padding: 30px 22px;
+  gap: 14px;
+}
+.card .cicon {
+  font-size: 62px;
+}
+.card .cname {
+  font-size: 27px;
+}
+.card .cdesc {
+  font-size: 19px;
+}
+.card .crar,
+.ctag {
+  font-size: 15px;
+}
+.credit {
+  bottom: 14px;
+  font-size: 15px;
 }

@@ -35,6 +35,7 @@ SRC = os.path.join(ROOT, 'src')
 ENEMY_SPRITE_TS = os.path.join(SRC, 'entities', 'EnemySprite.ts')
 ASSETS_TS = os.path.join(SRC, 'rendering', 'assets.ts')
 INTERACTABLE_TS = os.path.join(SRC, 'entities', 'Interactable.ts')
+PLAYER_SHEET = os.path.join(PUBLIC, 'gunblader.png')
 
 FEET_TOL = 2  # 발 위치 허용오차(px) — 1~2px 차이는 눈에 보이지 않는다
 ALPHA_TOL = 10  # 모서리 알파 허용치 — 완전 0이 아니어도 이 이하면 통과
@@ -150,6 +151,41 @@ def corner_alpha_ok(path):
     px = im.load()
     bad = [c for c in corners if px[c][3] > ALPHA_TOL]
     return bad
+
+
+def check_player_sheet():
+    """현재 확정된 27프레임 캐릭터 시트의 규격과 발 기준선을 검사한다."""
+    frame_w, frame_h, frame_count = 112, 64, 27
+    if not os.path.exists(PLAYER_SHEET):
+        errors.append('gunblader.png: 파일 없음')
+        return
+
+    im = Image.open(PLAYER_SHEET).convert('RGBA')
+    w, h = im.size
+    if (w, h) != (frame_w * frame_count, frame_h):
+        errors.append(
+            f'gunblader.png: {w}x{h} (기준 {frame_w * frame_count}x{frame_h}, '
+            f'{frame_w}x{frame_h} × {frame_count}프레임)'
+        )
+        return
+
+    px = im.load()
+    bad_feet = []
+    for frame in range(frame_count):
+        x0 = frame * frame_w
+        bottom = max(
+            (y for y in range(frame_h) for x in range(x0, x0 + frame_w) if px[x, y][3] > ALPHA_TOL),
+            default=-1,
+        )
+        if bottom < 0 or frame_h - 1 - bottom > FEET_TOL:
+            bad_feet.append((frame, bottom))
+    if bad_feet:
+        errors.append(f'gunblader.png: 발 기준선 이탈 프레임 {bad_feet}')
+
+    bad = corner_alpha_ok(PLAYER_SHEET)
+    if bad:
+        errors.append(f'gunblader.png: 모서리 불투명 {bad}')
+    print(f'player    sheet   {w}x{h}  cell {frame_w}x{frame_h}  frames {frame_count}  발 기준선 확인')
 
 
 # ── 1. 몬스터 시트 규격 ──────────────────────────────────────────────────
@@ -292,6 +328,7 @@ def check_orphan_assets():
 
 # ── 실행 ─────────────────────────────────────────────────────────────────
 
+check_player_sheet()
 check_monster_sheets()
 check_all_paths_exist()
 check_prop_aspect()

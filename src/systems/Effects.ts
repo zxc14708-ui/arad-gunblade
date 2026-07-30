@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { CONFIG, COLORS } from '../config'
 import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
+import { DISPLAY } from '../rendering/viewport'
 
 export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit' | 'ultimateCross' | 'iaido'
 export type GroundFxKind = 'warning' | 'shockwave' | 'tealMagic'
@@ -224,7 +225,7 @@ export class Effects {
     this.floaters.push({ el, world: world.clone(), life: 0.8, vy: 2.2 })
   }
 
-  update(dt: number, camera: THREE.Camera, canvasRect: DOMRect) {
+  update(dt: number, camera: THREE.Camera) {
     // 화면 흔들림 — Game이 이번 프레임 카메라 위치를 이미 정한 뒤이므로, 그 위에
     // 오프셋을 더하기만 한다(카메라 기준 위치 자체는 건드리지 않는다).
     if (dt > 0 && this.shakeAmp > 0.0005) {
@@ -354,8 +355,8 @@ export class Effects {
         continue
       }
       const p = f.world.clone().project(camera)
-      const x = canvasRect.left + ((p.x + 1) / 2) * canvasRect.width
-      const y = canvasRect.top + ((-p.y + 1) / 2) * canvasRect.height
+      const x = ((p.x + 1) / 2) * DISPLAY.width
+      const y = ((-p.y + 1) / 2) * DISPLAY.height
       f.el.style.transform = `translate(-50%,-50%) translate(${x}px,${y}px)`
       f.el.style.opacity = String(Math.min(1, f.life * 2))
     }
