@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { configurePixelTexture } from './pixelArt'
 
 /**
  * 픽셀 애셋 로더 (public/assets/...)
@@ -10,11 +11,7 @@ const loader = new THREE.TextureLoader()
 export function loadTex(path: string): THREE.Texture {
   let t = cache.get(path)
   if (!t) {
-    t = loader.load(path)
-    t.magFilter = THREE.NearestFilter
-    t.minFilter = THREE.NearestFilter
-    t.generateMipmaps = false
-    t.colorSpace = THREE.SRGBColorSpace
+    t = configurePixelTexture(loader.load(path))
     cache.set(path, t)
   }
   return t
