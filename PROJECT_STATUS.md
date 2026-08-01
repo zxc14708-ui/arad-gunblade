@@ -33,10 +33,16 @@ Last updated: 2026-08-01
   `tools/state_snapshot.mjs --check` as a static gate alongside asset
   integrity, so a balance change without a regenerated, committed snapshot
   fails QC. `POOL` (Upgrades.ts), `DEFS` (Enemy.ts), and `STAGES`
-  (RunState.ts) are now exported so the generator can import them. The
-  snapshot's single-target-DPS view currently surfaces 5 rarity inversions
-  (a lower-rarity weapon out-DPSing a higher one) — reporting only, not a
-  balance change in scope here.
+  (RunState.ts) are now exported so the generator can import them.
+- Weapon balance pass (user-approved, exact values given): rifle
+  damage 50→58 / reload 3.2→2.5, magnum damage 43→50 / cooldown 0.5→0.45,
+  rapier damage 32→28 / cooldown 0.34→0.36, greatsword damage 58→65 /
+  cooldown 0.78→0.75, warhammer damage 77→82 / cooldown 1.0→0.95. All 7
+  swords' `range` × 1.5 (katana 3.6→5.4, daggers 2.7→4.05, rapier 4.8→7.2,
+  greatsword 4.3→6.45, warhammer 3.9→5.85, glaive 4.4→6.6, moonblade
+  4.6→6.9). `docs/STATE_SNAPSHOT.md` regenerated; single-target-DPS rarity
+  inversions dropped from 5 to 1 (기관단총 rare still out-DPSes 저격소총
+  epic) as a side effect — reporting only, no further balance change made.
 
 ## Verification baseline
 

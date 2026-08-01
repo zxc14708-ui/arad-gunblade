@@ -57,12 +57,12 @@ export const GUNS: GunDef[] = [
   {
     kind: 'gun', id: 'rifle', name: '저격소총', icon: '🎯', rarity: 'epic',
     desc: '스코프 관통탄 · 5발 장전 · 3명 관통',
-    damage: 50, cooldown: 0.56, bulletSpeed: 62, magSize: 5, reloadTime: 3.2, pellets: 1, spread: 0.008, pierce: 3,
+    damage: 58, cooldown: 0.56, bulletSpeed: 62, magSize: 5, reloadTime: 2.5, pellets: 1, spread: 0.008, pierce: 3,
   },
   {
     kind: 'gun', id: 'magnum', name: '매그넘 리볼버', icon: '💥', rarity: 'epic',
     desc: '강력한 한 방 · 관통 · 느린 연사',
-    damage: 43, cooldown: 0.5, bulletSpeed: 50, magSize: 6, reloadTime: 1.4, pellets: 1, spread: 0.01, pierce: 1,
+    damage: 50, cooldown: 0.45, bulletSpeed: 50, magSize: 6, reloadTime: 1.4, pellets: 1, spread: 0.01, pierce: 1,
   },
   {
     kind: 'gun', id: 'crossbow', name: '연발 석궁', icon: '🏹', rarity: 'rare',
@@ -80,37 +80,37 @@ export const SWORDS: SwordDef[] = [
   {
     kind: 'sword', id: 'katana', name: '카타나', icon: '🗡️', rarity: 'common',
     desc: '기본 도 · 균형 잡힌 횡베기',
-    damage: 27, cooldown: 0.42, range: 3.6, arc: Math.PI * 0.7, knockback: 9, lunge: 4.5,
+    damage: 27, cooldown: 0.42, range: 5.4, arc: Math.PI * 0.7, knockback: 9, lunge: 4.5,
   },
   {
     kind: 'sword', id: 'daggers', name: '한손검', icon: '🗡️', rarity: 'rare',
     desc: '초고속 연속 베기 · 짧은 사거리',
-    damage: 12, cooldown: 0.18, range: 2.7, arc: Math.PI * 0.6, knockback: 4, lunge: 6,
+    damage: 12, cooldown: 0.18, range: 4.05, arc: Math.PI * 0.6, knockback: 4, lunge: 6,
   },
   {
     kind: 'sword', id: 'rapier', name: '레이피어', icon: '🤺', rarity: 'rare',
     desc: '전방 찌르기 · 긴 사거리 · 좁은 각',
-    damage: 32, cooldown: 0.34, range: 4.8, arc: Math.PI * 0.28, knockback: 6, lunge: 9,
+    damage: 28, cooldown: 0.36, range: 7.2, arc: Math.PI * 0.28, knockback: 6, lunge: 9,
   },
   {
     kind: 'sword', id: 'greatsword', name: '대검', icon: '⚔️', rarity: 'epic',
     desc: '광역 강타 · 느림 · 매우 높은 데미지',
-    damage: 58, cooldown: 0.78, range: 4.3, arc: Math.PI * 0.95, knockback: 16, lunge: 3,
+    damage: 65, cooldown: 0.75, range: 6.45, arc: Math.PI * 0.95, knockback: 16, lunge: 3,
   },
   {
     kind: 'sword', id: 'warhammer', name: '전투 망치', icon: '🔨', rarity: 'epic',
     desc: '초강력 강타 + 강한 넉백 · 매우 느림',
-    damage: 77, cooldown: 1.0, range: 3.9, arc: Math.PI, knockback: 28, lunge: 2,
+    damage: 82, cooldown: 0.95, range: 5.85, arc: Math.PI, knockback: 28, lunge: 2,
   },
   {
     kind: 'sword', id: 'glaive', name: '언월도', icon: '🌙', rarity: 'rare',
     desc: '전방위 광역 베기 · 넓은 사거리',
-    damage: 35, cooldown: 0.5, range: 4.4, arc: Math.PI * 1.4, knockback: 10, lunge: 4,
+    damage: 35, cooldown: 0.5, range: 6.6, arc: Math.PI * 1.4, knockback: 10, lunge: 4,
   },
   {
     kind: 'sword', id: 'moonblade', name: '월광검(月光劍)', icon: '🗡️', rarity: 'legendary',
     desc: '초광역 360° 참격 · 빠름 · 강력',
-    damage: 46, cooldown: 0.4, range: 4.6, arc: Math.PI * 1.9, knockback: 12, lunge: 5,
+    damage: 46, cooldown: 0.4, range: 6.9, arc: Math.PI * 1.9, knockback: 12, lunge: 5,
   },
 ]
 
