@@ -46,6 +46,20 @@ export class Effects {
   private fx: { sp: THREE.Sprite; kind: FxKind; time: number; frames: THREE.Texture[]; fps: number }[] = []
   private layer: HTMLDivElement
 
+  // ── 조건 게이지 (발밑 원호) ──────────────────────────────────────────
+  // 특성 종류를 몰라도 되도록 (x, z, progress, 충족 색)만 받는 공용 컴포넌트.
+  // 한 프레임에 여러 조건이 requestGauge를 부를 수 있어(여러 조건부 특성이
+  // 동시에 진행 중) update()가 그중 progress가 가장 높은 것 하나만 그리고,
+  // 다음 프레임을 위해 후보를 비운다 — 아무도 부르지 않으면(조건이 깨짐)
+  // 다음 update()에서 즉시 사라진다.
+  private gaugeMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null
+  private gaugeCanvas = document.createElement('canvas')
+  private gaugeCtx = this.gaugeCanvas.getContext('2d')!
+  private gaugeTexture = new THREE.CanvasTexture(this.gaugeCanvas)
+  private gaugeCandidate: { x: number; z: number; progress: number; color: string } | null = null
+  private gaugeWasFulfilled = false
+  private gaugeFlashTimer = 0
+
   // 화면 흔들림: 누적 강도(shakeAmp)를 프레임마다 지수적으로 감쇠시킨다.
   private shakeAmp = 0
   private shakeDecayRate = 8
@@ -54,6 +68,8 @@ export class Effects {
   constructor(scene: THREE.Scene, uiLayer: HTMLDivElement) {
     this.scene = scene
     this.layer = uiLayer
+    this.gaugeCanvas.width = 64
+    this.gaugeCanvas.height = 64
     try {
       const s = JSON.parse(localStorage.getItem('arad_settings') || '{}')
       if (typeof s.shakeEnabled === 'boolean') this.shakeEnabled = s.shakeEnabled
@@ -229,7 +245,84 @@ export class Effects {
     this.floaters.push({ el, world: world.clone(), life: 0.8, vy: 2.2 })
   }
 
+  /**
+   * 조건부 특성용 발밑 원호 게이지 요청 — 매 프레임 조건이 살아있는 동안
+   * 계속 불러야 한다(호출을 멈추면 다음 프레임에 즉시 사라진다).
+   * progress: 0~1. color: 조건 충족(progress>=1) 시 표시할 색(CSS 색 문자열).
+   * 충족 전에는 항상 옅은 흰색으로 채워진다 — 호출부가 색을 신경 쓸 필요는
+   * 충족 색 하나뿐이다. 한 프레임에 여러 번 불리면 progress가 더 높은
+   * 쪽만 남는다(동시 표시는 최대 1개).
+   */
+  requestGauge(x: number, z: number, progress: number, color: string) {
+    const clamped = Math.max(0, Math.min(1, progress))
+    if (!this.gaugeCandidate || clamped > this.gaugeCandidate.progress) {
+      this.gaugeCandidate = { x, z, progress: clamped, color }
+    }
+  }
+
+  private ensureGaugeMesh() {
+    if (this.gaugeMesh) return this.gaugeMesh
+    const mat = new THREE.MeshBasicMaterial({ map: this.gaugeTexture, transparent: true, depthWrite: false })
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
+    mesh.rotation.x = -Math.PI / 2
+    mesh.scale.set(1.7, 1.7, 1)
+    this.scene.add(mesh)
+    this.gaugeMesh = mesh
+    return mesh
+  }
+
+  private drawGauge(progress: number, color: string, flash: boolean) {
+    const ctx = this.gaugeCtx
+    const w = this.gaugeCanvas.width
+    const h = this.gaugeCanvas.height
+    ctx.clearRect(0, 0, w, h)
+    const cx = w / 2
+    const cy = h / 2
+    const radius = w / 2 - 4
+    const lineWidth = 6
+    // 배경 트랙
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+    ctx.lineWidth = lineWidth
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+    ctx.stroke()
+    // 진행 아크 — 12시 방향에서 시계 방향으로 채운다
+    if (progress > 0) {
+      ctx.beginPath()
+      ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2)
+      ctx.lineWidth = lineWidth
+      ctx.lineCap = 'round'
+      ctx.strokeStyle = flash ? '#ffffff' : progress >= 1 ? color : 'rgba(255,255,255,0.7)'
+      ctx.stroke()
+    }
+    this.gaugeTexture.needsUpdate = true
+  }
+
+  private updateGauge(dt: number) {
+    const c = this.gaugeCandidate
+    this.gaugeCandidate = null // 다음 프레임을 위해 비운다 — 아무도 안 부르면 다음 프레임엔 사라진다
+    if (!c) {
+      if (this.gaugeMesh) {
+        this.scene.remove(this.gaugeMesh)
+        this.gaugeMesh.geometry.dispose()
+        this.gaugeMesh.material.dispose()
+        this.gaugeMesh = null
+      }
+      this.gaugeWasFulfilled = false
+      this.gaugeFlashTimer = 0
+      return
+    }
+    const fulfilled = c.progress >= 1
+    if (fulfilled && !this.gaugeWasFulfilled) this.gaugeFlashTimer = 0.18 // 충족 순간 한 번 번쩍
+    this.gaugeWasFulfilled = fulfilled
+    if (this.gaugeFlashTimer > 0) this.gaugeFlashTimer = Math.max(0, this.gaugeFlashTimer - dt)
+    const mesh = this.ensureGaugeMesh()
+    mesh.position.set(c.x, 0.04, c.z)
+    this.drawGauge(c.progress, c.color, this.gaugeFlashTimer > 0)
+  }
+
   update(dt: number, camera: THREE.Camera) {
+    this.updateGauge(dt)
     // 화면 흔들림 — Game이 이번 프레임 카메라 위치를 이미 정한 뒤이므로, 그 위에
     // 오프셋을 더하기만 한다(카메라 기준 위치 자체는 건드리지 않는다).
     if (dt > 0 && this.shakeAmp > 0.0005) {
@@ -378,6 +471,15 @@ export class Effects {
       effect.mesh.geometry.dispose()
       effect.mesh.material.dispose()
     }
+    if (this.gaugeMesh) {
+      this.scene.remove(this.gaugeMesh)
+      this.gaugeMesh.geometry.dispose()
+      this.gaugeMesh.material.dispose()
+      this.gaugeMesh = null
+    }
+    this.gaugeCandidate = null
+    this.gaugeWasFulfilled = false
+    this.gaugeFlashTimer = 0
     this.particles = []
     this.slashes = []
     this.floaters = []
