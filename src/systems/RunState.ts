@@ -266,25 +266,40 @@ export class RunState {
    * 상점방과 보스 준비방은 makePlan()에서 이미 hasFountain: true로 고정된다.
    * 나머지 (fountainRoomCount - 2)개는 전투방 중에서 고르되, 첫 분수를
    * 후반부에서만 만나는 일이 없도록 최소 1개는 전반부(depth가 전체 방 수의
-   * 절반 이하) 전투방에서 뽑는다. 전투방이 부족하면 있는 만큼만 배치한다.
+   * 절반 이하) 방에서 뽑는다. 전투방만으로 정원을 못 채우면 보물방 →
+   * 엘리트방 순으로 보충한다(보스/상점/보스준비방은 대상에서 제외 — 상점·
+   * 보스준비는 이미 확정, 보스방은 원래도 분수를 두지 않는다). 전반부 우선
+   * 규칙은 보충 단계에도 그대로 적용한다 — 아직 전반부 방을 못 뽑았다면
+   * 지금 보는 풀(보물/엘리트)의 전반부 후보부터 시도한다.
+   * 그래도 후보가 모자라면(작은 스테이지 등) 있는 만큼만 배치한다.
    */
   private assignFountains(roomCount: number) {
     const extraNeeded = CONFIG.economy.fountainRoomCount - 2
     if (extraNeeded <= 0) return
 
-    const combatPlans = [...this.nodes.values()].map((n) => n.plan).filter((p) => p.kind === 'combat')
-    if (combatPlans.length === 0) return
-
     const earlyCutoff = roomCount / 2
-    const earlyPool = combatPlans.filter((p) => p.depth <= earlyCutoff)
     const chosen: RoomPlan[] = []
-    if (earlyPool.length > 0) chosen.push(earlyPool[Math.floor(Math.random() * earlyPool.length)])
+    let haveEarly = false
 
-    const remaining = combatPlans.filter((p) => !chosen.includes(p))
-    while (chosen.length < extraNeeded && remaining.length > 0) {
-      const idx = Math.floor(Math.random() * remaining.length)
-      chosen.push(remaining[idx])
-      remaining.splice(idx, 1)
+    for (const kind of ['combat', 'treasure', 'elite'] as const) {
+      if (chosen.length >= extraNeeded) break
+      const pool = [...this.nodes.values()].map((n) => n.plan).filter((p) => p.kind === kind)
+      if (pool.length === 0) continue
+
+      if (!haveEarly) {
+        const earlyPool = pool.filter((p) => p.depth <= earlyCutoff)
+        if (earlyPool.length > 0) {
+          chosen.push(earlyPool[Math.floor(Math.random() * earlyPool.length)])
+          haveEarly = true
+        }
+      }
+
+      const remaining = pool.filter((p) => !chosen.includes(p))
+      while (chosen.length < extraNeeded && remaining.length > 0) {
+        const idx = Math.floor(Math.random() * remaining.length)
+        chosen.push(remaining[idx])
+        remaining.splice(idx, 1)
+      }
     }
 
     for (const p of chosen) p.hasFountain = true

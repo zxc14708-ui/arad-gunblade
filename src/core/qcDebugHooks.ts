@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { Enemy, EnemyKind } from '../entities/Enemy'
 import type { EliteAffix } from '../systems/EliteAffixes'
 import { weaponById } from '../systems/Weapons'
+import { RunState, RoomKind } from '../systems/RunState'
 import type { Game } from './Game'
 
 /**
@@ -40,6 +41,25 @@ function internals(game: Game): GameInternals {
   return game as unknown as GameInternals
 }
 
+/** RunState.nodes(private)에 QC 목적으로 접근하기 위한 캐스팅 타입 */
+interface RunStateInternals {
+  nodes: Map<string, { plan: { kind: RoomKind; hasFountain: boolean } }>
+}
+
+export interface FountainSampleResult {
+  n: number
+  /** hasFountain 개수 -> 그 개수가 나온 표본 수. 예: { 4: 297, 3: 3 } */
+  counts: Record<number, number>
+  /** 상점방에 분수가 없었던 표본 수 (항상 0이어야 한다) */
+  shopMissing: number
+  /** 보스 준비방에 분수가 없었던 표본 수 (항상 0이어야 한다) */
+  restMissing: number
+  /** 보스방에 분수가 배치된 표본 수 (항상 0이어야 한다) */
+  bossHasFountain: number
+  /** 전투방만으로 정원을 못 채워 보물/엘리트방을 보충으로 썼던 표본 수 */
+  supplementUsed: number
+}
+
 export function installQcDebugHooks(game: Game) {
   const api = game as unknown as {
     debugSpawnBoss: () => Enemy
@@ -47,6 +67,31 @@ export function installQcDebugHooks(game: Game) {
     debugSpawnElite: (kind: EnemyKind, affix: EliteAffix) => Enemy
     debugEquipWeapons: (gunId: string, swordId: string) => boolean
     debugClearEnemies: () => void
+    debugFountainSample: (n: number) => FountainSampleResult
+  }
+
+  // 게임 상태(this.run)는 건드리지 않는다 — 매 표본마다 독립된 RunState를
+  // 새로 만들어 맵만 생성하고 버린다. RunState는 Game에 의존하지 않아
+  // standalone으로 안전하게 인스턴스화할 수 있다.
+  api.debugFountainSample = (n) => {
+    const counts: Record<number, number> = {}
+    let shopMissing = 0
+    let restMissing = 0
+    let bossHasFountain = 0
+    let supplementUsed = 0
+    for (let i = 0; i < n; i++) {
+      const run = new RunState()
+      run.enterFirst()
+      const nodes = (run as unknown as RunStateInternals).nodes
+      const plans = [...nodes.values()].map((node) => node.plan)
+      const fountainCount = plans.filter((p) => p.hasFountain).length
+      counts[fountainCount] = (counts[fountainCount] ?? 0) + 1
+      if (!plans.some((p) => p.kind === 'shop' && p.hasFountain)) shopMissing++
+      if (!plans.some((p) => p.kind === 'rest' && p.hasFountain)) restMissing++
+      if (plans.some((p) => p.kind === 'boss' && p.hasFountain)) bossHasFountain++
+      if (plans.some((p) => (p.kind === 'treasure' || p.kind === 'elite') && p.hasFountain)) supplementUsed++
+    }
+    return { n, counts, shopMissing, restMissing, bossHasFountain, supplementUsed }
   }
 
   api.debugClearEnemies = () => {

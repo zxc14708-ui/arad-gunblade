@@ -483,24 +483,47 @@ const STEPS = [
       })
       await p.waitForTimeout(350)
     },
-    check: async (p) => p.evaluate(() => {
-      const g = window.__game
-      const nodes = g.run.nodes
-      const rest = [...nodes.values()].find((node) => node.plan.kind === 'rest')
-      const boss = [...nodes.values()].find((node) => node.plan.kind === 'boss')
-      const kinds = g.interactables.map((item) => item.kind)
-      const restExitIds = rest ? Object.values(rest.exits) : []
-      const bossExitIds = boss ? Object.values(boss.exits) : []
-      if (!rest || !boss) return '보스 준비 장소 또는 보스방이 없음'
-      if (rest.plan.enemies.length !== 0) return '보스 준비 장소에 적이 배치됨'
-      if (!kinds.includes('merchant') || !kinds.includes('fountain')) return '보스 준비 장소에 상점 또는 분수가 없음'
-      if (restExitIds.length !== 2 || !restExitIds.includes(boss.plan.id)) return '준비 장소가 보스방과 단일 통로로 연결되지 않음'
-      if (bossExitIds.length !== 1 || bossExitIds[0] !== rest.plan.id) return '보스방에 준비 장소 외의 출입구가 있음'
-      // fountainRoomCount(4) = 상점 1 + 보스 준비 1 + 전투 2 (CONFIG.economy, DESIGN_LOG B5)
-      const fountainRooms = [...nodes.values()].filter((node) => node.plan.hasFountain)
-      if (fountainRooms.length !== 4) return `분수 방 개수가 4가 아님 (실제 ${fountainRooms.length})`
+    check: async (p) => {
+      const r = await p.evaluate(() => {
+        const g = window.__game
+        const nodes = g.run.nodes
+        const rest = [...nodes.values()].find((node) => node.plan.kind === 'rest')
+        const boss = [...nodes.values()].find((node) => node.plan.kind === 'boss')
+        const kinds = g.interactables.map((item) => item.kind)
+        const restExitIds = rest ? Object.values(rest.exits) : []
+        const bossExitIds = boss ? Object.values(boss.exits) : []
+        let structural = null
+        if (!rest || !boss) structural = '보스 준비 장소 또는 보스방이 없음'
+        else if (rest.plan.enemies.length !== 0) structural = '보스 준비 장소에 적이 배치됨'
+        else if (!kinds.includes('merchant') || !kinds.includes('fountain')) structural = '보스 준비 장소에 상점 또는 분수가 없음'
+        else if (restExitIds.length !== 2 || !restExitIds.includes(boss.plan.id)) structural = '준비 장소가 보스방과 단일 통로로 연결되지 않음'
+        else if (bossExitIds.length !== 1 || bossExitIds[0] !== rest.plan.id) structural = '보스방에 준비 장소 외의 출입구가 있음'
+
+        // 단일 런 관찰로는 분수 배치 결함(전투방만으로 못 채우는 약 1.3%
+        // 케이스)을 못 잡는다 — RunState를 300회 이상 독립적으로 새로 생성해
+        // hasFountain 분포로 검증한다(게임 상태는 건드리지 않음, debugFountainSample 참고).
+        const sample = g.debugFountainSample(300)
+        return { structural, sample }
+      })
+      if (r.structural) return r.structural
+
+      const { sample } = r
+      const dist = Object.entries(sample.counts)
+        .sort((a, b) => Number(a[0]) - Number(b[0]))
+        .map(([count, times]) => `${count}개 ${times}회`)
+        .join(', ')
+      const supplementRate = ((sample.supplementUsed / sample.n) * 100).toFixed(2)
+      console.log(`  · 분수 배치 표본 ${sample.n}회 — 분포: ${dist} · 보충(보물/엘리트) 발동 ${sample.supplementUsed}회(${supplementRate}%)`)
+
+      if (sample.shopMissing > 0) return `상점방에 분수가 없는 표본 ${sample.shopMissing}건`
+      if (sample.restMissing > 0) return `보스 준비방에 분수가 없는 표본 ${sample.restMissing}건`
+      if (sample.bossHasFountain > 0) return `보스방에 분수가 배치된 표본 ${sample.bossHasFountain}건`
+      const wantCount = sample.counts[4] ?? 0
+      if (wantCount !== sample.n) {
+        return `분수 개수가 4가 아닌 표본 있음 (${sample.n}회 중 4개 ${wantCount}회) — 분포: ${dist}`
+      }
       return null
-    }),
+    },
   },
   {
     name: 'boss-charge',
