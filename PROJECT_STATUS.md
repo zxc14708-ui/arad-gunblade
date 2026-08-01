@@ -43,21 +43,51 @@ Last updated: 2026-08-01
 - `npm run qc`: 24 scenarios (22 prior + `run-reset` + `shop-persist`).
   `tools/measure_sprites.py` now also measures the boss sheet's `charge`
   state (previously silently skipped by the checker, not by the game).
-- 7 of the 24 scenarios (`04-reload`, `09-town-meta`, `12-active-skills`,
-  `13-iaido`, `17-boss-charge`, `18-boss-slam`, `21-elite-regen`) fail in
-  this sandbox on unmodified code — every one of them is gated by a fixed
-  real-time budget (`waitForTimeout`, or `walkTo()`'s wall-clock deadline) in
-  `tools/qc.mjs`, and this container's headless Chromium appears to run at a
-  much lower effective frame rate than whatever machine recorded the prior
-  22/22 baseline. Re-running the same steps back-to-back gives different
-  failure magnitudes on identical code, which real regressions would not do.
-  Treat this as a QC-harness environment gap (durations should probably be
-  measured against the game's own simulated clock, not wall time) rather
-  than a functional defect.
-- Asset integrity passed; browser console/network errors: 0.
-- `qc-out/contact.png` was inspected after this change; the 5 new/rewritten
-  scenarios (`23-run-reset`, `24-shop-persist`, and the boss sheet rows in
-  `measure_sprites.py`) all render/measure as expected.
+- **QC now waits on the game's own simulated clock, not wall time, for
+  in-game durations.** `Game.ts` exposes `simClock` (seconds), accumulated in
+  `step(dt)` from the same hitstop-scaled `dt` gameplay timers use; it stalls
+  exactly when gameplay does (any non-`'play'` state, or `settingsOpen`).
+  `tools/qc.mjs` adds `waitGame(p, gameSeconds)` — polls via
+  `page.waitForFunction(..., { polling: 'raf' })` until `simClock` advances by
+  the requested amount, with a wall-clock safety cap
+  (`max(15s, gameSeconds × 20)`) that distinguishes "clock stalled" from
+  "clock too slow" in its error, reporting the measured rate either way.
+  15 of the 50 `waitForTimeout` calls that were gating in-game durations
+  (reload, boss telegraph/charge/stagger, regen delay, active-skill/iaido
+  windows, i-frames, frame-processing waits for death/split/phase-2 handling)
+  now use `waitGame`; the other 35 (modal opens/closes, pure screenshot
+  stabilization, page load, viewport resize, `walkTo()`'s 80ms input pump)
+  stayed on `waitForTimeout` — they either occur while the sim clock is
+  frozen or don't gate any correctness check. `walkTo()`'s deadline is now
+  `gameSeconds` (default 6, matching its old 6000ms) with the same wall-clock
+  safety cap. The boss-timing sampler (`startQcSampler`/`stopQcSampler`)
+  switched its sample timestamps from `performance.now()` to `simClock` too —
+  it was measuring wall-clock segment lengths against in-game-second
+  expectations, which was the other half of why `17-boss-charge`/
+  `18-boss-slam` read inflated durations on this container.
+  A preflight in `01-town-idle` measures the rate (game-seconds ÷
+  wall-clock-seconds) once per run and prints/logs it; this sandbox measures
+  ~0.25–0.29× consistently.
+- Result: all 7 previously-failing scenarios (`04-reload`, `09-town-meta`,
+  `12-active-skills`, `13-iaido`, `17-boss-charge`, `18-boss-slam`,
+  `21-elite-regen`) now pass reliably in this sandbox — confirmed clean
+  24/24 across 3 consecutive `npm run qc` runs. Asset integrity and
+  `state_snapshot.mjs --check` both still pass.
+- One unrelated, pre-existing flake surfaced while re-running: `16-boss-prep`
+  (the `fountainRoomCount` assertion added in an earlier change) failed once
+  with "실제 3" fountain rooms instead of 4. `RunState`'s room-kind roll
+  (`combat`/`elite`/`treasure`) is unseeded `Math.random()`, and
+  `assignFountains()`'s own documented fallback ("전투방이 부족하면 있는 만큼만
+  배치") means a map that randomly rolls fewer than 2 `combat` rooms
+  legitimately produces 3, not 4. This is independent of the clock-source
+  change (game-clock or wall-clock, the map itself is unaffected) and outside
+  this task's scope (no gameplay/balance numbers touched) — flagging it here
+  rather than fixing it, since it's a pre-existing map-generation edge case
+  in a check from a prior task, not a regression from this one.
+- `qc-out/contact.png` was inspected; `12-active-skills` now visibly shows
+  the R finishing shockwave, and `13-iaido` shows both pierced enemies
+  correctly damaged — both previously-failing assertions were also visually
+  confirmed, not just green-checkmarked.
 
 ## Next approved implementation work
 

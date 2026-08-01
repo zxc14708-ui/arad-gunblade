@@ -88,7 +88,16 @@ const STEPS = [
     what: '마을 진입 · 오른쪽 조준 대기 — 카타나가 온전히 그려지는가',
     async run(p) {
       await p.click('#startBtn')
+      // 프리플라이트: 이 스텝의 기존 대기(자산 로드/씬 전환 안정화, 벽시계
+      // 그대로 유지)를 그대로 관측 창으로 써서 게임 시계 배속(게임초/벽시계초)을
+      // 잰다 — 별도 대기를 추가하지 않는다.
+      const wallT0 = Date.now()
+      const simT0 = await p.evaluate(() => window.__game.simClock)
       await p.waitForTimeout(2200)
+      const simT1 = await p.evaluate(() => window.__game.simClock)
+      clockRate = (simT1 - simT0) / ((Date.now() - wallT0) / 1000)
+      console.log(`· 게임 시계 배속 실측(프리플라이트): ${clockRate.toFixed(2)}배 (게임초/벽시계초)`)
+      if (clockRate < 0.5) console.log('  경고: 배속 0.5 미만 — 게임-시계 기준 대기가 느려진 환경임을 시사')
       await aim(p, 400)
       await p.waitForTimeout(500)
     },
@@ -122,7 +131,7 @@ const STEPS = [
     what: '장전 — 탄창 UI 가 7/7 로 복귀하는가',
     async run(p) {
       await p.keyboard.press('KeyT')
-      await p.waitForTimeout(1400)
+      await waitGame(p, 1.4) // 장전 시간(인게임) — reloadTime 이 dt로 카운트다운된다
     },
     check: async (p) => {
       const t = await p.textContent('#ammoText').catch(() => null)
@@ -291,15 +300,15 @@ const STEPS = [
         window.__qcSkills = { x: g.player.pos.x, z: g.player.pos.z, ammo: g.player.ammo }
       })
       await p.keyboard.press('KeyQ')
-      await p.waitForTimeout(100)
+      await waitGame(p, 0.1) // 발도 이동 중 — check()가 movedDistance/무적 여부를 봄
       await p.evaluate(() => {
         window.__qcSkills.qInvulnerable = window.__game.player.invulnerable
       })
-      await p.waitForTimeout(120)
+      await waitGame(p, 0.12) // 발도 잔여 이동
       await p.keyboard.press('KeyE')
-      await p.waitForTimeout(90)
+      await waitGame(p, 0.09) // 더블 샷 탄약 소비
       await p.keyboard.press('KeyR')
-      await p.waitForTimeout(900)
+      await waitGame(p, 0.9) // 폭렬 난무 다단 사격 + 마무리 충격파 생성까지
     },
     check: async (p) => p.evaluate(() => {
       const g = window.__game
@@ -354,11 +363,11 @@ const STEPS = [
       })
       await aim(p, 400)
       await p.keyboard.press('KeyQ')
-      await p.waitForTimeout(100)
+      await waitGame(p, 0.1) // 발도 이동 중 — 무적 프레임 창 안
       await p.evaluate(() => {
         window.__qcIaido.duringInvulnerable = window.__game.player.invulnerable
       })
-      await p.waitForTimeout(170)
+      await waitGame(p, 0.17) // 발도 종료 직후 보호 구간까지
       await p.evaluate(() => {
         window.__qcIaido.afterInvulnerable = window.__game.player.invulnerable
       })
@@ -405,11 +414,11 @@ const STEPS = [
           starts: shooters.map((shooter) => ({ id: shooter.id, x: shooter.pos.x, z: shooter.pos.z })),
         }
       })
-      await p.waitForTimeout(150)
+      await waitGame(p, 0.15) // 첫 발 발사까지 — shootTimer 카운트다운
       await p.evaluate(() => {
         window.__qcFireGoblin.bulletScale = window.__game.projectiles.enemyBullets[0]?.mesh.scale.x ?? null
       })
-      await p.waitForTimeout(750)
+      await waitGame(p, 0.75) // 측면 이동 확인용 — 적정 거리 유지 이동
     },
     check: async (p) => p.evaluate(() => {
       const g = window.__game
@@ -445,7 +454,7 @@ const STEPS = [
         window.__qcSouthEdgeId = enemy.id
         g.effects.damageNumber(g.player.pos.clone().setY(2), 999, true, true)
       })
-      await p.waitForTimeout(100)
+      await waitGame(p, 0.1) // room.clamp()가 적 위치를 정리하는 프레임 처리까지
     },
     check: async (p) => p.evaluate(() => {
       const g = window.__game
@@ -520,7 +529,7 @@ const STEPS = [
       await p.waitForTimeout(400) // 예고 스프라이트가 화면에 보이는 시점에서 스크린샷
     },
     check: async (p) => {
-      await p.waitForTimeout(2800) // 남은 예고+돌진+경직 전 구간 관찰
+      await waitGame(p, 2.8) // 남은 예고+돌진+경직 전 구간 관찰 (게임초)
       const samples = await stopQcSampler(p)
       return verifyStateSequence(samples, [
         { state: 'chargeWarning', ms: 700 },
@@ -547,7 +556,7 @@ const STEPS = [
       await p.waitForTimeout(500) // 바닥 경고 이펙트가 보이는 시점에서 스크린샷
     },
     check: async (p) => {
-      await p.waitForTimeout(1700) // 남은 예고+발동+경직 관찰
+      await waitGame(p, 1.7) // 남은 예고+발동+경직 관찰 (게임초)
       const samples = await stopQcSampler(p)
       const seqFail = verifyStateSequence(samples, [
         { state: 'slamWarning', ms: 900 },
@@ -569,7 +578,10 @@ const STEPS = [
         const boss = g.debugSpawnBoss()
         boss.hp = boss.maxHp * 0.49
       })
-      await p.waitForTimeout(300) // 배너 애니메이션(2s) 중 캡처
+      // bossPhaseTwo 플래그는 Enemy 자체 업데이트(매 프레임 dt) 안에서 hp<=50%를
+      // 보고 뒤집힌다 — evaluate()에서 hp만 깎은 시점엔 아직 안 뒤집혀 있어
+      // check()가 최소 한 프레임의 시뮬레이션 진행을 필요로 한다.
+      await waitGame(p, 0.3)
     },
     check: async (p) => {
       const r = await p.evaluate(() => {
@@ -627,7 +639,7 @@ const STEPS = [
         regen.takeDamage(regen.maxHp * 0.6, 'melee')
         window.__qcRegenAfterHit = regen.hp
       })
-      await p.waitForTimeout(2600) // 지연(2s) + 회복 틱 1회 — 재생 이펙트가 뜬 상태로 캡처
+      await waitGame(p, 2.6) // 지연(2s) + 회복 틱 1회 — check()가 회복량을 검증
     },
     check: async (p) => {
       const r = await p.evaluate(() => {
@@ -669,7 +681,10 @@ const STEPS = [
         split.hp = 1
         split.takeDamage(999, 'melee')
       })
-      await p.waitForTimeout(250) // 폭발 이펙트가 뜬 상태로 캡처 (Game의 매 프레임 루프가 사망 처리)
+      // killEnemy()(분열 자식 생성, 폭발 피해)는 takeDamage()가 아니라 step()의
+      // 사망 처리 루프에서 실행된다 — check()가 그 결과를 보려면 최소 한 프레임의
+      // 시뮬레이션이 진행돼야 한다.
+      await waitGame(p, 0.25)
     },
     check: async (p) => {
       const r = await p.evaluate(() => {
@@ -794,24 +809,28 @@ async function dismissLevelUp(p) {
 }
 
 /**
- * window.startQcSampler를 브라우저 전역에 한 번 심어둔다 — 50ms 간격으로
- * 보스 상태를 표본 수집한다. Node↔브라우저 왕복마다 생기는 타이밍 오차를
- * 피하려고 표본 수집 자체는 전부 브라우저 쪽 setInterval로 돌린다. SPA라
- * 페이지 리로드가 없으므로 러닝 도중 한 번만 설치하면 이후 스텝에서 계속 쓴다.
+ * window.startQcSampler를 브라우저 전역에 한 번 심어둔다 — 50ms(벽시계) 간격
+ * setInterval로 폴링하되, 기록하는 시간축은 게임 시계(Game.simClock)다.
+ * 이전에는 performance.now() 기준이라 이 자체가 "환경 격차" 버그의 절반이었다
+ * — 느린 fps에서는 보스 상태가 실제보다 오래 지속된 것처럼 측정됐다.
+ * simClock은 게임이 멈추면(모달/state!=='play') 같이 멈추므로, pauseQcSampler
+ * 동안 __qcT0 를 보정해줄 필요도 없어졌다(이전엔 실시간 기준이라 필수였다).
+ * SPA라 페이지 리로드가 없으므로 러닝 도중 한 번만 설치하면 이후 스텝에서
+ * 계속 쓴다.
  */
 async function installQcSamplerFn(p) {
   await p.evaluate(() => {
     const beginSampling = () => {
       window.__qcTimer = setInterval(() => {
         const boss = window.__game.enemies.find((e) => e.kind === 'boss')
-        window.__qcSamples.push({ t: performance.now() - window.__qcT0, state: boss?.bossState ?? null })
+        const t = (window.__game.simClock - window.__qcSimT0) * 1000
+        window.__qcSamples.push({ t, state: boss?.bossState ?? null })
       }, 50)
     }
     window.startQcSampler = () => {
-      window.__qcT0 = performance.now()
+      window.__qcSimT0 = window.__game.simClock
       window.__qcSamples = []
       window.__qcSamplerActive = true
-      window.__qcPauseStarted = 0
       beginSampling()
     }
     window.pauseQcSampler = () => {
@@ -820,10 +839,7 @@ async function installQcSamplerFn(p) {
         window.__qcGameWasPaused = g.settingsOpen
         g.settingsOpen = true
       }
-      if (window.__qcSamplerActive && !window.__qcPauseStarted) {
-        window.__qcPauseStarted = performance.now()
-        clearInterval(window.__qcTimer)
-      }
+      if (window.__qcSamplerActive) clearInterval(window.__qcTimer)
     }
     window.resumeQcSampler = () => {
       const g = window.__game
@@ -831,11 +847,7 @@ async function installQcSamplerFn(p) {
         g.settingsOpen = window.__qcGameWasPaused
         window.__qcGameWasPaused = null
       }
-      if (window.__qcSamplerActive && window.__qcPauseStarted) {
-        window.__qcT0 += performance.now() - window.__qcPauseStarted
-        window.__qcPauseStarted = 0
-        beginSampling()
-      }
+      if (window.__qcSamplerActive) beginSampling()
     }
   })
 }
@@ -887,14 +899,64 @@ const inDungeon = (p) =>
   p.evaluate(() => window.__game?.mode === 'dungeon').catch(() => false)
 
 /**
+ * 게임 시계(Game.simClock, 초) 기준으로 gameSeconds만큼 진행될 때까지 기다린다.
+ * 인게임 지속시간(장전, 보스 텔레그래프, 재생 지연, 스킬 쿨타임, 무적 프레임
+ * 등)을 기다릴 때 쓴다. simClock은 step(dt)가 실제 쓰는 dt를 그대로 누적한
+ * 값이라(Game.ts), 벽시계 waitForTimeout과 달리 프레임이 얼마나 늦게 돌든
+ * "그만큼 진행"할 때까지 기다린다.
+ *
+ * 폴링은 Node↔브라우저를 매번 왕복하는 evaluate() 대신 page.waitForFunction
+ * (polling:'raf')을 쓴다 — 조건 검사 자체가 브라우저 쪽 requestAnimationFrame
+ * 콜백 안에서 돈다. 처음엔 Node에서 waitForTimeout(50)+evaluate()로 직접
+ * 폴링했는데, 그 왕복 자체가(이 환경에서) 느려서 매 폴링 틱마다 게임 시계가
+ * 목표치를 몇 배씩 지나쳐버렸다(0.1게임초 요청 → 0.3 진행 관측, iaido의
+ * 좁은 무적 유예창을 통째로 넘겨버림). raf 폴링은 오차가 최대 한 프레임의
+ * dt로 묶인다.
+ *
+ * state !== 'play' 이거나 settingsOpen 이면 simClock이 아예 멈춘다 — 그 경우
+ * 무한 대기를 막기 위해 벽시계 안전 상한(max(15초, gameSeconds×20))을 둔다.
+ * 상한을 넘기면 "정지"(시계가 전혀 안 움직임)와 "느림"(움직이지만 부족함)을
+ * 구분해 실측 배속과 함께 던진다 — 실패 원인 판별용.
+ */
+async function waitGame(p, gameSeconds) {
+  const wallCapMs = Math.max(15000, gameSeconds * 20 * 1000)
+  const wallT0 = Date.now()
+  const simT0 = await p.evaluate(() => window.__game.simClock)
+  try {
+    await p.waitForFunction(
+      ({ simT0, gameSeconds }) => window.__game.simClock - simT0 >= gameSeconds,
+      { simT0, gameSeconds },
+      { timeout: wallCapMs, polling: 'raf' },
+    )
+  } catch {
+    const simNow = await p.evaluate(() => window.__game.simClock)
+    const wallElapsed = (Date.now() - wallT0) / 1000
+    const advanced = simNow - simT0
+    if (advanced <= 0.001) {
+      throw new Error(`게임 시계 정지 — 모달 상태이거나 루프가 죽음 (목표 ${gameSeconds}게임초, 벽시계 ${wallElapsed.toFixed(1)}s 대기)`)
+    }
+    const rate = advanced / wallElapsed
+    throw new Error(`게임 시계 진행이 너무 느림 (실측 배속 ${rate.toFixed(2)}) — ${advanced.toFixed(2)}/${gameSeconds}게임초 진행 (벽시계 ${wallElapsed.toFixed(1)}s)`)
+  }
+}
+
+/**
  * 상호작용 오브젝트까지 걸어간다.
  * 방 배치가 매 판 랜덤이라 "위로 2.6초" 같은 고정 이동은 신뢰할 수 없다.
+ * 데드라인은 게임 초 단위다(기본 6게임초 상당) — 플레이어 이동도 dt로
+ * governed되므로, 느린 환경에서는 그만큼 실제 시간을 더 준다. 정지 상태에서
+ * 무한정 기다리지 않도록 벽시계 안전 상한(max(15초, gameSeconds×20))도 둔다.
  */
-async function walkTo(p, kind, ms = 6000) {
+async function walkTo(p, kind, gameSeconds = 6) {
   const held = new Set()
-  const t0 = Date.now()
+  const wallCapMs = Math.max(15000, gameSeconds * 20 * 1000)
+  const wallT0 = Date.now()
+  const simT0 = await p.evaluate(() => window.__game.simClock)
   try {
-    while (Date.now() - t0 < ms) {
+    while (true) {
+      const simNow = await p.evaluate(() => window.__game.simClock)
+      if (simNow - simT0 >= gameSeconds) return false
+      if (Date.now() - wallT0 > wallCapMs) return false
       const d = await p.evaluate((k) => {
         const g = window.__game
         const o = g?.interactables?.find((i) => i.kind === k && !i.used)
@@ -910,9 +972,8 @@ async function walkTo(p, kind, ms = 6000) {
       if (d.dz < -0.6) want.add('KeyW')
       for (const k of held) if (!want.has(k)) (await p.keyboard.up(k), held.delete(k))
       for (const k of want) if (!held.has(k)) (await p.keyboard.down(k), held.add(k))
-      await p.waitForTimeout(80)
+      await p.waitForTimeout(80) // 유지 — 입력 펌프, 게임 시계와 무관
     }
-    return false
   } finally {
     for (const k of held) await p.keyboard.up(k).catch(() => {})
   }
@@ -921,6 +982,8 @@ async function walkTo(p, kind, ms = 6000) {
 // ── 주행 ──────────────────────────────────────────────────────────────
 const errors = []
 const results = []
+/** 게임 시계 배속(게임초/벽시계초) — town-idle 스텝에서 실측해 채운다 */
+let clockRate = null
 const assetReport = checkAssetIntegrity()
 checkStateSnapshot()
 
@@ -1013,6 +1076,7 @@ const failed = results.filter((r) => r.fail)
 const report = [
   `대상: ${target}`,
   `시각: ${new Date().toISOString()}`,
+  `게임 시계 배속 실측: ${clockRate == null ? '측정 안 됨' : `${clockRate.toFixed(2)}배 (게임초/벽시계초)${clockRate < 0.5 ? ' — 경고: 0.5 미만' : ''}`}`,
   '',
   `에셋 무결성 검사: ${assetReport.ok ? '통과' : '위반'}`,
   ...assetReport.output.split('\n').map((l) => `  ${l}`),

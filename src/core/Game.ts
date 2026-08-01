@@ -63,6 +63,13 @@ export class Game {
   private boss: Enemy | null = null
   /** 히트스톱 잔여 시간 — 겹치면 더하지 않고 더 긴 쪽으로 갱신(triggerHitstop) */
   private hitstopTimer = 0
+  /**
+   * 시뮬레이션 누적 시간(초) — step(dt)가 실제로 쓰는 것과 같은(히트스톱
+   * 스케일 적용된) dt를 그대로 더한다. 모달이 열려 있거나 state !== 'play'
+   * 이면 step()이 안 불려 이 값도 멈춘다 — QC가 "정지"와 "느림"을 구분하는
+   * 근거가 이 필드다. 리셋하지 않는다: 소비 측(QC)이 두 샘플의 차이만 본다.
+   */
+  private simClock = 0
   private wasDashing = false
   private wasIaido = false
   private ghostTimer = 0
@@ -911,6 +918,7 @@ export class Game {
   }
 
   private step(dt: number) {
+    this.simClock += dt
     this.updateAim()
     this.entrySafeTimer = Math.max(0, this.entrySafeTimer - dt)
 
