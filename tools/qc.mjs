@@ -1090,6 +1090,12 @@ for (const s of STEPS) {
   console.log(`${fail ? '✗' : '✓'} ${tag}  ${s.what}${fail ? `\n    → ${fail}` : ''}`)
 }
 
+// 밀도 계측 로그(QC_DEBUG 전용 훅) — 이번 주행 전체에서 실제로 발생한
+// 검 스윙/총알 관통 이벤트를 집계한다. 스텝을 하나라도 건너뛰면(--only)
+// 표본이 줄어든다 — 신뢰도 판단은 아래 표본 수 표기가 담당한다.
+const densityLog = await page.evaluate(() => window.__game.debugGetDensityLog?.() ?? { swings: [], pierces: [] })
+const densityReportLines = formatDensityReport(densityLog)
+
 await contactSheet(page)
 await browser.close()
 if (server) killServerTree(server)
@@ -1106,6 +1112,9 @@ const report = [
   '',
   '단계',
   ...results.map((r) => `  ${r.fail ? '✗' : '✓'} ${r.tag}  ${r.what}${r.fail ? `  → ${r.fail}` : ''}`),
+  '',
+  '적 밀도 계측 (이슈 6 무기 등급 재정렬용 — 수치 변경 없음, 계측만)',
+  ...densityReportLines.map((l) => `  ${l}`),
   '',
   `콘솔/네트워크 오류 ${errors.length}건`,
   ...errors.map((e) => `  ${e}`),
@@ -1328,6 +1337,53 @@ async function contactSheet(page) {
   await p2.setContent(html)
   await p2.screenshot({ path: join(OUT, 'contact.png'), fullPage: true })
   await p2.close()
+}
+
+/**
+ * 밀도 계측 로그(qcDebugHooks.ts debugGetDensityLog)를 리포트용 텍스트로
+ * 집계한다. "이슈 6" 무기 등급 재정렬 스펙이 DPS × 기대 타격 수로 판정해야
+ * 하는데 기대 타격 수의 근거인 적 밀도가 미측정이었다 — 이 블록은 계측
+ * 결과만 보고한다. 여기서 어떤 밸런스 수치도 바꾸지 않는다.
+ */
+function median(nums) {
+  if (nums.length === 0) return NaN
+  const sorted = [...nums].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+function hitsDistribution(nums) {
+  const buckets = { 0: 0, 1: 0, 2: 0, 3: 0, '4+': 0 }
+  for (const h of nums) buckets[h >= 4 ? '4+' : String(h)]++
+  const n = nums.length || 1
+  return Object.entries(buckets).map(([k, v]) => `${k}:${((v / n) * 100).toFixed(0)}%`).join(' ')
+}
+
+function formatDensityReport(log) {
+  const lines = []
+  const swings = log?.swings ?? []
+  const pierces = log?.pierces ?? []
+
+  lines.push(`검 스윙 표본 ${swings.length}건${swings.length < 50 ? ' — 50 미만, 신뢰 불가' : ''}`)
+  if (swings.length > 0) {
+    const allHits = swings.map((s) => s.hits)
+    lines.push(`  전체 — 명중 수 중앙값 ${median(allHits)} · 분포(0/1/2/3/4+) ${hitsDistribution(allHits)}`)
+    const byKind = {}
+    for (const s of swings) (byKind[s.roomKind] ??= []).push(s.hits)
+    for (const kind of Object.keys(byKind).sort()) {
+      const arr = byKind[kind]
+      lines.push(`  ${kind} (${arr.length}건) — 중앙값 ${median(arr)} · 분포 ${hitsDistribution(arr)}${arr.length < 50 ? ' [표본 부족]' : ''}`)
+    }
+    const nearbyMed = (r) => median(swings.map((s) => s[`nearby${r}`]))
+    lines.push(`  참고: 스윙 시점 반경별 적 수 중앙값 — r4:${nearbyMed(4)} r6:${nearbyMed(6)} r8:${nearbyMed(8)}`)
+  }
+
+  lines.push(`총알 관통 표본 ${pierces.length}건${pierces.length < 50 ? ' — 50 미만, 신뢰 불가' : ''}`)
+  if (pierces.length > 0) {
+    const allExtra = pierces.map((p) => p.extraHits)
+    lines.push(`  전체 — 추가 명중(관통) 중앙값 ${median(allExtra)} · 분포(0/1/2/3/4+) ${hitsDistribution(allExtra)}`)
+  }
+  return lines
 }
 
 function esc(s) {

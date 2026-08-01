@@ -1,8 +1,9 @@
 import * as THREE from 'three'
-import { Enemy, EnemyKind } from '../entities/Enemy'
+import { Enemy, EnemyKind, DamageSource } from '../entities/Enemy'
 import type { EliteAffix } from '../systems/EliteAffixes'
 import { weaponById } from '../systems/Weapons'
-import { RunState, RoomKind } from '../systems/RunState'
+import { RunState, RoomKind, RoomPlan } from '../systems/RunState'
+import type { Bullet } from '../systems/Projectiles'
 import type { Game } from './Game'
 
 /**
@@ -35,6 +36,17 @@ interface GameInternals {
   hud: { showBoss(show: boolean): void }
   mode: 'town' | 'dungeon'
   spawnQueue: EnemyKind[]
+  curPlan: RoomPlan | null
+  resolveSlash: (
+    pos: THREE.Vector3,
+    angle: number,
+    arc: number,
+    range: number,
+    damage: number,
+    crit: boolean,
+    knockback: number,
+  ) => void
+  projectiles: { bullets: Bullet[]; removeBullet: (i: number) => void }
 }
 
 function internals(game: Game): GameInternals {
@@ -60,6 +72,33 @@ export interface FountainSampleResult {
   supplementUsed: number
 }
 
+/** 검 스윙 1회당 기록 — resolveSlash 호출마다 하나씩 쌓인다 */
+export interface SwingDensityRecord {
+  /** 부채꼴 판정에 실제로 들어와 맞은 적 수 (resolveSlash 실측) */
+  hits: number
+  /** 같은 시점 플레이어 반경 4/6/8 안의(생존) 적 수 */
+  nearby4: number
+  nearby6: number
+  nearby8: number
+  roomKind: RoomKind | 'town'
+  depth: number
+}
+
+/** 총알 1발당 기록 — 최소 1명 이상 맞히고 제거(관통 소진 또는 사거리 만료)될 때 하나씩 쌓인다 */
+export interface PierceDensityRecord {
+  /** 이 총알이 평생 맞힌 총 적 수 (첫 명중 포함) */
+  totalHits: number
+  /** 첫 명중 이후 관통으로 추가 명중한 수 (totalHits - 1) */
+  extraHits: number
+  roomKind: RoomKind | 'town'
+  depth: number
+}
+
+export interface DensityLog {
+  swings: SwingDensityRecord[]
+  pierces: PierceDensityRecord[]
+}
+
 export function installQcDebugHooks(game: Game) {
   const api = game as unknown as {
     debugSpawnBoss: () => Enemy
@@ -68,6 +107,61 @@ export function installQcDebugHooks(game: Game) {
     debugEquipWeapons: (gunId: string, swordId: string) => boolean
     debugClearEnemies: () => void
     debugFountainSample: (n: number) => FountainSampleResult
+    debugGetDensityLog: () => DensityLog
+  }
+
+  const swings: SwingDensityRecord[] = []
+  const pierces: PierceDensityRecord[] = []
+  const roomInfo = () => {
+    const g = internals(game)
+    return { roomKind: g.curPlan?.kind ?? ('town' as const), depth: g.curPlan?.depth ?? 0 }
+  }
+
+  api.debugGetDensityLog = () => ({ swings, pierces })
+
+  // ── 검 스윙 밀도 계측 ──────────────────────────────────────────────────
+  // resolveSlash를 인스턴스 프로퍼티로 감싼다(원본은 프로토타입 메서드라
+  // "this.resolveSlash(...)" 호출은 인스턴스 프로퍼티를 먼저 찾는다).
+  // 실제 명중 수는 resolveSlash 내부 변수라 밖에서 못 읽으므로, 스윙이 도는
+  // 동안만 Enemy.prototype.takeDamage를 감싸 melee 호출 횟수를 세고 즉시
+  // 원복한다 — 동기 호출이라 재진입 걱정이 없다. Game.ts/Enemy.ts 소스는
+  // 건드리지 않는다.
+  const g0 = internals(game)
+  const origResolveSlash = g0.resolveSlash.bind(game)
+  g0.resolveSlash = (pos, angle, arc, range, damage, crit, knockback) => {
+    const g = internals(game)
+    let hits = 0
+    const origTakeDamage = Enemy.prototype.takeDamage
+    Enemy.prototype.takeDamage = function (this: Enemy, amount: number, source?: DamageSource, hitCrit?: boolean) {
+      if (source === 'melee') hits++
+      return origTakeDamage.call(this, amount, source, hitCrit)
+    }
+    try {
+      origResolveSlash(pos, angle, arc, range, damage, crit, knockback)
+    } finally {
+      Enemy.prototype.takeDamage = origTakeDamage
+    }
+    const px = g.player.pos.x
+    const pz = g.player.pos.z
+    const within = (r: number) =>
+      g.enemies.filter((e) => e.alive && Math.hypot(e.pos.x - px, e.pos.z - pz) <= r).length
+    swings.push({ hits, nearby4: within(4), nearby6: within(6), nearby8: within(8), ...roomInfo() })
+  }
+
+  // ── 총알 관통 밀도 계측 ────────────────────────────────────────────────
+  // 총알은 관통 소진(hitSet.size > pierce) 또는 수명 만료 어느 쪽으로든
+  // Projectiles.removeBullet(i)를 거쳐 사라진다. 이 인스턴스의
+  // removeBullet만 감싸(프로토타입이 아니라 이 Game의 projectiles 인스턴스
+  // 하나에만 영향) 제거 직전 hitSet 크기로 "이 총알이 평생 맞힌 적 수"를
+  // 기록한다 — 관통 소진 시점만 잡으면 사거리 만료로 사라진, pierce 예산을
+  // 다 못 쓴 총알(흔한 사례)이 표본에서 빠져 명중 수가 과대평가된다.
+  const origRemoveBullet = g0.projectiles.removeBullet.bind(g0.projectiles)
+  g0.projectiles.removeBullet = (i: number) => {
+    const b = g0.projectiles.bullets[i]
+    if (b && b.hitSet.size >= 1) {
+      pierces.push({ totalHits: b.hitSet.size, extraHits: b.hitSet.size - 1, ...roomInfo() })
+    }
+    origRemoveBullet(i)
   }
 
   // 게임 상태(this.run)는 건드리지 않는다 — 매 표본마다 독립된 RunState를
