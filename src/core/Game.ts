@@ -11,7 +11,7 @@ import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
 import { Pickups } from '../systems/Pickups'
 import { Effects } from '../systems/Effects'
-import { rollChoices, Upgrade, forgeSwapCandidates } from '../systems/Upgrades'
+import { rollChoices, Upgrade, forgeSwapCandidates, upgradeById, CoreSlot } from '../systems/Upgrades'
 import { Shop, ShopItem } from '../systems/Shop'
 import { AudioManager } from '../systems/Audio'
 import { ELITE_AFFIX } from '../systems/EliteAffixes'
@@ -325,7 +325,7 @@ export class Game {
     // 상점 방: 상인 + 제련소 (분수는 별도 — 상점방 포함 여러 방에 배치될 수 있다)
     if (plan.kind === 'shop' || plan.kind === 'rest') {
       if (!this.shopRooms.has(plan.id)) {
-        this.shopRooms.set(plan.id, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks))
+        this.shopRooms.set(plan.id, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks, this.player.coreSlots))
       }
       this.interactables.push(new Interactable('merchant', -6, -1, plan.kind === 'rest' ? '보스전 상점' : '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
@@ -398,7 +398,11 @@ export class Game {
     const gold = 35 + this.run.depth * 12
     this.run.addGold(gold)
     this.meta.grantEliteToken()
-    const choices = rollChoices(3, false, this.player.traitStacks)
+    // "보스 보상은 3장이 아니라 4장"(작업 지시) — 이 저장소에는 보스 처치 시
+    // 특성을 고르는 흐름이 없고(스테이지 클리어는 onStageClear로 별도 처리),
+    // 특성 선택을 동반하는 유일한 고급 보상이 엘리트방 클리어라 여기에 적용했다.
+    // 문자 그대로 "보스" 보상이 아니므로 최종 보고에서 별도로 짚는다.
+    const choices = rollChoices(4, this.player.traitStacks, this.player.coreSlots)
     if (choices.length === 0) {
       this.state = 'play'
       this.hud.banner_(`골드 +${gold} · 모험가 증표 +1 · 획득 가능한 특성이 없습니다`)
@@ -407,12 +411,13 @@ export class Game {
       return
     }
     this.hud.showLevelUp('ELITE CLEAR!', `고급 특성을 선택하세요 · 골드 +${gold}`, choices, (u) => {
-      this.applyTrait(u)
-      this.audio.pick()
-      this.state = 'play'
-      this.hud.banner_('엘리트 보상 획득!')
-      this.openDoors()
-      this.clock.getDelta()
+      this.offerTrait(u, () => {
+        this.audio.pick()
+        this.state = 'play'
+        this.hud.banner_('엘리트 보상 획득!')
+        this.openDoors()
+        this.clock.getDelta()
+      })
     })
   }
 
@@ -518,7 +523,7 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    const choices = rollChoices(3, false, this.player.traitStacks)
+    const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
     if (choices.length === 0) {
       this.startingTraitTaken = true
       altar.markUsed()
@@ -528,12 +533,13 @@ export class Game {
       return
     }
     this.hud.showLevelUp('첫 번째 특성', '이번 런을 이끌 특성 하나를 선택하세요', choices, (u) => {
-      this.applyTrait(u)
-      this.startingTraitTaken = true
-      altar.markUsed()
-      this.state = 'play'
-      this.hud.banner_(`${u.name} 선택!`)
-      this.clock.getDelta()
+      this.offerTrait(u, () => {
+        this.startingTraitTaken = true
+        altar.markUsed()
+        this.state = 'play'
+        this.hud.banner_(`${u.name} 선택!`)
+        this.clock.getDelta()
+      })
     })
   }
 
@@ -545,7 +551,7 @@ export class Game {
     }
     const owned = [...this.acquired.values()]
       .map((a) => a.upgrade)
-      .filter((u) => this.player.canAcquireTrait(u.id, u.maxStacks))
+      .filter((u) => this.player.canAcquireTrait(u))
     if (owned.length === 0) {
       this.hud.banner_('강화할 특성이 없습니다 — 먼저 특성을 획득하세요')
       return
@@ -576,7 +582,7 @@ export class Game {
     const price = this.run.dungeonForgePrice
     const owned = [...this.acquired.values()]
       .map((a) => a.upgrade)
-      .filter((u) => forgeSwapCandidates(u.id, this.player.traitStacks).length > 0)
+      .filter((u) => forgeSwapCandidates(u.id, this.player.traitStacks, this.player.coreSlots).length > 0)
     if (owned.length === 0) {
       this.hud.banner_('교체할 수 있는 특성이 없습니다')
       return
@@ -589,15 +595,19 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    this.hud.showLevelUp('제련소 — 교체할 특성', `${price} 골드 — 같은 등급의 다른 특성으로 교체합니다`, choices, (from) => {
-      const candidates = forgeSwapCandidates(from.id, this.player.traitStacks).sort(() => Math.random() - 0.5).slice(0, 3)
+    this.hud.showLevelUp('제련소 — 교체할 특성', `${price} 골드 — 같은 슬롯의 다른 특성으로 교체합니다`, choices, (from) => {
+      const candidates = forgeSwapCandidates(from.id, this.player.traitStacks, this.player.coreSlots).sort(() => Math.random() - 0.5).slice(0, 3)
       this.hud.showLevelUp('제련소 — 무엇으로 교체할까요?', `${from.name} 을(를) 교체`, candidates, (to) => {
         if (!this.run.spendGold(price)) {
           this.state = 'play'
           return
         }
-        const stack = Math.max(0, this.player.traitStacks.get(from.id) ?? 0)
-        this.player.traitStacks.set(from.id, stack > 0 ? stack - 1 : 0)
+        // 각인은 스택 장부만 옮긴다(교체해도 힘이 줄지 않는다). 핵심 슬롯은
+        // 애초에 슬롯당 1개뿐이라 setCoreSlot이 덮어쓰는 것 자체가 교체다.
+        if (from.slot === 'sigil') {
+          const stack = Math.max(0, this.player.traitStacks.get(from.id) ?? 0)
+          this.player.traitStacks.set(from.id, stack > 0 ? stack - 1 : 0)
+        }
         const cur = this.acquired.get(from.id)
         if (cur) {
           cur.count--
@@ -630,7 +640,7 @@ export class Game {
     if (Math.random() < 0.6) {
       this.state = 'levelup'
       this.input.clearAll()
-      const choices = rollChoices(3, false, this.player.traitStacks)
+      const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
       if (choices.length === 0) {
         this.state = 'play'
         this.hud.banner_('획득 가능한 특성이 없습니다')
@@ -638,7 +648,7 @@ export class Game {
         return
       }
       this.hud.showLevelUp('보물 발견!', '특성 하나를 선택하세요', choices, (u) => {
-        this.applyTrait(u)
+        this.offerTrait(u, () => {})
         this.state = 'play'
         this.clock.getDelta()
       })
@@ -682,7 +692,7 @@ export class Game {
   private openShop() {
     const roomId = this.curPlan?.id
     if (roomId && !this.shopRooms.has(roomId)) {
-      this.shopRooms.set(roomId, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks))
+      this.shopRooms.set(roomId, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks, this.player.coreSlots))
     }
     this.state = 'shop'
     this.input.clearAll()
@@ -740,8 +750,8 @@ export class Game {
     if (!shop) return
     const it = shop.items[index]
     if (!it || it.sold) return
-    if (it.type === 'trait' && !this.player.canAcquireTrait(it.def.id, it.def.maxStacks)) {
-      this.hud.banner_('이 특성은 최대 스택에 도달했습니다')
+    if (it.type === 'trait' && !this.player.canAcquireTrait(it.def)) {
+      this.hud.banner_(it.def.slot === 'sigil' ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
       return
     }
     if (!this.run.spendGold(it.price)) return
@@ -766,7 +776,7 @@ export class Game {
     const shop = this.activeShop()
     if (!shop) return
     if (!this.run.spendGold(shop.rerollPrice)) return
-    shop.reroll([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
+    shop.reroll([this.player.gun.id, this.player.sword.id], this.player.traitStacks, this.player.coreSlots)
     this.audio.reload()
     this.renderShop()
   }
@@ -975,8 +985,17 @@ export class Game {
     if (!this.player.isDashing && this.wasDashing && this.player.mods.dashStrike > 0) {
       this.aoeDamage(this.player.pos.x, this.player.pos.z, 4.5, this.player.mods.dashStrike, COLORS.slash)
     }
+    if (!this.player.isDashing && this.wasDashing) {
+      this.player.onDashEnd() // '급전환' — 대시 종료 직후 검 쿨 절반 + 총 즉시 장전
+      if (this.player.coreSlots.get('dash') === 'mark') this.resolveDashMark(this.player.dashStart, this.player.pos)
+    }
     this.wasDashing = this.player.isDashing
     this.wasIaido = this.player.isIaido
+
+    // 조건부 핵심 슬롯 특성 발동 게이지(발도참/조준사격) — 특성이 없으면 null이라
+    // 아무것도 표시되지 않는다.
+    const gauge = this.player.conditionGauge()
+    if (gauge) this.effects.requestGauge(this.player.pos.x, this.player.pos.z, gauge.progress, gauge.color)
 
     // ── 룸 적 스폰 ──
     if (this.spawnQueue.length > 0 && this.entrySafeTimer <= 0) {
@@ -1034,7 +1053,14 @@ export class Game {
       activeSkillsEnabled && this.player.doubleShotReady,
       activeSkillsEnabled && this.player.ultimateReady,
     )
-    this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading, this.player.reloadRatio, this.player.gun.name)
+    this.hud.setAmmo(
+      this.player.ammo,
+      this.player.magSize,
+      this.player.reloading,
+      this.player.reloadRatio,
+      this.player.gun.name,
+      this.player.coreSlots.get('shot') === 'last_bullet',
+    )
     this.hud.setStats(this.player.level, this.mode === 'town' ? 0 : this.run.depth, this.kills, this.run.gold)
 
     const damageEvent = this.player.consumeDamageEvent()
@@ -1225,8 +1251,12 @@ export class Game {
           // 분리돼 있어 명중마다 따로 계산된다.
           const rdx = b.pos.x - b.spawnPos.x
           const rdz = b.pos.z - b.spawnPos.z
-          const rangeBonus = Math.hypot(rdx, rdz) >= CONFIG.combat.gunRangeBonusDist
-          const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : b.damage
+          const travelDist = Math.hypot(rdx, rdz)
+          const rangeBonus = travelDist >= CONFIG.combat.gunRangeBonusDist
+          // '밀착사격'(shot) — 먼 거리 보너스와 정반대 축이라 동시에 성립할 수 없다
+          // (gunRangeBonusDist 8 ≫ closeRangeDist 3).
+          const closeRange = this.player.coreSlots.get('shot') === 'close_range' && travelDist <= CONFIG.traits.closeRangeDist
+          const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : closeRange ? b.damage * CONFIG.traits.closeRangeMult : b.damage
           e.takeDamage(dmg, 'ranged', b.crit)
           b.hitSet.add(e.id)
           this.audio.hit()
@@ -1303,6 +1333,28 @@ export class Game {
   }
 
   /** 발도 경로(시작점→실제 종료점)를 캡슐 형태로 판정해 스친 모든 적을 한 번씩 벤다. */
+  /**
+   * '표식'(dash) — 대시 시작~끝 선분으로 관통한 적을 표식한다(피해는 주지
+   * 않는다, resolveIaido와 판정 방식만 공유). 표식된 적은 markDuration초
+   * 동안 받는 피해가 늘어난다(Enemy.takeDamage에서 처리).
+   */
+  private resolveDashMark(start: THREE.Vector3, end: THREE.Vector3) {
+    const abx = end.x - start.x
+    const abz = end.z - start.z
+    const lenSq = abx * abx + abz * abz
+    for (const enemy of this.enemies) {
+      if (!enemy.alive) continue
+      const apx = enemy.pos.x - start.x
+      const apz = enemy.pos.z - start.z
+      const t = lenSq > 0.0001 ? Math.max(0, Math.min(1, (apx * abx + apz * abz) / lenSq)) : 0
+      const closestX = start.x + abx * t
+      const closestZ = start.z + abz * t
+      const distance = Math.hypot(enemy.pos.x - closestX, enemy.pos.z - closestZ)
+      if (distance > enemy.radius + CONFIG.player.radius) continue
+      enemy.mark(CONFIG.traits.markDuration)
+    }
+  }
+
   private resolveIaido(start: THREE.Vector3, end: THREE.Vector3, damage: number, crit: boolean, knockback: number) {
     const abx = end.x - start.x
     const abz = end.z - start.z
@@ -1384,19 +1436,45 @@ export class Game {
   }
 
   private applyTrait(u: Upgrade) {
-    if (!this.player.canAcquireTrait(u.id, u.maxStacks)) {
-      this.hud.banner_('이 특성은 최대 스택에 도달했습니다')
+    if (!this.player.canAcquireTrait(u)) {
+      this.hud.banner_(u.slot === 'sigil' ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
       return false
     }
     this.audio.pick()
     u.apply(this.player)
-    this.player.recordTrait(u.id)
+    if (u.slot === 'sigil') this.player.recordTrait(u.id)
+    else this.player.setCoreSlot(u.slot as CoreSlot, u.id)
     const cur = this.acquired.get(u.id)
     if (cur) cur.count++
     else this.acquired.set(u.id, { upgrade: u, count: 1 })
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setXp(this.player.xp, this.player.xpToNext)
     return true
+  }
+
+  /**
+   * 특성 카드 하나를 "선택"한다 — 각인이거나 빈 슬롯이면 바로 적용한다.
+   * 이미 채워진 핵심 슬롯의 다른 특성이면 현재 보유 특성과 나란히 보여주고
+   * 교체/유지를 고르게 한다(유지를 고르면 이번 선택 기회는 소모된다).
+   * 이번 커밋은 핵심 슬롯 특성이 0종이라 이 분기는 실제로 타지 않는다 —
+   * 커밋 3에서 슬롯 특성이 들어오면 그대로 쓰인다.
+   */
+  private offerTrait(u: Upgrade, onDone: (applied: boolean) => void) {
+    if (u.slot !== 'sigil') {
+      const currentId = this.player.coreSlots.get(u.slot as CoreSlot)
+      const current = currentId ? upgradeById(currentId) : undefined
+      if (current && current.id !== u.id) {
+        this.hud.showSlotSwap(current, u, (keepCurrent) => {
+          if (keepCurrent) {
+            onDone(false)
+            return
+          }
+          onDone(this.applyTrait(u))
+        })
+        return
+      }
+    }
+    onDone(this.applyTrait(u))
   }
 
   private gainXp(amount: number) {
@@ -1409,7 +1487,7 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    const choices = rollChoices(3, false, this.player.traitStacks)
+    const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
     if (choices.length === 0) {
       while (this.player.gainXp(0)) {
         // 특성이 모두 소진된 뒤 남은 경험치는 선택창 없이 정상적으로 처리한다.
@@ -1421,15 +1499,16 @@ export class Game {
       return
     }
     this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', choices, (u) => {
-      this.applyTrait(u)
-      // 레벨이 더 쌓였으면 연속 처리
-      if (this.player.gainXp(0)) {
-        this.hud.setXp(this.player.xp, this.player.xpToNext)
-        this.openLevelUp()
-      } else {
-        this.state = 'play'
-        this.clock.getDelta()
-      }
+      this.offerTrait(u, () => {
+        // 레벨이 더 쌓였으면 연속 처리
+        if (this.player.gainXp(0)) {
+          this.hud.setXp(this.player.xp, this.player.xpToNext)
+          this.openLevelUp()
+        } else {
+          this.state = 'play'
+          this.clock.getDelta()
+        }
+      })
     })
   }
 

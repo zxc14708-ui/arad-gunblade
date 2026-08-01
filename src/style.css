@@ -521,6 +521,11 @@ canvas.pixelated {
   background: var(--gold);
   box-shadow: 0 0 5px rgba(232, 201, 121, 0.7);
 }
+/* '최후탄' 특성 보유 중 탄창의 마지막 1발 강조 */
+.ammo-pips i.on.last-bullet {
+  background: #ff5a5a;
+  box-shadow: 0 0 7px rgba(255, 90, 90, 0.9);
+}
 .ammo-text {
   font-size: 16px;
   font-weight: bold;

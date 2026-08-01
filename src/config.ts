@@ -174,6 +174,29 @@ export const CONFIG = {
     swordSwingCommitMax: 0.25,
   },
 
+  // 핵심 슬롯 특성(slash/shot/dash) 튜닝값 — 작업 지시 slot_system_phase1 커밋 3.
+  // 조건부 발동 조건과 배율만 모아둔다. 어떤 특성이 어느 슬롯인지는 Upgrades.ts.
+  traits: {
+    // 발도참(slash): 이 시간 이상 정지해 있으면 다음 첫 베기가 강화된다.
+    iaijutsuIdleThreshold: 0.5,
+    iaijutsuDamageMult: 2.5,
+    iaijutsuKnockbackMult: 2,
+    // 밀착사격(shot): 총알 발사 지점에서 이 거리 이내에 명중하면 강화.
+    // gunRangeBonusDist(먼 거리 보너스)와 정반대 축 — 서로 겹칠 수 없다.
+    closeRangeDist: 3,
+    closeRangeMult: 1.9,
+    // 최후탄(shot): 탄창의 마지막 1발.
+    lastBulletMult: 2.2,
+    // 조준사격(shot): 이 시간 이상 사격을 쉰 뒤 첫 발은 확정 치명타.
+    aimedShotPauseThreshold: 0.35,
+    // 표식(dash): 대시로 관통한 적이 받는 피해 배율(지속시간, 초).
+    markDuration: 3,
+    markedDamageMult: 1.35,
+    // 급전환(dash): 대시 종료 직후 지속시간 동안 검 쿨타임 배율 + 총 즉시 장전.
+    quickSwitchDuration: 0.5,
+    quickSwitchSwordCooldownMult: 0.5,
+  },
+
   // 타격감 연출 (히트스톱/화면 흔들림/피격 플래시)
   effects: {
     // 히트스톱: 타격 순간 게임 시간을 짧게 늦춘다. 0으로 완전히 멈추면 애니메이션이

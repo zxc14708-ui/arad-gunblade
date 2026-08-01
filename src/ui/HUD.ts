@@ -41,6 +41,7 @@ export class HUD {
   private ammoBox!: HTMLElement
   private lastAmmo = -1
   private lastMag = -1
+  private lastBulletTrait = false
   private volCb: ((kind: 'master' | 'music' | 'sfx', v: number) => void) | null = null
   private shakeCb: ((on: boolean) => void) | null = null
   private keybindCb: ((action: KeyAction, code: string) => boolean) | null = null
@@ -387,15 +388,23 @@ export class HUD {
     this.settingsOv.classList.remove('show')
   }
 
-  /** 탄약 표시 갱신 */
-  setAmmo(ammo: number, mag: number, reloading: boolean, ratio: number, gunName?: string) {
-    if (ammo !== this.lastAmmo || mag !== this.lastMag) {
+  /**
+   * 탄약 표시 갱신. lastBulletTrait가 true면 '최후탄'(shot) 보유 중 —
+   * 탄창의 마지막 1발(핍)에 강조 색을 준다.
+   */
+  setAmmo(ammo: number, mag: number, reloading: boolean, ratio: number, gunName?: string, lastBulletTrait = false) {
+    if (ammo !== this.lastAmmo || mag !== this.lastMag || lastBulletTrait !== this.lastBulletTrait) {
       this.lastAmmo = ammo
       this.lastMag = mag
+      this.lastBulletTrait = lastBulletTrait
       // 탄알 핍 재구성 (너무 많으면 숫자만)
       if (mag <= 14) {
         let pips = ''
-        for (let i = 0; i < mag; i++) pips += `<i class="${i < ammo ? 'on' : 'off'}"></i>`
+        for (let i = 0; i < mag; i++) {
+          const on = i < ammo
+          const isLastBulletPip = lastBulletTrait && ammo === 1 && i === 0
+          pips += `<i class="${on ? 'on' : 'off'}${isLastBulletPip ? ' last-bullet' : ''}"></i>`
+        }
         this.ammoPips.innerHTML = pips
       } else {
         this.ammoPips.innerHTML = ''
@@ -520,6 +529,23 @@ export class HUD {
     this.renderCards(
       choices.map((u) => ({ icon: u.icon, name: u.name, desc: u.desc, rarity: u.rarity })),
       (i) => onPick(choices[i]),
+    )
+  }
+
+  /**
+   * 핵심 슬롯 교체 확인 — 이미 채운 슬롯의 다른 특성을 골랐을 때, 현재 보유
+   * 특성과 새 특성을 나란히 보여주고 교체/유지를 고르게 한다. 카드 UI를
+   * showLevelUp과 그대로 공유한다(renderCards 재사용).
+   */
+  showSlotSwap(current: Upgrade, incoming: Upgrade, onPick: (keepCurrent: boolean) => void) {
+    this.q('#levelHead').textContent = '핵심 슬롯 교체'
+    this.q('#levelSub').textContent = `이미 "${current.name}"을(를) 보유 중입니다 — 교체할까요?`
+    this.renderCards(
+      [
+        { icon: current.icon, name: current.name, desc: current.desc, rarity: current.rarity, tag: '유지' },
+        { icon: incoming.icon, name: incoming.name, desc: incoming.desc, rarity: incoming.rarity, tag: '교체' },
+      ],
+      (i) => onPick(i === 0),
     )
   }
 

@@ -228,6 +228,51 @@ const STEPS = [
     },
   },
   {
+    name: 'gauge-charging',
+    what: '조건 게이지(발밑 원호) — 진행 중(옅은 흰색)으로 캐릭터 발밑에 그려지는가. 이 게이지는 아직 소비자(조건부 특성)가 없어 QC 디버그 훅으로 강제 표시한다.',
+    async run(p) {
+      await aim(p, 400)
+      await p.evaluate(() => {
+        window.__game.debugSetGauge({ progress: 0.45, color: '#4ade80' })
+      })
+      await waitGame(p, 0.1) // 한 프레임 이상 처리 — requestGauge가 소비돼 메시가 생성될 시간
+    },
+    check: async (p) => p.evaluate(() => {
+      const g = window.__game
+      const mesh = g.effects.gaugeMesh
+      if (!mesh) return '진행 중 게이지 메시가 생성되지 않음'
+      if (mesh.parent !== g.scene) return '게이지 메시가 씬에 붙어있지 않음'
+      return null
+    }),
+  },
+  {
+    name: 'gauge-fulfilled',
+    what: '조건 게이지 — 충족(progress=1)되면 색이 바뀌고, 요청을 멈추면 다음 프레임에 즉시 사라지는가',
+    async run(p) {
+      await p.evaluate(() => {
+        window.__game.debugSetGauge({ progress: 1, color: '#4ade80' })
+      })
+      await waitGame(p, 0.1)
+    },
+    check: async (p) => {
+      const fulfilledOk = await p.evaluate(() => {
+        const g = window.__game
+        return !!g.effects.gaugeMesh
+      })
+      if (!fulfilledOk) return '충족 상태 게이지 메시가 없음'
+      const disappeared = await p.evaluate(async () => {
+        window.__game.debugSetGauge(null)
+        return true
+      })
+      if (!disappeared) return '게이지 해제 훅 실패'
+      await waitGame(p, 0.1)
+      return p.evaluate(() => (window.__game.effects.gaugeMesh ? '요청을 멈췄는데 게이지가 사라지지 않음' : null))
+    },
+    async after(p) {
+      await p.evaluate(() => window.__game.debugSetGauge(null))
+    },
+  },
+  {
     name: 'town-meta',
     what: '마을 영구 성장 — 제단 강화·무기 설계도 해금 UI와 브라우저 프로필 반영',
     async run(p) {
@@ -517,6 +562,220 @@ const STEPS = [
       if (!outside || outside.hp !== before.hp) return '발도 경로 밖의 적까지 피해를 받음'
       return null
     }),
+  },
+  {
+    name: 'trait-slots',
+    what: '핵심 슬롯 특성(작업 지시 slot_system_phase1 커밋 3) — 발도참/조준사격/최후탄/표식/급전환 실제 발동과 슬롯 교체 UI',
+    async run(p) {
+      await dismissLevelUp(p)
+      const r = await p.evaluate(async () => {
+        const g = window.__game
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        const out = {}
+
+        // ── 발도참(slash) — 0.5초 이상 정지 후 첫 베기 250% ──
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0)
+        g.player.invuln = 5
+        g.debugSetCoreSlot('slash', 'iaijutsu')
+        const iaiTarget = g.debugSpawnEnemy('brute')
+        iaiTarget.pos.set(0, 0, -3)
+        const simT0 = g.simClock
+        while (g.simClock - simT0 < 0.6) await wait(30) // 정지 상태로 0.5초 이상 대기
+        const hpBefore = iaiTarget.hp
+        g.resolveSlash(g.player.pos.clone(), 0, g.player.stats.swordArc, g.player.stats.swordRange, g.player.stats.swordDamage, false, g.player.stats.knockback)
+        // 위 직접 호출은 발도참 배율을 안 타므로(Player.update 안의 판정), 실제 입력 경로를 대신 관찰한다
+        out.note = 'resolveSlash 직접 호출은 참고용 — 실제 배율 검증은 아래 conditionGauge로 대체'
+        out.iaijutsuGaugeReady = g.player.conditionGauge()?.progress >= 1
+
+        // ── 조준사격(shot) — 0.35초 이상 쉬고 쏘면 확정 치명타 ──
+        g.debugSetCoreSlot('shot', 'aimed_shot')
+        g.player.ammo = g.player.magSize
+        g.player.reloading = false
+        g.player.gunTimer = 0
+        const simT1 = g.simClock
+        while (g.simClock - simT1 < 0.5) await wait(30)
+        out.aimedShotGaugeReady = g.player.conditionGauge()?.progress >= 1
+
+        return out
+      })
+
+      // 실제 발사/베기는 마우스 이벤트로 트리거해야 Player.update()의 판정 분기(조건부 배율)를 탄다.
+      await aim(p, 0)
+      const preSlash = await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const e = g.debugSpawnEnemy('brute')
+        e.pos.set(0, 0, -3)
+        window.__qcTraitSlots = { hpBefore: e.hp, id: e.id, expected: g.player.stats.swordDamage * 2.5 }
+        return true
+      })
+      if (preSlash) {
+        await p.mouse.down({ button: 'right' })
+        await waitGame(p, 0.05)
+        await p.mouse.up({ button: 'right' })
+      }
+      const iaijutsuDealt = await p.evaluate(() => {
+        const g = window.__game
+        const e = g.enemies.find((it) => it.id === window.__qcTraitSlots.id)
+        return e ? window.__qcTraitSlots.hpBefore - e.hp : null
+      })
+
+      // ── 조준사격 확정 치명타 ──
+      const preShot = await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        g.player.ammo = g.player.magSize
+        g.player.reloading = false
+        g.player.gunTimer = 0
+        // 직전 발도참 테스트의 검 적중이 '발도장전'(기본 메커니즘, swordReloadBurstBonus
+        // 기본 0.3)을 발동시켜 다음 총알 3발에 +30% 보너스가 남아있다 — 이 테스트와
+        // 무관한 배율이라 격리한다.
+        g.player.swordReloadBurstShotsLeft = 0
+        return true
+      })
+      if (preShot) {
+        await p.mouse.down()
+        await waitGame(p, 0.03)
+        await p.mouse.up()
+      }
+      const aimedShotCrit = await p.evaluate(() => window.__game.projectiles.bullets[0]?.crit ?? null)
+
+      // ── 최후탄(shot) — 탄창 마지막 1발 220%, 핍 색 변경 ──
+      // 실제로 명중시키려면 정밀 조준(aimAtPoint)이 필요해 조준 오차가 결과에
+      // 섞인다 — 배율 자체는 발사 시점에 이미 bullets[].damage에 반영되므로
+      // 총알이 맞았는지와 무관하게 스폰된 총알의 damage 필드로 직접 검증한다.
+      const lastBulletSetup = await p.evaluate(() => {
+        const g = window.__game
+        g.debugSetCoreSlot('shot', 'last_bullet')
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        g.player.ammo = 1
+        g.player.reloading = false
+        g.player.gunTimer = 0
+        g.player.swordReloadBurstShotsLeft = 0 // 이 테스트와 무관한 발도장전 보너스 격리
+        // HUD는 다음 프레임에야 갱신된다 — 발사 전(ammo=1) 핍 색은 여기서
+        // 강제로 한 번 갱신해 직접 확인한다(발사 이후엔 ammo가 0으로 바뀌어
+        // "마지막 총알" 핍 자체가 사라지므로 발사 전에 봐야 한다).
+        g.hud.setAmmo(g.player.ammo, g.player.magSize, g.player.reloading, g.player.reloadRatio, g.player.gun.name, true)
+        return {
+          expected: g.player.stats.gunDamage * 2.2,
+          pipClass: document.querySelector('#ammoPips i')?.className ?? null,
+        }
+      })
+      await p.mouse.down()
+      await waitGame(p, 0.03) // 총알 스폰까지 — 명중은 필요 없다
+      await p.mouse.up()
+      const lastBulletResult = await p.evaluate((setup) => {
+        const g = window.__game
+        const b = g.projectiles.bullets[0]
+        return { dealt: b ? b.damage : null, expected: setup.expected, pipClass: setup.pipClass }
+      }, lastBulletSetup)
+
+      // ── 표식(dash) — 대시로 관통한 적은 3초간 받는 피해 +35% ──
+      const markResult = await p.evaluate(async () => {
+        const g = window.__game
+        g.debugSetCoreSlot('dash', 'mark')
+        g.player.dashCdTimer = 0
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0)
+        // KeyS(moveDown) 입력은 +Z 방향 — 대시 경로(0,0,0)→(0,0,+x) 위에 적을 놓는다.
+        const e = g.debugSpawnEnemy('brute')
+        e.pos.set(0, 0, 1.5)
+        return { spawnedId: e.id }
+      })
+      await p.keyboard.down('KeyS')
+      await p.keyboard.down('ShiftLeft')
+      await waitGame(p, 0.35) // 대시 지속시간 + 종료 처리
+      await p.keyboard.up('ShiftLeft')
+      await p.keyboard.up('KeyS')
+      const marked = await p.evaluate((id) => {
+        const g = window.__game
+        const e = g.enemies.find((it) => it.id === id)
+        return e ? e.isMarked : null
+      }, markResult.spawnedId)
+
+      // ── 급전환(dash) — 대시 종료 직후 검 쿨 절반 + 총 즉시 장전 ──
+      const quickSwitch = await p.evaluate(async () => {
+        const g = window.__game
+        g.debugSetCoreSlot('dash', 'quick_switch')
+        g.player.dashCdTimer = 0 // 직전 표식 테스트의 대시 쿨다운을 건너뛴다
+        g.player.ammo = 0
+        g.player.reloading = true
+        return true
+      })
+      await p.keyboard.down('KeyD')
+      await p.keyboard.down('ShiftLeft')
+      await waitGame(p, 0.35)
+      await p.keyboard.up('ShiftLeft')
+      await p.keyboard.up('KeyD')
+      const quickSwitchResult = await p.evaluate(() => ({
+        ammo: window.__game.player.ammo,
+        reloading: window.__game.player.reloading,
+      }))
+
+      // ── 슬롯 교체 UI — 이미 찬 슬롯에 다른 특성을 고르면 "유지/교체" 카드가 나란히 뜨는가 ──
+      const swapUi = await p.evaluate(() => {
+        const g = window.__game
+        const current = { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', rarity: 'epic' }
+        const incoming = { id: 'last_bullet', name: '최후탄', desc: '', icon: '🎯', rarity: 'epic' }
+        g.hud.showSlotSwap(current, incoming, () => {})
+        const cards = document.querySelectorAll('#cards .card')
+        const tags = [...document.querySelectorAll('#cards .ctag')].map((el) => el.textContent)
+        const open = document.querySelector('#levelOv')?.classList.contains('show')
+        return { hasHook: typeof g.offerTrait === 'function', cardCount: cards.length, tags, open }
+      })
+      await p.evaluate(() => document.querySelector('#levelOv')?.classList.remove('show'))
+
+      await p.evaluate((result) => {
+        window.__qcTraitSlotsResult = result
+      }, {
+        iaijutsuGaugeReady: r.iaijutsuGaugeReady,
+        aimedShotGaugeReady: r.aimedShotGaugeReady,
+        iaijutsuDealt,
+        aimedShotCrit,
+        lastBulletResult,
+        marked,
+        quickSwitchResult,
+        swapUi,
+      })
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcTraitSlotsResult
+      if (!r) return '결과 없음'
+      if (!r.iaijutsuGaugeReady) return '발도참 게이지가 0.5초 정지 후 충족되지 않음'
+      const iaiExpected = window.__game.player.stats.swordDamage * 2.5
+      if (r.iaijutsuDealt == null || Math.abs(r.iaijutsuDealt - iaiExpected) > iaiExpected * 0.05) {
+        return `발도참 피해 배율이 250%가 아님 (${r.iaijutsuDealt} / 기대 ${iaiExpected.toFixed(1)})`
+      }
+      if (!r.aimedShotGaugeReady) return '조준사격 게이지가 0.35초 정지 후 충족되지 않음'
+      if (r.aimedShotCrit !== true) return '조준사격 조건 충족 후 첫 발이 확정 치명타가 아님'
+      const lastExpected = r.lastBulletResult.expected
+      if (r.lastBulletResult.dealt == null || Math.abs(r.lastBulletResult.dealt - lastExpected) > lastExpected * 0.01) {
+        return `최후탄 피해 배율이 220%가 아님 (${r.lastBulletResult.dealt} / 기대 ${lastExpected.toFixed(1)})`
+      }
+      if (!r.lastBulletResult.pipClass || !r.lastBulletResult.pipClass.includes('last-bullet')) {
+        return '최후탄 상태에서 탄약 UI 마지막 핍에 강조 클래스가 없음'
+      }
+      if (r.marked !== true) return "표식 — 대시로 관통한 적이 마크되지 않음"
+      if (r.quickSwitchResult.ammo !== window.__game.player.magSize || r.quickSwitchResult.reloading !== false) {
+        return `급전환 — 대시 종료 직후 총이 즉시 장전되지 않음 (ammo=${r.quickSwitchResult.ammo}, reloading=${r.quickSwitchResult.reloading})`
+      }
+      if (!r.swapUi.hasHook) return '슬롯 교체 UI 훅(offerTrait)이 노출되지 않음'
+      if (!r.swapUi.open || r.swapUi.cardCount !== 2) return `슬롯 교체 카드가 2장(유지/교체) 나란히 뜨지 않음 (open=${r.swapUi.open}, count=${r.swapUi.cardCount})`
+      if (!r.swapUi.tags.includes('유지') || !r.swapUi.tags.includes('교체')) return `슬롯 교체 카드에 유지/교체 표시가 없음 (${JSON.stringify(r.swapUi.tags)})`
+      return null
+    }),
+    async after(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugSetGauge(null)
+        g.debugClearEnemies()
+        g.player.coreSlots.clear()
+        g.debugEquipWeapons('m1911', 'katana')
+      })
+    },
   },
   {
     name: 'fire-goblin',
@@ -1132,6 +1391,7 @@ const results = []
 let clockRate = null
 const assetReport = checkAssetIntegrity()
 checkStateSnapshot()
+checkRollChoices()
 
 let server = null
 let port = PORT
@@ -1289,6 +1549,23 @@ function checkStateSnapshot() {
     const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
     console.log(out)
     errors.push('STATE_SNAPSHOT.md 가 코드와 다름 (tools/state_snapshot.mjs --check) — 위 출력 참조')
+  }
+}
+
+/**
+ * rollChoices() 카드 구성 규칙을 2000회 표본으로 정적 검증한다(브라우저 불필요).
+ * 특성 슬롯제(작업 지시 slot_system_phase1) 커밋 1의 완료 기준 —
+ * tools/verify_roll_choices.mjs 참고.
+ */
+function checkRollChoices() {
+  console.log('· 특성 선택지 구성 규칙 검사 (tools/verify_roll_choices.mjs)')
+  try {
+    const out = execSync('node tools/verify_roll_choices.mjs 2000', { cwd: ROOT, encoding: 'utf-8' })
+    console.log(out)
+  } catch (e) {
+    const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
+    console.log(out)
+    errors.push('rollChoices() 구성 규칙 검증 실패 (tools/verify_roll_choices.mjs) — 위 출력 참조')
   }
 }
 

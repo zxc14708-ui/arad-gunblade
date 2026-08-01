@@ -31,6 +31,10 @@ interface GameInternals {
     invuln: number
     equip: (weapon: NonNullable<ReturnType<typeof weaponById>>) => void
     char: { spec: { n: number } }
+    coreSlots: Map<string, string>
+    ammo: number
+    magSize: number
+    reloading: boolean
   }
   boss: Enemy | null
   hud: { showBoss(show: boolean): void }
@@ -47,6 +51,11 @@ interface GameInternals {
     knockback: number,
   ) => void
   projectiles: { bullets: Bullet[]; removeBullet: (i: number) => void }
+  effects: {
+    requestGauge: (x: number, z: number, progress: number, color: string) => void
+    update: (dt: number, camera: THREE.Camera) => void
+  }
+  camera: THREE.Camera
 }
 
 function internals(game: Game): GameInternals {
@@ -108,6 +117,8 @@ export function installQcDebugHooks(game: Game) {
     debugClearEnemies: () => void
     debugFountainSample: (n: number) => FountainSampleResult
     debugGetDensityLog: () => DensityLog
+    debugSetGauge: (v: { progress: number; color: string } | null) => void
+    debugSetCoreSlot: (slot: string, id: string) => void
   }
 
   const swings: SwingDensityRecord[] = []
@@ -234,5 +245,31 @@ export function installQcDebugHooks(game: Game) {
     g.player.equip(gun)
     g.player.equip(sword)
     return g.player.char.spec.n === 27
+  }
+
+  // ── 발밑 원호 게이지 강제 표시 ────────────────────────────────────────
+  // 이 게이지는 아직 소비자(조건부 특성)가 없어 정상 플레이로는 절대 뜨지
+  // 않는다. effects.update()를 감싸 매 프레임 강제로 requestGauge를 불러줘야
+  // QC 스크린샷으로 렌더링을 확인할 수 있다 — Effects.ts 소스는 건드리지
+  // 않는다. null을 넘기면 강제 표시를 끈다(다음 프레임에 즉시 사라짐 확인용).
+  const g1 = internals(game)
+  let forcedGauge: { progress: number; color: string } | null = null
+  const origEffectsUpdate = g1.effects.update.bind(g1.effects)
+  g1.effects.update = (dt: number, camera: THREE.Camera) => {
+    if (forcedGauge) {
+      const g = internals(game)
+      g.effects.requestGauge(g.player.pos.x, g.player.pos.z, forcedGauge.progress, forcedGauge.color)
+    }
+    origEffectsUpdate(dt, camera)
+  }
+  api.debugSetGauge = (v) => {
+    forcedGauge = v
+  }
+
+  // 핵심 슬롯에 특성을 직접 채운다 — QC가 실제 플레이 경로(카드 뽑기) 없이
+  // 슬롯 특성 발동 조건을 결정적으로 재현하기 위한 훅.
+  api.debugSetCoreSlot = (slot, id) => {
+    const g = internals(game)
+    g.player.coreSlots.set(slot, id)
   }
 }

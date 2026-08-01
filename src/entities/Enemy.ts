@@ -101,6 +101,8 @@ export class Enemy {
   private shield = 0
   private maxShield = 0
   private shieldHitTimer = -1
+  /** '표식'(대시 핵심 슬롯 특성) — 남은 시간(초) 동안 받는 피해 +35% */
+  private markTimer = 0
 
   constructor(
     kind: EnemyKind,
@@ -155,6 +157,7 @@ export class Enemy {
   update(dt: number, target: THREE.Vector3): EnemyAction[] {
     if (this.hitFlash > 0) this.hitFlash -= dt
     if (this.contactTimer > 0) this.contactTimer -= dt
+    if (this.markTimer > 0) this.markTimer -= dt
 
     const dir = new THREE.Vector3(target.x - this.pos.x, 0, target.z - this.pos.z)
     const dist = dir.length()
@@ -347,10 +350,20 @@ export class Enemy {
     this.bossStaggerVulnerable = vulnerable
   }
 
+  /** '표식' — 대시로 관통한 적을 duration초 동안 표식한다(기존 표식이 남아있으면 더 긴 쪽 유지). */
+  mark(duration: number) {
+    this.markTimer = Math.max(this.markTimer, duration)
+  }
+
+  get isMarked() {
+    return this.markTimer > 0
+  }
+
   takeDamage(amount: number, source: DamageSource = 'ranged', crit = false) {
     let effective = this.kind === 'boss' && this.bossState === 'stagger' && this.bossStaggerVulnerable
       ? amount * BOSS_PATTERN.staggerDamageMultiplier
       : amount
+    if (this.markTimer > 0) effective *= CONFIG.traits.markedDamageMult
     if (this.affix === 'ward') {
       this.shieldHitTimer = 0
       const absorbed = Math.min(this.shield, effective)

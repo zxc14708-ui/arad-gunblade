@@ -1,119 +1,146 @@
 import { Player } from '../entities/Player'
 import { Rarity } from './Weapons'
 
+/**
+ * 특성을 관리하는 두 축.
+ * `sigil`(각인)은 traitStacks로 누적 스택하는 기존 방식 그대로다.
+ * `slash`/`shot`/`dash`/`skill`(핵심 슬롯)은 슬롯당 1개만 보유하며,
+ * Player.coreSlots가 "슬롯 → 보유 특성 id"를 기록한다.
+ */
+export type UpgradeSlot = 'slash' | 'shot' | 'dash' | 'skill' | 'sigil'
+export type CoreSlot = Exclude<UpgradeSlot, 'sigil'>
+export const CORE_SLOTS: CoreSlot[] = ['slash', 'shot', 'dash', 'skill']
+
 export interface Upgrade {
   id: string
   name: string
   desc: string
   icon: string
   rarity: Rarity
+  slot: UpgradeSlot
   maxStacks: number
   apply: (p: Player) => void
 }
 
-const DEFAULT_MAX_STACKS: Record<Rarity, number> = {
-  common: 5,
-  rare: 5,
-  epic: 3,
-  legendary: 1,
-}
-
-/** 특성 전체 풀 (mods를 수정하고 recompute) */
-const RAW_POOL: Array<Omit<Upgrade, 'maxStacks'>> = [
-  // ── Common ──
-  { id: 'gun_dmg', name: '강선 탄환', desc: '총 데미지 +25%', icon: '🔫', rarity: 'common',
-    apply: (p) => { p.mods.gunDamage *= 1.25; p.recompute() } },
-  { id: 'gun_rof', name: '속사', desc: '총 연사 속도 +20%', icon: '⚡', rarity: 'common',
-    apply: (p) => { p.mods.gunCooldown *= 0.8; p.recompute() } },
-  { id: 'sword_dmg', name: '요도(妖刀)', desc: '검 데미지 +30%', icon: '🗡️', rarity: 'common',
-    apply: (p) => { p.mods.swordDamage *= 1.3; p.recompute() } },
-  { id: 'speed', name: '경신법', desc: '이동 속도 +15%', icon: '👟', rarity: 'common',
-    apply: (p) => { p.mods.moveSpeed *= 1.15; p.recompute() } },
-  { id: 'hp', name: '강인한 육체', desc: '최대 체력 +25, 완전 회복', icon: '❤️', rarity: 'common',
-    apply: (p) => { p.mods.maxHp += 25; p.recompute(); p.hp = p.stats.maxHp } },
-  { id: 'xp_gain', name: '전투의 깨달음', desc: '경험치 획득량 +10%', icon: '📘', rarity: 'common',
+/**
+ * 특성 전체 풀 — 위험축 폐기 + 각인 재편 + 저비용 슬롯 특성 6종(작업 지시
+ * slot_system_phase1 커밋 3).
+ *
+ * 폐기(작업 지시 3-1 목록 그대로, 14종): sword_range, multishot, lg_storm,
+ * pierce, lg_pierce, gun_dmg, sword_dmg, berserk, bullet_speed, lg_twinblade,
+ * lg_vampire, lg_executioner, lg_gale, lg_gunsword. (지시문 표제는 "11종"이라
+ * 적혀 있으나 실제 나열된 id는 14개 — 최종 보고에서 짚었다.)
+ * 추가로 폐기: dash_cd(대시 쿨은 후속 출발 패시브가 담당), gun_rob(어느 목록
+ * 에도 없지만 "각인 확정 8종"이 최종 각인 전체 명단이라는 서술과 맞추려면
+ * 같이 빠져야 앞뒤가 맞는다 — 이것도 최종 보고에서 짚었다).
+ * 승격: lg_quickdraw → swordReloadBurstBonus 기본값(Player.ts freshMods)으로
+ * 이관, 풀에서 제거.
+ * 이관: lg_blink → slot: 'dash'로 이동(대시 3종 중 하나), 각인에서 제외.
+ * 각인 확정 8종은 수치를 3-2 표에 맞춰 낮췄다(스택 상한 5→3이라 값도 같이
+ * 내렸다 — 지시문 표에 있는 그대로).
+ */
+const RAW_POOL: Upgrade[] = [
+  // ── 각인(sigil) 8종 — 스택 상한 3, 전부 가산/상시 배수 ──
+  { id: 'hp', name: '강인한 육체', desc: '최대 체력 +20, 완전 회복', icon: '❤️', rarity: 'common', slot: 'sigil', maxStacks: 3,
+    apply: (p) => { p.mods.maxHp += 20; p.recompute(); p.hp = p.stats.maxHp } },
+  { id: 'speed', name: '경신법', desc: '이동 속도 +8%', icon: '👟', rarity: 'common', slot: 'sigil', maxStacks: 3,
+    apply: (p) => { p.mods.moveSpeed *= 1.08; p.recompute() } },
+  { id: 'crit', name: '급소 간파', desc: '치명타 확률 +8%p', icon: '💥', rarity: 'rare', slot: 'sigil', maxStacks: 3,
+    apply: (p) => { p.mods.critChance += 0.08; p.recompute() } },
+  { id: 'crit_dmg', name: '처형인', desc: '치명타 배율 +0.4', icon: '☠️', rarity: 'rare', slot: 'sigil', maxStacks: 3,
+    apply: (p) => { p.mods.critMult += 0.4; p.recompute() } },
+  { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 4% 회복', icon: '🩸', rarity: 'epic', slot: 'sigil', maxStacks: 3,
+    apply: (p) => { p.mods.lifesteal += 0.04; p.recompute() } },
+  { id: 'xp_gain', name: '전투의 깨달음', desc: '경험치 획득량 +10%', icon: '📘', rarity: 'common', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.xpGain *= 1.1; p.recompute() } },
+  { id: 'reload', name: '신속 장전', desc: '장전 시간 -15%', icon: '🔁', rarity: 'rare', slot: 'sigil', maxStacks: 3,
+    apply: (p) => { p.mods.reloadTime *= 0.85; p.recompute() } },
+  { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해, 스택당 +14', icon: '💣', rarity: 'legendary', slot: 'sigil', maxStacks: 3,
+    apply: (p) => { p.mods.explodeOnKill += 14; p.recompute() } },
 
-  // ── Rare ──
-  { id: 'pierce', name: '관통탄', desc: '탄환이 적 +1명 관통', icon: '➤', rarity: 'rare',
-    apply: (p) => { p.mods.pierce += 1; p.recompute() } },
-  { id: 'sword_range', name: '발도 확장', desc: '검 사거리 +25%, 쿨감 -10%', icon: '⚔️', rarity: 'rare',
-    apply: (p) => { p.mods.swordRange *= 1.25; p.mods.swordCooldown *= 0.9; p.recompute() } },
-  { id: 'crit', name: '급소 간파', desc: '치명타 확률 +12%', icon: '💥', rarity: 'rare',
-    apply: (p) => { p.mods.critChance += 0.12; p.recompute() } },
-  { id: 'crit_dmg', name: '처형인', desc: '치명타 배율 +0.6', icon: '☠️', rarity: 'rare',
-    apply: (p) => { p.mods.critMult += 0.6; p.recompute() } },
-  { id: 'dash_cd', name: '연막 회피', desc: '대시 쿨타임 -25%', icon: '🌫️', rarity: 'rare',
-    apply: (p) => { p.mods.dashCooldown *= 0.75; p.recompute() } },
-  { id: 'reload', name: '신속 장전', desc: '장전 시간 -30%', icon: '🔁', rarity: 'rare',
-    apply: (p) => { p.mods.reloadTime *= 0.7; p.recompute() } },
-  { id: 'bullet_speed', name: '고속탄', desc: '탄속 +35%, 총 데미지 +10%', icon: '💨', rarity: 'rare',
-    apply: (p) => { p.mods.bulletSpeed *= 1.35; p.mods.gunDamage *= 1.1; p.recompute() } },
+  // ── 핵심 슬롯: slash(1종) ──
+  { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', rarity: 'epic', slot: 'slash', maxStacks: 1,
+    apply: () => { /* 발동 로직은 Player.update()의 slash 판정에서 stillTimer로 처리 — 상시 배수가 아니라 조건부라 apply는 상태만 등록한다(coreSlots에 이미 기록됨) */ } },
 
-  // ── Epic ──
-  { id: 'multishot', name: '멀티샷', desc: '발사 탄환 +1', icon: '🎯', rarity: 'epic',
-    apply: (p) => { p.mods.multishot += 1; p.recompute() } },
-  { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 5% 회복', icon: '🩸', rarity: 'epic',
-    apply: (p) => { p.mods.lifesteal += 0.05; p.recompute() } },
-  { id: 'berserk', name: '광전사', desc: '총·검 데미지 +20%, 최대체력 -10', icon: '😤', rarity: 'epic',
-    apply: (p) => { p.mods.gunDamage *= 1.2; p.mods.swordDamage *= 1.2; p.mods.maxHp -= 10; p.recompute() } },
+  // ── 핵심 슬롯: shot(3종) ──
+  { id: 'close_range', name: '밀착사격', desc: '거리 3 이하 명중 시 피해 +90%', icon: '🔫', rarity: 'epic', slot: 'shot', maxStacks: 1,
+    apply: () => { /* Game.resolveBullets()에서 travelDist로 판정 */ } },
+  { id: 'last_bullet', name: '최후탄', desc: '탄창 마지막 1발 피해 220%', icon: '🎯', rarity: 'epic', slot: 'shot', maxStacks: 1,
+    apply: () => { /* Player.update() 발사 블록에서 ammo===1로 판정 */ } },
+  { id: 'aimed_shot', name: '조준사격', desc: '0.35초 이상 사격을 쉰 뒤 첫 발 확정 치명타', icon: '🎯', rarity: 'epic', slot: 'shot', maxStacks: 1,
+    apply: () => { /* Player.update() 발사 블록에서 aimPauseTimer로 판정 */ } },
 
-  // ── Legendary ──
-  { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해', icon: '💣', rarity: 'legendary',
-    apply: (p) => { p.mods.explodeOnKill += 26; p.recompute() } },
-  { id: 'lg_quickdraw', name: '⭐ 발도장전', desc: '검 적중 시 장전 1발→2발 · 장전 직후 3발 피해 +30%', icon: '🎴', rarity: 'legendary',
-    apply: (p) => { p.mods.swordReloadAmount = 2; p.mods.swordReloadBurstBonus = 0.3; p.recompute() } },
-  { id: 'lg_vampire', name: '⭐ 흡혈귀', desc: '흡혈 +10%, 최대 체력 +40', icon: '🧛', rarity: 'legendary',
-    apply: (p) => { p.mods.lifesteal += 0.1; p.mods.maxHp += 40; p.recompute(); p.hp = p.stats.maxHp } },
-  { id: 'lg_executioner', name: '⭐ 처형자', desc: '치명타 확률 +20%, 배율 +1.0', icon: '🔱', rarity: 'legendary',
-    apply: (p) => { p.mods.critChance += 0.2; p.mods.critMult += 1; p.recompute() } },
-  { id: 'lg_gale', name: '⭐ 질풍(疾風)', desc: '이동 속도 +25%, 대시 쿨 -45%', icon: '🌀', rarity: 'legendary',
-    apply: (p) => { p.mods.moveSpeed *= 1.25; p.mods.dashCooldown *= 0.55; p.recompute() } },
-  { id: 'lg_storm', name: '⭐ 폭풍탄막', desc: '발사 탄환 +2', icon: '🌪️', rarity: 'legendary',
-    apply: (p) => { p.mods.multishot += 2; p.recompute() } },
-  { id: 'lg_pierce', name: '⭐ 관통의 룬', desc: '관통 +3, 탄속 +40%', icon: '🏹', rarity: 'legendary',
-    apply: (p) => { p.mods.pierce += 3; p.mods.bulletSpeed *= 1.4; p.recompute() } },
-  { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', rarity: 'legendary',
+  // ── 핵심 슬롯: dash(3종, lg_blink 이관 포함) ──
+  { id: 'mark', name: '표식(標識)', desc: '대시로 관통한 적은 3초간 받는 피해 +35%', icon: '🏷️', rarity: 'epic', slot: 'dash', maxStacks: 1,
+    apply: () => { /* Game.resolveDashMark()에서 대시 종료 시 판정 */ } },
+  { id: 'quick_switch', name: '급전환', desc: '대시 종료 후 0.5초간 검 쿨 절반 + 총 즉시 장전', icon: '🔄', rarity: 'epic', slot: 'dash', maxStacks: 1,
+    apply: () => { /* Player.onDashEnd()에서 처리 */ } },
+  { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', rarity: 'legendary', slot: 'dash', maxStacks: 1,
     apply: (p) => { p.mods.dashStrike += 44; p.recompute() } },
-  { id: 'lg_twinblade', name: '⭐ 쌍검무(雙劍舞)', desc: '검 연사 속도 +45%, 검 데미지 +15%', icon: '🌀', rarity: 'legendary',
-    apply: (p) => { p.mods.swordCooldown *= 0.55; p.mods.swordDamage *= 1.15; p.recompute() } },
-  { id: 'lg_gunsword', name: '⭐ 총검일체', desc: '총·검 데미지 +25%, 발도 시 총 즉시 장전', icon: '⚜️', rarity: 'legendary',
-    apply: (p) => { p.mods.gunDamage *= 1.25; p.mods.swordDamage *= 1.25; p.mods.swordReloads = true; p.recompute() } },
 ]
 
-export const POOL: Upgrade[] = RAW_POOL.map((upgrade) => ({
-  ...upgrade,
-  maxStacks: DEFAULT_MAX_STACKS[upgrade.rarity],
-}))
+export const POOL: Upgrade[] = RAW_POOL
 
-const WEIGHTS: Record<Rarity, number> = { common: 5, rare: 2.5, epic: 1, legendary: 0.4 }
-const BOSS_WEIGHTS: Record<Rarity, number> = { common: 0, rare: 1.5, epic: 3, legendary: 2 }
+/**
+ * 랜덤 특성 선택지.
+ *
+ * 등급 기반 가중치는 폐기됐다 — 후보군 안에서는 균등 추첨이다. 대신 슬롯
+ * 상태를 기준으로 카드 구성을 짠다:
+ *   - 빈 핵심 슬롯이 있으면 그 슬롯 특성을 최대 2장까지 우선 배치하고
+ *     나머지는 각인으로 채운다.
+ *   - 핵심 슬롯이 모두 찼으면 각인 2장(그중 최소 1장은 이미 보유해 스택을
+ *     올릴 수 있는 것 우선) + 교체 후보(이미 채운 슬롯의 다른 특성) 1장.
+ *   - 그래도 못 채우면(모든 각인이 상한, 교체 후보도 없음) 남은 자리는
+ *     아무 후보로나 채운다.
+ *
+ * coreSlots는 "슬롯 → 현재 보유한 특성 id" — 교체 후보를 고를 때 지금
+ * 채워진 특성 자신은 후보에서 제외하기 위해 id까지 필요하다.
+ */
+export function rollChoices(
+  count = 3,
+  traitStacks: ReadonlyMap<string, number> = new Map(),
+  coreSlots: ReadonlyMap<CoreSlot, string> = new Map(),
+): Upgrade[] {
+  const acquirable = POOL.filter((u) => (traitStacks.get(u.id) ?? 0) < u.maxStacks)
+  const emptySlots = CORE_SLOTS.filter((s) => !coreSlots.has(s))
+  const coreSlotCandidates = acquirable.filter((u) => u.slot !== 'sigil' && emptySlots.includes(u.slot as CoreSlot))
+  const sigilPool = acquirable.filter((u) => u.slot === 'sigil')
+  const ownedSigils = sigilPool.filter((u) => (traitStacks.get(u.id) ?? 0) > 0)
+  const swapCandidates = acquirable.filter(
+    (u) => u.slot !== 'sigil' && coreSlots.get(u.slot as CoreSlot) !== undefined && coreSlots.get(u.slot as CoreSlot) !== u.id,
+  )
 
-function weightedPick(pool: Upgrade[], w: Record<Rarity, number>): Upgrade {
-  const rarities = [...new Set(pool.map((u) => u.rarity))].filter((rarity) => w[rarity] > 0)
-  const total = rarities.reduce((sum, rarity) => sum + w[rarity], 0)
-  let r = Math.random() * total
-  let chosenRarity = rarities[rarities.length - 1]
-  for (const rarity of rarities) {
-    r -= w[rarity]
-    if (r <= 0) {
-      chosenRarity = rarity
-      break
+  const chosen: Upgrade[] = []
+  const takeRandom = (arr: Upgrade[]) => {
+    const pool = arr.filter((u) => !chosen.includes(u))
+    if (pool.length === 0) return null
+    const u = pool[Math.floor(Math.random() * pool.length)]
+    chosen.push(u)
+    return u
+  }
+  const fillWithSigils = (max: number, preferOwned: boolean) => {
+    if (preferOwned && ownedSigils.some((u) => !chosen.includes(u))) takeRandom(ownedSigils)
+    while (chosen.length < max) {
+      const rest = sigilPool.filter((u) => !chosen.includes(u))
+      if (!takeRandom(rest)) break
     }
   }
-  const candidates = pool.filter((u) => u.rarity === chosenRarity)
-  return candidates[Math.floor(Math.random() * candidates.length)]
-}
 
-/** 랜덤 특성 선택지 (boss=true면 고희귀 편향) */
-export function rollChoices(count = 3, boss = false, traitStacks: ReadonlyMap<string, number> = new Map()): Upgrade[] {
-  const w = boss ? BOSS_WEIGHTS : WEIGHTS
-  const pool = POOL.filter((u) => w[u.rarity] > 0 && (traitStacks.get(u.id) ?? 0) < u.maxStacks)
-  const chosen: Upgrade[] = []
-  while (chosen.length < count && pool.length > 0) {
-    const u = weightedPick(pool, w)
-    chosen.push(u)
-    pool.splice(pool.indexOf(u), 1)
+  if (coreSlotCandidates.length > 0) {
+    // 빈 핵심 슬롯 특성 최대 2장 우선 배치, 나머지는 각인
+    const slotSlots = Math.min(2, count)
+    while (chosen.length < slotSlots) {
+      if (!takeRandom(coreSlotCandidates)) break
+    }
+    fillWithSigils(count, true)
+  } else {
+    // 핵심 슬롯이 모두 찼거나(또는 후보 없음) — 각인 2장(최소 1 보유 우선) + 교체 후보 1장
+    fillWithSigils(Math.min(2, count), true)
+    if (chosen.length < count && swapCandidates.length > 0) takeRandom(swapCandidates)
+  }
+  // 그래도 자리가 남으면(모든 각인 상한 + 교체 후보 없음) 가능한 후보로 채운다
+  while (chosen.length < count) {
+    if (!takeRandom(acquirable)) break
   }
   return chosen
 }
@@ -123,13 +150,21 @@ export function upgradeById(id: string): Upgrade | undefined {
 }
 
 /**
- * 던전 제련소용: currentId 특성과 같은 등급이면서, currentId 자신이 아니고,
- * 아직 maxStacks에 도달하지 않은 교체 후보 목록.
+ * 던전 제련소용 교체 후보.
+ * 각인은 각인끼리(등급 무관, 기존엔 "같은 등급"이었으나 등급 축이
+ * 폐기됐으므로 슬롯 기준으로 대체한다), 핵심 슬롯 특성은 같은 슬롯끼리만
+ * 후보가 된다. currentId 자신과 이미 maxStacks에 도달한 항목은 제외한다.
  */
-export function forgeSwapCandidates(currentId: string, traitStacks: ReadonlyMap<string, number>): Upgrade[] {
+export function forgeSwapCandidates(
+  currentId: string,
+  traitStacks: ReadonlyMap<string, number>,
+  coreSlots: ReadonlyMap<CoreSlot, string> = new Map(),
+): Upgrade[] {
   const current = upgradeById(currentId)
   if (!current) return []
-  return POOL.filter(
-    (u) => u.rarity === current.rarity && u.id !== currentId && (traitStacks.get(u.id) ?? 0) < u.maxStacks,
-  )
+  return POOL.filter((u) => {
+    if (u.id === currentId || u.slot !== current.slot) return false
+    if (u.slot === 'sigil') return (traitStacks.get(u.id) ?? 0) < u.maxStacks
+    return coreSlots.get(u.slot as CoreSlot) !== u.id
+  })
 }

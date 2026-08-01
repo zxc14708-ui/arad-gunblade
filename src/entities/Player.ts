@@ -4,6 +4,7 @@ import { Input } from '../core/Input'
 import { CharacterSprite } from './CharacterSprite'
 import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
 import { MetaBonuses } from '../systems/MetaProgression'
+import type { CoreSlot, UpgradeSlot } from '../systems/Upgrades'
 
 /** 무기 정의 × 특성 배수로 산출되는 실효 스탯 */
 export interface PlayerStats {
@@ -68,7 +69,9 @@ function freshMods(): Mods {
     swordDamage: 1, swordRange: 1, swordCooldown: 1, moveSpeed: 1, dashCooldown: 1,
     maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0, magnetRange: 1, xpGain: 1,
     explodeOnKill: 0, swordReloads: false, dashStrike: 0,
-    swordReloadAmount: 1, swordReloadBurstBonus: 0,
+    // '발도장전'(lg_quickdraw)이 기본 메커니즘으로 승격됐다(작업 지시
+    // slot_system_phase1 커밋 3) — 검 적중 직후 총알 3발에 항상 +30% 피해.
+    swordReloadAmount: 1, swordReloadBurstBonus: 0.3,
   }
 }
 
@@ -111,8 +114,10 @@ export class Player {
   hp = 0
   stats: PlayerStats
   mods: Mods = freshMods()
-  /** 런 동안 획득한 특성별 스택 수. 선택지와 획득 검증의 단일 기준이다. */
+  /** 런 동안 획득한 각인(sigil)별 스택 수. 핵심 슬롯 특성은 여기 들어가지 않는다. */
   traitStacks = new Map<string, number>()
+  /** 핵심 슬롯(slash/shot/dash/skill) → 보유 중인 특성 id. 슬롯당 1개만 보유한다. */
+  coreSlots = new Map<CoreSlot, string>()
   gun: GunDef = START_GUN
   sword: SwordDef = START_SWORD
   private meta: MetaBonuses
@@ -133,6 +138,14 @@ export class Player {
   private dashTimer = 0
   private dashCdTimer = 0
   private dashDir = new THREE.Vector3()
+  /** 대시 시작 지점 — '표식'이 대시 종료 시 시작~끝 선분으로 관통 판정할 때 쓴다 */
+  dashStart = new THREE.Vector3()
+  /** '발도참'(slash) 발동 게이지 — 정지 상태 지속 시간 */
+  private stillTimer = 0
+  /** '조준사격'(shot) 발동 게이지 — 마지막 발사 이후 경과 시간 */
+  private aimPauseTimer = 0
+  /** '급전환'(dash) 버프 — 대시 종료 직후 남은 지속시간 */
+  private quickSwitchTimer = 0
   private chargeTimer = 0
   private chargeCdTimer = 0
   private chargeDir = new THREE.Vector3()
@@ -208,14 +221,55 @@ export class Player {
     return this.traitStacks.get(id) ?? 0
   }
 
-  canAcquireTrait(id: string, maxStacks: number) {
-    return this.traitStackCount(id) < maxStacks
+  hasCoreSlotTrait(id: string) {
+    for (const v of this.coreSlots.values()) if (v === id) return true
+    return false
+  }
+
+  /**
+   * 각인은 스택 상한 미만이면 계속 획득 가능(기존 방식). 핵심 슬롯 특성은
+   * 슬롯당 1개뿐이라 "이미 이 특성을 보유 중이 아님"이 곧 획득 가능 조건이다
+   * (다른 특성으로 슬롯을 교체하는 것은 별도 UI가 처리한다).
+   */
+  canAcquireTrait(u: { id: string; slot: UpgradeSlot; maxStacks: number }) {
+    if (u.slot === 'sigil') return this.traitStackCount(u.id) < u.maxStacks
+    return !this.hasCoreSlotTrait(u.id)
   }
 
   recordTrait(id: string) {
     const next = this.traitStackCount(id) + 1
     this.traitStacks.set(id, next)
     return next
+  }
+
+  /** 핵심 슬롯에 특성을 채운다(교체 포함) — 슬롯당 항상 1개만 남는다. */
+  setCoreSlot(slot: CoreSlot, id: string) {
+    this.coreSlots.set(slot, id)
+  }
+
+  /** 대시가 끝난 프레임에 Game이 호출한다 — '급전환'(dash)이면 버프를 건다. */
+  onDashEnd() {
+    if (this.coreSlots.get('dash') !== 'quick_switch') return
+    this.quickSwitchTimer = CONFIG.traits.quickSwitchDuration
+    this.ammo = this.magSize
+    this.reloading = false
+  }
+
+  /**
+   * 조건부 핵심 슬롯 특성의 발동 게이지(0~1)와 표시 색 — Game이 매 프레임
+   * Effects.requestGauge에 그대로 넘긴다. 동시에 여러 조건이 진행 중이면
+   * 진행률이 더 높은 쪽만 반환한다(발밑 게이지는 최대 1개).
+   */
+  conditionGauge(): { progress: number; color: string } | null {
+    const candidates: { progress: number; color: string }[] = []
+    if (this.coreSlots.get('slash') === 'iaijutsu') {
+      candidates.push({ progress: Math.min(1, this.stillTimer / CONFIG.traits.iaijutsuIdleThreshold), color: '#f97316' })
+    }
+    if (this.coreSlots.get('shot') === 'aimed_shot') {
+      candidates.push({ progress: Math.min(1, this.aimPauseTimer / CONFIG.traits.aimedShotPauseThreshold), color: '#38bdf8' })
+    }
+    if (candidates.length === 0) return null
+    return candidates.reduce((best, c) => (c.progress > best.progress ? c : best))
   }
 
   /** 무기 장착(총/검 자동 판별) — 캐릭터가 든 무기 스프라이트도 갱신 */
@@ -388,10 +442,19 @@ export class Player {
         this.dashDir.set(mv.x, 0, mv.z).normalize()
         this.dashTimer = CONFIG.player.dashDuration
         this.dashCdTimer = this.stats.dashCooldown
+        this.dashStart.copy(this.pos)
       }
     }
 
     // (방 경계 제한은 Game이 Room.clamp로 처리)
+
+    // '발도참' 발동 게이지 — 정지(이동/대시/발도 전부 없음) 상태가 이어지는 시간
+    if (this.moving || this.dashTimer > 0 || this.chargeTimer > 0) this.stillTimer = 0
+    else this.stillTimer += dt
+    // '조준사격' 발동 게이지 — 총을 쏘지 않고 흐른 시간(성공 발사 시 아래서 리셋)
+    this.aimPauseTimer += dt
+    // '급전환' 버프 지속시간
+    if (this.quickSwitchTimer > 0) this.quickSwitchTimer -= dt
 
     // M1911 장전 처리
     if (this.reloading) {
@@ -474,8 +537,14 @@ export class Player {
 
     if (input.mouseDown && this.gunTimer <= 0 && !this.reloading) {
       if (this.ammo > 0) {
+        // '최후탄'(shot) — 이번 발사가 탄창의 마지막 1발인지는 감소 전에 판정한다.
+        const isLastBullet = this.ammo === 1
+        // '조준사격'(shot) — 충분히 쉬었다 쏘는 첫 발은 확정 치명타. 발동했으면
+        // 게이지를 소모(리셋)한다. 매 프레임 아래서 다시 리셋되므로 항상 최신값이다.
+        const aimedShotReady = this.coreSlots.get('shot') === 'aimed_shot' && this.aimPauseTimer >= CONFIG.traits.aimedShotPauseThreshold
         this.gunTimer = this.stats.gunCooldown
         this.ammo--
+        this.aimPauseTimer = 0
         // 사격 모션 재생 — 총의 재장전 간격(gunCooldown)이 이 값보다 길면(산탄총·
         // 저격소총·매그넘·석궁 등) 다음 발이 나가기 전에 st.shooting이 꺼져
         // CharacterSprite의 좌우 반전 고정이 풀렸다가 다음 발에서 다시 걸리며
@@ -489,13 +558,14 @@ export class Player {
           const dir = baseDir.clone()
           const jitter = (Math.random() - 0.5) * this.stats.spread + spreadIdx
           dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), jitter)
-          const crit = this.rollCrit()
+          const crit = aimedShotReady || this.rollCrit()
           let dmg = this.stats.gunDamage * (crit ? this.stats.critMult : 1)
           // 발도장전 강화: 검으로 장전한 직후 발사하는 총알 N발에 피해 보너스
           if (this.swordReloadBurstShotsLeft > 0) {
             dmg *= 1 + this.mods.swordReloadBurstBonus
             this.swordReloadBurstShotsLeft--
           }
+          if (this.coreSlots.get('shot') === 'last_bullet' && isLastBullet) dmg *= CONFIG.traits.lastBulletMult
           bullets.push({
             // 총구 높이/전방 거리는 gunblader_gun_m1911.png 발사 프레임의 실제 총구
             // 픽셀 위치를 월드 단위로 환산한 값이다(CharacterSprite.ts GUN_SHOOT_FIX 주석 참고).
@@ -515,16 +585,25 @@ export class Player {
 
     // 검 베기 (우클릭 또는 스페이스)
     if ((input.rightDown || input.downAction('slash')) && this.swordTimer <= 0) {
-      this.swordTimer = this.stats.swordCooldown
+      // '급전환'(dash) 버프 — 대시 종료 직후 잠깐 검 쿨타임이 절반이다.
+      this.swordTimer = this.quickSwitchTimer > 0
+        ? this.stats.swordCooldown * CONFIG.traits.quickSwitchSwordCooldownMult
+        : this.stats.swordCooldown
       const crit = this.rollCrit()
+      // '발도참'(slash) — 0.5초 이상 정지 후 첫 베기는 강화된다. 발동하면 게이지를
+      // 소모(리셋)해 다시 정지해야 재충전된다.
+      const iaijutsuReady = this.coreSlots.get('slash') === 'iaijutsu' && this.stillTimer >= CONFIG.traits.iaijutsuIdleThreshold
+      if (iaijutsuReady) this.stillTimer = 0
+      const dmgMult = iaijutsuReady ? CONFIG.traits.iaijutsuDamageMult : 1
+      const kbMult = iaijutsuReady ? CONFIG.traits.iaijutsuKnockbackMult : 1
       slash = {
         pos: this.pos.clone(),
         angle: this.angle,
         arc: this.stats.swordArc,
         range: this.stats.swordRange,
-        damage: this.stats.swordDamage * (crit ? this.stats.critMult : 1),
+        damage: this.stats.swordDamage * (crit ? this.stats.critMult : 1) * dmgMult,
         crit,
-        knockback: this.stats.knockback,
+        knockback: this.stats.knockback * kbMult,
       }
       // 전방 짧은 대시
       const fwd = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))

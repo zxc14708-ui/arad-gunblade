@@ -100,16 +100,20 @@ function writeSnapshot(m) {
   L.push(rarityOrderNotes(GUNS, SWORDS))
   L.push('')
 
-  // ── 특성 ──
-  const byRarity = {}
-  for (const u of POOL) (byRarity[u.rarity] ??= []).push(u)
+  // ── 특성 (슬롯 기준 — 작업 지시 slot_system_phase1 이후 등급 축은 폐기) ──
+  const SLOT_ORDER = ['sigil', 'slash', 'shot', 'dash', 'skill']
+  const bySlot = {}
+  for (const slot of SLOT_ORDER) bySlot[slot] = POOL.filter((u) => u.slot === slot)
   // 조건부 판정: apply 본문이 mods 곱/합만 건드리는지, 트리거성 필드를 건드리는지로 나눈다.
-  const TRIGGER_FIELDS = ['explodeOnKill', 'dashStrike', 'swordReloadAmount', 'swordReloadBurstBonus', 'swordReloads']
-  const conditional = POOL.filter((u) => TRIGGER_FIELDS.some((f) => String(u.apply).includes(f)))
+  // 핵심 슬롯 특성은 apply()가 대부분 비어있고(발동 로직이 Player/Game의 조건부
+  // 판정 쪽에 있다) slot !== 'sigil' 자체가 이미 "조건부"라 트리거 필드 스캔과 별개로 넣는다.
+  const TRIGGER_FIELDS = ['explodeOnKill', 'dashStrike']
+  const conditional = POOL.filter((u) => u.slot !== 'sigil' || TRIGGER_FIELDS.some((f) => String(u.apply).includes(f)))
+  const sigils = bySlot.sigil
   L.push('## 특성')
   L.push('')
-  L.push(`총 ${POOL.length}종 — ` + Object.entries(byRarity).map(([r, list]) => `${r} ${list.length}`).join(' / '))
-  L.push(`스택 상한: ` + Object.entries(byRarity).map(([r, list]) => `${r} ${list[0].maxStacks}`).join(' / '))
+  L.push(`총 ${POOL.length}종 — ` + SLOT_ORDER.map((s) => `${s} ${bySlot[s].length}`).join(' / '))
+  L.push(`각인(sigil) 스택 상한: ${sigils.length ? sigils[0].maxStacks : '해당 없음'} · 핵심 슬롯은 슬롯당 1개(스택 없음)`)
   L.push('')
   L.push(`조건부·트리거형 ${conditional.length}종: ${conditional.map((u) => u.name).join(', ')}`)
   L.push(`나머지 ${POOL.length - conditional.length}종은 상시 배수·가산이다. 상태이상 축은 없다.`)
