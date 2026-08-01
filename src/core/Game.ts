@@ -46,9 +46,9 @@ export class Game {
   private run = new RunState()
   /** 마을 상인 전용 재고. 런 시작부터 런 종료까지 유지한다. */
   private meta = new MetaProgression()
-  /** 던전 상점방 전용 재고. 방 id 기준으로 재방문 시 유지한다. */
-  private shop: Shop | null = null
-  private shopRoomId: string | null = null
+  /** 던전 상점방 전용 재고. 방 id별로 하나씩 — 상점방과 보스 준비방(rest)을
+   *  오가도 각 방의 재고·리롤 가격·판매 상태가 서로 독립으로 유지된다. */
+  private shopRooms = new Map<string, Shop>()
   private mode: Mode = 'town'
   private state: State = 'start'
   private roomCleared = false
@@ -221,6 +221,7 @@ export class Game {
     this.wasIaido = false
     this.wasDashing = false
     this.ghostTimer = 0
+    this.shopRooms.clear()
 
     if (this.player) this.scene.remove(this.player.group)
     this.player = new Player(this.meta.bonuses())
@@ -258,8 +259,6 @@ export class Game {
     this.curPlan = null
     this.run.reset()
     this.startRun()
-    this.shop = null
-    this.shopRoomId = null
 
     // 던전 포탈 — 북쪽 문 라인 대신 마을 안쪽에 둬 상단 벽/HUD에 가리지 않게 한다.
     const p = { x: 0, z: this.room.bounds.minZ + 8 }
@@ -318,9 +317,8 @@ export class Game {
 
     // 상점 방: 상인 + 제련소 (분수는 별도 — 상점방 포함 여러 방에 배치될 수 있다)
     if (plan.kind === 'shop' || plan.kind === 'rest') {
-      if (this.shopRoomId !== plan.id) {
-        this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
-        this.shopRoomId = plan.id
+      if (!this.shopRooms.has(plan.id)) {
+        this.shopRooms.set(plan.id, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks))
       }
       this.interactables.push(new Interactable('merchant', -6, -1, plan.kind === 'rest' ? '보스전 상점' : '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
@@ -675,8 +673,9 @@ export class Game {
   // ══════════════════ 상점 ══════════════════
 
   private openShop() {
-    if (!this.shop) {
-      this.shop = new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks)
+    const roomId = this.curPlan?.id
+    if (roomId && !this.shopRooms.has(roomId)) {
+      this.shopRooms.set(roomId, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks))
     }
     this.state = 'shop'
     this.input.clearAll()
@@ -684,7 +683,8 @@ export class Game {
   }
 
   private activeShop() {
-    return this.shop
+    const roomId = this.curPlan?.id
+    return roomId ? this.shopRooms.get(roomId) ?? null : null
   }
 
   private renderShop() {

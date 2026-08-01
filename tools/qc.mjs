@@ -720,6 +720,59 @@ const STEPS = [
       })
     },
   },
+  {
+    name: 'shop-persist',
+    what: '상점 재고 유지 — 상점방↔보스 준비방을 오가도 구매/판매/리롤 상태가 리롤되지 않고, 두 방의 재고는 서로 독립',
+    async run(p) {
+      await dismissLevelUp(p)
+      const err = await p.evaluate(() => {
+        const g = window.__game
+        g.enterDungeon() // run.reset(1)을 내부에서 호출하므로 골드는 반드시 이 다음에 채운다
+        g.run.addGold(99999)
+        const rooms = g.run.minimap()
+        const shopRoom = rooms.find((r) => r.kind === 'shop')
+        const restRoom = rooms.find((r) => r.kind === 'rest')
+        if (!shopRoom || !restRoom) return '상점방 또는 보스 준비방을 찾지 못함'
+
+        g.loadRoom(g.run.enter(shopRoom.id))
+        g.openShop()
+        g.rerollShop() // 리롤 먼저 — 구매 후 리롤하면 재고 자체가 새로 생성돼 방금 산 항목의 sold가 사라지는 게 정상 동작이라 순서를 바꿔 검증한다
+        g.buyShopItem(0)
+        const shopA = g.shopRooms.get(shopRoom.id)
+        window.__qcShopBefore = { sold: shopA.items.map((it) => it.sold), rerollCount: shopA.rerollCount, items: shopA.items.length }
+        g.closeShop()
+
+        g.loadRoom(g.run.enter(restRoom.id))
+        const shopRest = g.shopRooms.get(restRoom.id)
+        window.__qcRestShop = { sold: shopRest.items.map((it) => it.sold), rerollCount: shopRest.rerollCount }
+
+        g.loadRoom(g.run.enter(shopRoom.id))
+        window.__qcShopIds = { shop: shopRoom.id, rest: restRoom.id }
+        return null
+      })
+      if (err) throw new Error(err)
+      await p.waitForTimeout(200)
+    },
+    check: async (p) => {
+      return p.evaluate(() => {
+        const g = window.__game
+        const ids = window.__qcShopIds
+        const before = window.__qcShopBefore
+        const restShop = window.__qcRestShop
+        const shopNow = g.shopRooms.get(ids.shop)
+        if (!shopNow) return '상점방 재고가 사라짐'
+        const soldNow = shopNow.items.map((it) => it.sold)
+        if (JSON.stringify(soldNow) !== JSON.stringify(before.sold)) return `상점 재복귀 시 판매 상태가 초기화됨 (${JSON.stringify(before.sold)} → ${JSON.stringify(soldNow)})`
+        if (shopNow.rerollCount !== before.rerollCount) return `상점 재복귀 시 리롤 횟수가 초기화됨 (${before.rerollCount} → ${shopNow.rerollCount})`
+        if (!before.sold.includes(true)) return '구매가 반영되지 않음 (sold 항목 없음)'
+        const restShopNow = g.shopRooms.get(ids.rest)
+        if (!restShopNow) return '보스 준비방 재고가 사라짐'
+        if (restShopNow.rerollCount !== restShop.rerollCount) return '보스 준비방 재고가 상점방 방문의 영향을 받음'
+        if (restShopNow.items.map((it) => it.sold).some((v) => v)) return '보스 준비방 재고가 상점방과 독립적이지 않음 (구매하지 않았는데 sold)'
+        return null
+      })
+    },
+  },
 ]
 
 /**
