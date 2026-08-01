@@ -16,6 +16,7 @@ export class AudioManager {
   private nextStepTime = 0
   private step = 0
   private lastHit = 0
+  private lastReloadTrigger = 0
 
   // 음량 (0..1). 설정창 슬라이더와 연동, localStorage에 저장.
   private static readonly MUSIC_BASE = 0.38
@@ -67,6 +68,46 @@ export class AudioManager {
     this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
     const data = this.noiseBuf.getChannelData(0)
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1
+
+    // M1911 실 녹음 샘플 — 로드 전/실패 시에는 각 호출부가 기존 합성음으로 대체한다.
+    this.loadSample(AudioManager.M1911_FIRE_URL)
+    this.loadSample(AudioManager.M1911_RELOAD_URL)
+    this.loadSample(AudioManager.M1911_RELOAD_TRIGGER_URL)
+  }
+
+  // ── 실 오디오 파일 샘플 (public/assets/audio/) ──
+  // BGM과 달리 SFX는 짧은 원샷이라 매번 fetch하지 않고 AudioBuffer로 캐싱해 재생한다.
+  private static readonly M1911_FIRE_URL = 'assets/audio/m1911_fire.wav'
+  private static readonly M1911_RELOAD_URL = 'assets/audio/m1911_reload.mp3'
+  private static readonly M1911_RELOAD_TRIGGER_URL = 'assets/audio/m1911_reload_trigger.wav'
+  private sampleCache = new Map<string, AudioBuffer | 'loading' | 'failed'>()
+
+  private loadSample(url: string) {
+    if (!this.ctx || this.sampleCache.has(url)) return
+    this.sampleCache.set(url, 'loading')
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status))
+        return r.arrayBuffer()
+      })
+      .then((ab) => this.ctx!.decodeAudioData(ab))
+      .then((buf) => this.sampleCache.set(url, buf))
+      .catch(() => this.sampleCache.set(url, 'failed'))
+  }
+
+  /** 캐싱된 샘플이 준비돼 있으면 재생하고 true, 아니면(로딩 중/실패) 아무 것도 안 하고 false — 호출부가 합성음 폴백 여부를 결정한다. */
+  private playSample(url: string, gain = 1) {
+    if (!this.ctx || this.muted) return false
+    const buf = this.sampleCache.get(url)
+    if (!buf || buf === 'loading' || buf === 'failed') return false
+    const src = this.ctx.createBufferSource()
+    src.buffer = buf
+    const g = this.ctx.createGain()
+    g.gain.value = gain
+    src.connect(g)
+    g.connect(this.sfxGain)
+    src.start()
+    return true
   }
 
   resume() {
@@ -175,20 +216,30 @@ export class AudioManager {
         this.tone(92, 0.08, { type: 'square', gain: 0.2, slideTo: 48 })
         break
       default:
-        // M1911 .45 — 묵직한 발사음
+        // M1911 — 실 녹음 샘플이 로드돼 있으면 그걸 쓰고, 아니면 합성음 폴백
+        if (this.playSample(AudioManager.M1911_FIRE_URL)) break
         this.noise(0.11, { type: 'lowpass', freq: 2200, slideTo: 300, gain: 0.4, q: 1 })
         this.tone(180, 0.08, { type: 'square', gain: 0.16, slideTo: 60 })
         this.noise(0.03, { type: 'highpass', freq: 4000, gain: 0.18 })
     }
   }
 
-  /** 재장전: 탄창 분리 → 삽입 → 슬라이드 (딸깍-철컥) */
-  reload() {
+  /** 재장전: 탄창 분리 → 삽입 → 슬라이드 (딸깍-철컥). M1911은 실 녹음 샘플이 준비되면 그걸 쓴다. */
+  reload(weaponId = 'm1911') {
+    if (weaponId === 'm1911' && this.playSample(AudioManager.M1911_RELOAD_URL)) return
     this.noise(0.04, { type: 'highpass', freq: 3000, gain: 0.18, delay: 0 }) // 탄창 분리 클릭
     this.noise(0.05, { type: 'bandpass', freq: 1200, gain: 0.2, delay: 0.35, q: 3 }) // 탄창 삽입
     this.tone(140, 0.05, { type: 'square', gain: 0.12, delay: 0.35 })
     this.noise(0.06, { type: 'highpass', freq: 2500, gain: 0.25, delay: 0.85 }) // 슬라이드 철컥
     this.tone(200, 0.04, { type: 'square', gain: 0.14, delay: 0.9, slideTo: 400 })
+  }
+
+  /** 장전 중 방아쇠 시도 — M1911 실 녹음 샘플만 존재, 로드 전이면 조용히 무시(합성 폴백 없음). */
+  reloadTriggerAttempt() {
+    const t = this.now()
+    if (t - this.lastReloadTrigger < 0.3) return // 장전 내내 눌려 있어도 한 번만
+    this.lastReloadTrigger = t
+    this.playSample(AudioManager.M1911_RELOAD_TRIGGER_URL, 0.8)
   }
 
   /** 탄창이 비어 방아쇠를 당겼을 때의 빈 클릭 */

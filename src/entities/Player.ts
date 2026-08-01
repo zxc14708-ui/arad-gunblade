@@ -308,12 +308,20 @@ export class Player {
     input: Input,
     aimGround: THREE.Vector3,
     activeSkillsEnabled = true,
-  ): { bullets: BulletSpec[]; slash: SlashSpec | null; chargeSlash: IaidoSpec | null; ultimate: UltimateSpec | null; startedReload: boolean } {
+  ): {
+    bullets: BulletSpec[]
+    slash: SlashSpec | null
+    chargeSlash: IaidoSpec | null
+    ultimate: UltimateSpec | null
+    startedReload: boolean
+    reloadTriggerAttempt: boolean
+  } {
     const bullets: BulletSpec[] = []
     let slash: SlashSpec | null = null
     let chargeSlash: IaidoSpec | null = null
     let ultimate: UltimateSpec | null = null
     let startedReload = false
+    let reloadTriggerAttempt = false
 
     // 조준: 마우스 지면 좌표 방향 — 검 스윙 커밋 중엔 방향 전환 차단
     if (this.swingCommitTimer <= 0) {
@@ -500,6 +508,9 @@ export class Player {
         // 마지막 탄 발사 후 자동 장전
         if (this.ammo === 0) startedReload = this.startReload()
       }
+    } else if (input.mouseDown && this.reloading) {
+      // 장전 중 방아쇠 시도 — 탄약/딜레이에는 영향 없음, 소리로만 피드백
+      reloadTriggerAttempt = true
     }
 
     // 검 베기 (우클릭 또는 스페이스)
@@ -529,7 +540,7 @@ export class Player {
     }
 
     this.syncMesh(dt)
-    return { bullets, slash, chargeSlash, ultimate, startedReload }
+    return { bullets, slash, chargeSlash, ultimate, startedReload, reloadTriggerAttempt }
   }
 
   private swingAnim = 0

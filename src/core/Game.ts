@@ -926,7 +926,7 @@ export class Game {
     // 상호작용 키 E와 충돌하지 않도록 액티브 스킬은 적이 살아 있는 전투 중에만 쓴다.
     // 방 정리 후, 상점/분수/문 앞에서는 E가 언제나 상호작용으로 동작한다.
     const activeSkillsEnabled = this.mode === 'dungeon' && this.enemies.some((enemy) => enemy.alive)
-    const { bullets, slash, chargeSlash, ultimate, startedReload } = this.player.update(dt, this.input, this.aimGround, activeSkillsEnabled)
+    const { bullets, slash, chargeSlash, ultimate, startedReload, reloadTriggerAttempt } = this.player.update(dt, this.input, this.aimGround, activeSkillsEnabled)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
@@ -937,7 +937,8 @@ export class Game {
       // More than one projectile (double shot / ultimate) needs a muzzle flash in each real firing direction.
       for (const bullet of bullets) this.effects.muzzleFlash(this.player.pos, Math.atan2(bullet.dir.x, bullet.dir.z))
     }
-    if (startedReload) this.audio.reload()
+    if (startedReload) this.audio.reload(this.player.gun.id)
+    if (reloadTriggerAttempt) this.audio.reloadTriggerAttempt()
     if (slash) {
       this.audio.slash(this.player.sword.id)
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
