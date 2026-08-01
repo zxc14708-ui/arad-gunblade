@@ -121,11 +121,28 @@ def parse_tex_defs(src):
 
 
 def parse_props_paths(src):
-    m = re.search(r'props:\s*\{(.*?)\n  \},\n  fx:', src, re.DOTALL)
+    # props 닫는 '},' 와 'fx:' 사이에 주석 줄이 끼어들 수 있어 허용한다.
+    m = re.search(r'props:\s*\{(.*?)\n  \},\n(?:\s*//[^\n]*\n)*\s*fx:', src, re.DOTALL)
     if not m:
         errors.append('assets.ts: ASSET.props 테이블을 찾지 못함')
         return {}
     return dict(re.findall(r"(\w+):\s*'([^']+)',", m.group(1)))
+
+
+def parse_fx(src):
+    """assets.ts 의 ASSET.fx 테이블: key -> {path, frames, cell:(w,h)}"""
+    m = re.search(r'\n  fx:\s*\{(.*?)\n  \},\n  monsters:', src, re.DOTALL)
+    if not m:
+        errors.append('assets.ts: ASSET.fx 테이블을 찾지 못함')
+        return {}
+    out = {}
+    for km in re.finditer(
+        r"(\w+):\s*\{\s*path:\s*'([^']+)',\s*frames:\s*(\d+),\s*cell:\s*\{\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}\s*\}",
+        m.group(1),
+    ):
+        key, path, frames, w, h = km.groups()
+        out[key] = {'path': path, 'frames': int(frames), 'cell': (int(w), int(h))}
+    return out
 
 
 # ── 이미지 측정 ──────────────────────────────────────────────────────────
@@ -310,6 +327,84 @@ def check_prop_aspect():
     print(f'Interactable ASPECT {len(aspect)}건 대조 완료')
 
 
+# ── 4. fx 시트: 선언(frames/cell) vs 실제, 경계 접촉, 중심 정렬 ──────────
+# 몬스터 시트만 검사하던 구멍(보스 charge 누락과 같은 종류)의 fx 버전.
+# ASSET.fx 각 항목이 셀 크기를 선언한 뒤로 Effects.playFx()가 그 비율로
+# 그리므로, 선언과 실제 PNG가 어긋나면 다시 눌리거나 늘어난 이펙트가 나온다.
+
+
+def measure_fx_sheet(path, frames, cell_w, cell_h):
+    """프레임별 알파(>10) bbox — 정사각을 가정하지 않는 measure_sheet 일반화판"""
+    im = Image.open(path).convert('RGBA')
+    w, h = im.size
+    px = im.load()
+    boxes = []
+    for i in range(frames):
+        x0 = i * cell_w
+        if x0 + cell_w > w or cell_h > h:
+            boxes.append(None)
+            continue
+        left = right = top = bottom = None
+        for y in range(cell_h):
+            for x in range(cell_w):
+                if px[x0 + x, y][3] > 10:
+                    if left is None or x < left:
+                        left = x
+                    if right is None or x > right:
+                        right = x
+                    if top is None or y < top:
+                        top = y
+                    if bottom is None or y > bottom:
+                        bottom = y
+        boxes.append(None if left is None else dict(left=left, right=right, top=top, bottom=bottom))
+    return dict(w=w, h=h, boxes=boxes)
+
+
+CENTER_TOL_RATIO = 0.10  # 셀 폭의 10% — 이 이상 벗어나면 경고
+
+
+def check_fx_sheets():
+    fx = parse_fx(read(ASSETS_TS))
+    print(f'{"fx":14} {"size":>10} {"cell":>9} {"frames":>7}')
+    print('-' * 50)
+    for key in sorted(fx):
+        d = fx[key]
+        full = os.path.join(PUBLIC, d['path'])
+        cw, ch = d['cell']
+        if not os.path.exists(full):
+            errors.append(f'{d["path"]}: 파일 없음')
+            continue
+        im = Image.open(full)
+        w, h = im.size
+        expect = (d['frames'] * cw, ch)
+        if (w, h) != expect:
+            errors.append(f'{d["path"]}: 실제 {w}x{h} 가 선언(frames {d["frames"]} × '
+                          f'cell {cw}x{ch} = {expect[0]}x{expect[1]}) 과 다름')
+            continue
+        print(f'{key:14} {w}x{h:<5} {cw}x{ch:>4} {d["frames"]:>7}')
+
+        m = measure_fx_sheet(full, d['frames'], cw, ch)
+        touch_frames = []
+        centers = []
+        for i, b in enumerate(m['boxes']):
+            if b is None:
+                continue
+            if b['left'] == 0 or b['right'] == cw - 1 or b['top'] == 0 or b['bottom'] == ch - 1:
+                touch_frames.append(i)
+            centers.append((b['left'] + b['right']) / 2)
+        if touch_frames:
+            warnings.append(f'{d["path"]}: 콘텐츠가 셀 경계에 닿는 프레임 {touch_frames}')
+        if centers:
+            avg_center = sum(centers) / len(centers)
+            offset = avg_center - cw / 2
+            if abs(offset) > CENTER_TOL_RATIO * cw:
+                warnings.append(
+                    f'{d["path"]}: 콘텐츠 중심이 셀 중심에서 {offset:+.0f}px 벗어남 '
+                    f'(셀 폭의 {abs(offset) / cw * 100:.0f}%, 임계 {CENTER_TOL_RATIO * 100:.0f}%)'
+                )
+    print()
+
+
 # ── 5. 고아 에셋(public/assets 전체 vs src/ 참조) — 경고만, 실패 아님 ──────
 
 ASSET_EXTS = ('.png', '.jpg', '.jpeg', '.ogg', '.mp3', '.wav')
@@ -346,6 +441,7 @@ check_player_sheet()
 check_monster_sheets()
 check_all_paths_exist()
 check_prop_aspect()
+check_fx_sheets()
 check_orphan_assets()
 
 for w in warnings:

@@ -114,14 +114,17 @@ export const ASSET = {
     coinStrip: 'assets/props/coin_strip.png',
     xpCrystal: 'assets/props/xp_crystal.png',
   },
+  // cell은 시트 한 프레임의 실측 픽셀 크기(가로×세로). 정사각이 아닌 시트를
+  // 정사각 스프라이트에 그리면 세로로 늘어나 보인다 — Effects.playFx()가
+  // 이 비율로 스프라이트 세로 스케일을 보정한다.
   fx: {
-    slash: { path: 'assets/fx/slash_strip.png', frames: 8 },
-    slashWind: { path: 'assets/fx/slash_wind_strip.png', frames: 8 },
-    death: { path: 'assets/fx/death_dissolve_strip.png', frames: 6 },
-    muzzle: { path: 'assets/fx/muzzle_flash_strip.png', frames: 8 },
-    hit: { path: 'assets/stage1/stage1_combat_effects/goblin_hit_impact_4f.png', frames: 4 },
-    ultimateCross: { path: 'assets/fx/ultimate_cross_temp_4f.png', frames: 4 },
-    iaido: { path: 'assets/fx/iaido_flash_temp_v2.png', frames: 1 },
+    slash: { path: 'assets/fx/slash_strip.png', frames: 8, cell: { w: 112, h: 64 } },
+    slashWind: { path: 'assets/fx/slash_wind_strip.png', frames: 8, cell: { w: 112, h: 64 } },
+    death: { path: 'assets/fx/death_dissolve_strip.png', frames: 6, cell: { w: 32, h: 32 } },
+    muzzle: { path: 'assets/fx/muzzle_flash_strip.png', frames: 8, cell: { w: 112, h: 64 } },
+    hit: { path: 'assets/stage1/stage1_combat_effects/goblin_hit_impact_4f.png', frames: 4, cell: { w: 16, h: 16 } },
+    ultimateCross: { path: 'assets/fx/ultimate_cross_temp_4f.png', frames: 4, cell: { w: 128, h: 128 } },
+    iaido: { path: 'assets/fx/iaido_flash_temp_v2.png', frames: 1, cell: { w: 256, h: 64 } },
   },
   monsters: {
     imp: {

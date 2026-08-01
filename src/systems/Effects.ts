@@ -143,6 +143,8 @@ export class Effects {
 
   /**
    * 스프라이트 시트 이펙트 재생 (1회, 마지막 프레임 후 제거)
+   * @param scale 가로 기준 스케일 — 세로는 셀 종횡비(cell.h / cell.w)로 유도한다.
+   *   정사각 셀(cell.w === cell.h)은 setScalar와 결과가 같다.
    * @param angle 월드 조준각 — 화면 회전으로 변환해 적용
    */
   playFx(kind: FxKind, x: number, y: number, z: number, scale: number, angle?: number) {
@@ -152,7 +154,7 @@ export class Effects {
     if (angle !== undefined) mat.rotation = -angle + Math.PI / 2
     const sp = new THREE.Sprite(mat)
     sp.position.set(x, y, z)
-    sp.scale.setScalar(scale)
+    sp.scale.set(scale, scale * (def.cell.h / def.cell.w), 1)
     this.scene.add(sp)
     this.fx.push({ sp, kind, time: 0, frames, fps: FX_FPS[kind] })
   }
@@ -184,9 +186,12 @@ export class Effects {
     mat.rotation = angle - Math.PI / 2
     const sp = new THREE.Sprite(mat)
     sp.position.set((start.x + end.x) / 2, 1.2, (start.z + end.z) / 2)
-    // 원본은 넓은 검광이 정사각 캔버스 중앙에 들어 있으므로 경로 길이에 맞춰
-    // 가로만 늘리고 세로는 캐릭터 높이보다 살짝 작게 고정한다.
-    sp.scale.set(distance * 1.2, 5.2, 1)
+    // 경로 길이에 맞춰 가로를 늘리는 의도는 유지하되, 세로는 셀 종횡비
+    // (cell.h / cell.w)로 유도한다 — 가로/세로를 독립적으로 정하면 4:1
+    // 원본 시트가 찌그러진다.
+    const width = distance * 1.2
+    const { w: cellW, h: cellH } = ASSET.fx.iaido.cell
+    sp.scale.set(width, width * (cellH / cellW), 1)
     this.scene.add(sp)
     this.fx.push({ sp, kind: 'iaido', time: 0, frames, fps: FX_FPS.iaido })
   }
