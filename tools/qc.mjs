@@ -922,6 +922,7 @@ async function walkTo(p, kind, ms = 6000) {
 const errors = []
 const results = []
 const assetReport = checkAssetIntegrity()
+checkStateSnapshot()
 
 let server = null
 let port = PORT
@@ -1050,6 +1051,25 @@ function checkAssetIntegrity() {
     console.log(out)
     errors.push('에셋 무결성 검사 실패 (tools/measure_sprites.py) — 위 출력의 "위반" 항목 참조')
     return { ok: false, output: out }
+  }
+}
+
+/**
+ * docs/STATE_SNAPSHOT.md 가 코드(config.ts/Weapons.ts/Upgrades.ts/Enemy.ts/
+ * RunState.ts/EliteAffixes.ts)와 일치하는지 정적으로 검사한다. 밸런스 수치를
+ * 고치고 `node tools/state_snapshot.mjs` 로 재생성·커밋하지 않으면 여기서
+ * QC를 막는다 — 브라우저 없이 도는 검사라 에셋 무결성 검사와 같은 자리에서,
+ * 항상 먼저 돌린다.
+ */
+function checkStateSnapshot() {
+  console.log('· 상태 스냅샷 검사 (tools/state_snapshot.mjs --check)')
+  try {
+    const out = execSync('node tools/state_snapshot.mjs --check', { cwd: ROOT, encoding: 'utf-8' })
+    console.log(out)
+  } catch (e) {
+    const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
+    console.log(out)
+    errors.push('STATE_SNAPSHOT.md 가 코드와 다름 (tools/state_snapshot.mjs --check) — 위 출력 참조')
   }
 }
 

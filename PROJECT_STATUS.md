@@ -26,6 +26,17 @@ Last updated: 2026-08-01
 - `CONFIG.economy.fountainRoomCount` is `4` (shop + boss-prep + 2 combat
   rooms), matching the actual placement `RunState.assignFountains()` already
   produced — no gameplay change, the count now matches its own definition.
+- `docs/STATE_SNAPSHOT.md` is a generated weapon/trait/enemy/economy value
+  table, produced by `node tools/state_snapshot.mjs` importing directly from
+  `config.ts`/`Weapons.ts`/`Upgrades.ts`/`Enemy.ts`/`RunState.ts`/
+  `EliteAffixes.ts` — never hand-edited. `npm run qc` runs
+  `tools/state_snapshot.mjs --check` as a static gate alongside asset
+  integrity, so a balance change without a regenerated, committed snapshot
+  fails QC. `POOL` (Upgrades.ts), `DEFS` (Enemy.ts), and `STAGES`
+  (RunState.ts) are now exported so the generator can import them. The
+  snapshot's single-target-DPS view currently surfaces 5 rarity inversions
+  (a lower-rarity weapon out-DPSing a higher one) — reporting only, not a
+  balance change in scope here.
 
 ## Verification baseline
 

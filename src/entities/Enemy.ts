@@ -24,7 +24,7 @@ interface KindDef {
   shootCd?: number
 }
 
-const DEFS: Record<EnemyKind, KindDef> = {
+export const DEFS: Record<EnemyKind, KindDef> = {
   imp: { hp: 1, speed: 1, damage: 1, xp: 1, radius: 0.6 },
   brute: { hp: 4.5, speed: 0.6, damage: 2.2, xp: 3.5, radius: 1.1 },
   shooter: { hp: 1.4, speed: 0.7, damage: 1.4, xp: 2.2, radius: 0.6, ranged: true, shootCd: 2.2 },

@@ -81,7 +81,7 @@ const RAW_POOL: Array<Omit<Upgrade, 'maxStacks'>> = [
     apply: (p) => { p.mods.gunDamage *= 1.25; p.mods.swordDamage *= 1.25; p.mods.swordReloads = true; p.recompute() } },
 ]
 
-const POOL: Upgrade[] = RAW_POOL.map((upgrade) => ({
+export const POOL: Upgrade[] = RAW_POOL.map((upgrade) => ({
   ...upgrade,
   maxStacks: DEFAULT_MAX_STACKS[upgrade.rarity],
 }))

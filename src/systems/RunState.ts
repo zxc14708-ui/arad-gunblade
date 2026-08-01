@@ -83,7 +83,7 @@ export function roomLabel(plan: Pick<RoomPlan, 'kind' | 'affix'>) {
   return ROOM_LABEL[plan.kind]
 }
 
-const STAGES = [
+export const STAGES = [
   {
     name: '검은 숲 지하',
     normalRooms: 6,

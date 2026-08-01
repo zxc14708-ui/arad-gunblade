@@ -5,3 +5,5 @@ dist
 .vite
 tsconfig.tsbuildinfo
 qc-out
+.state-snapshot-entry.ts
+.state-snapshot-bundle.mjs
