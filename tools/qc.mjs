@@ -685,6 +685,41 @@ const STEPS = [
       return null
     },
   },
+  {
+    name: 'run-reset',
+    what: '런 상태 초기화 — 마을 복귀 시 레벨/경험치/특성/골드 초기화, 시작 특성 제단 재사용 가능, 메타 성장·무기 해금은 유지',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        // 던전을 뛰어 쌓일 런 범위 상태를 결정적으로 채워둔 뒤, 스테이지
+        // 클리어 화면의 '계속하기' 버튼이 호출하는 것과 동일한 enterTown()을
+        // 직접 불러 마을 복귀 시점의 리셋 경계를 검증한다.
+        g.player.level = 7
+        g.player.xp = 42
+        g.player.recordTrait('qc-test-trait')
+        g.run.addGold(500)
+        g.startingTraitTaken = true
+        g.traitForgeUsed = true
+        window.__qcMetaBefore = JSON.stringify(g.meta.snapshot)
+        g.enterTown()
+      })
+      await p.waitForTimeout(300)
+    },
+    check: async (p) => {
+      return p.evaluate(() => {
+        const g = window.__game
+        if (g.player.level !== 1) return `레벨이 초기화되지 않음 (${g.player.level})`
+        if (g.player.xp !== 0) return `경험치가 초기화되지 않음 (${g.player.xp})`
+        if (g.player.traitStacks.size !== 0) return `특성 스택이 초기화되지 않음 (${g.player.traitStacks.size}개 남음)`
+        if (g.run.gold !== 0) return `골드가 초기화되지 않음 (${g.run.gold})`
+        if (g.startingTraitTaken !== false) return '시작 특성 제단이 다시 사용 가능한 상태가 아님'
+        if (g.traitForgeUsed !== false) return '제련소 런당 1회 플래그가 초기화되지 않음'
+        if (JSON.stringify(g.meta.snapshot) !== window.__qcMetaBefore) return '메타 성장/무기 해금이 마을 복귀로 초기화됨'
+        return null
+      })
+    },
+  },
 ]
 
 /**

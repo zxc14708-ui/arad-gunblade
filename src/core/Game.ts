@@ -197,7 +197,23 @@ export class Game {
   // ══════════════════ 게임 시작 / 씬 전환 ══════════════════
 
   private startGame() {
-    this.clearWorld()
+    this.settingsOpen = false
+    this.hud.closeSettings()
+
+    this.audio.init()
+    this.audio.resume()
+    this.audio.startMusic()
+
+    this.enterTown()
+  }
+
+  /**
+   * 런 범위 상태 초기화. 초기화 경계는 "마을 입장 시점"이지 던전 입장
+   * 시점이 아니다 — 마을의 시작 특성 제단은 던전 입장 전에 쓰는 기능이라
+   * 던전 입장 시점에 초기화하면 방금 고른 특성이 지워진다. 스테이지 2-7이
+   * 마을을 거치지 않고 이어지는 향후 설계와도 이 경계가 맞는다.
+   */
+  private startRun() {
     this.kills = 0
     this.acquired.clear()
     this.startingTraitTaken = false
@@ -205,18 +221,15 @@ export class Game {
     this.wasIaido = false
     this.wasDashing = false
     this.ghostTimer = 0
-    this.settingsOpen = false
-    this.hud.closeSettings()
 
     if (this.player) this.scene.remove(this.player.group)
     this.player = new Player(this.meta.bonuses())
+    const loadout = this.meta.loadoutWeapons().selected
+    const gun = weaponById(loadout.gunId)
+    const sword = weaponById(loadout.swordId)
+    if (gun?.kind === 'gun') this.player.equip(gun)
+    if (sword?.kind === 'sword') this.player.equip(sword)
     this.scene.add(this.player.group)
-
-    this.audio.init()
-    this.audio.resume()
-    this.audio.startMusic()
-
-    this.enterTown()
   }
 
   /** 월드(적/픽업/투사체/오브젝트) 정리 */
@@ -244,6 +257,7 @@ export class Game {
     this.roomCleared = true
     this.curPlan = null
     this.run.reset()
+    this.startRun()
     this.shop = null
     this.shopRoomId = null
 
