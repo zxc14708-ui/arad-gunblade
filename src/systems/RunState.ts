@@ -263,13 +263,13 @@ export class RunState {
 
   /**
    * 분수 배치 — 확률이 아니라 개수를 보장한다(런마다 0개가 나오는 걸 막는다).
-   * 상점방은 makePlan()에서 이미 hasFountain: true로 고정된다. 나머지
-   * (fountainRoomCount - 1)개는 전투방 중에서 고르되, 첫 분수를 후반부에서만
-   * 만나는 일이 없도록 최소 1개는 전반부(depth가 전체 방 수의 절반 이하)
-   * 전투방에서 뽑는다. 전투방이 부족하면 있는 만큼만 배치한다.
+   * 상점방과 보스 준비방은 makePlan()에서 이미 hasFountain: true로 고정된다.
+   * 나머지 (fountainRoomCount - 2)개는 전투방 중에서 고르되, 첫 분수를
+   * 후반부에서만 만나는 일이 없도록 최소 1개는 전반부(depth가 전체 방 수의
+   * 절반 이하) 전투방에서 뽑는다. 전투방이 부족하면 있는 만큼만 배치한다.
    */
   private assignFountains(roomCount: number) {
-    const extraNeeded = CONFIG.economy.fountainRoomCount - 1
+    const extraNeeded = CONFIG.economy.fountainRoomCount - 2
     if (extraNeeded <= 0) return
 
     const combatPlans = [...this.nodes.values()].map((n) => n.plan).filter((p) => p.kind === 'combat')

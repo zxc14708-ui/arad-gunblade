@@ -487,6 +487,9 @@ const STEPS = [
       if (!kinds.includes('merchant') || !kinds.includes('fountain')) return '보스 준비 장소에 상점 또는 분수가 없음'
       if (restExitIds.length !== 2 || !restExitIds.includes(boss.plan.id)) return '준비 장소가 보스방과 단일 통로로 연결되지 않음'
       if (bossExitIds.length !== 1 || bossExitIds[0] !== rest.plan.id) return '보스방에 준비 장소 외의 출입구가 있음'
+      // fountainRoomCount(4) = 상점 1 + 보스 준비 1 + 전투 2 (CONFIG.economy, DESIGN_LOG B5)
+      const fountainRooms = [...nodes.values()].filter((node) => node.plan.hasFountain)
+      if (fountainRooms.length !== 4) return `분수 방 개수가 4가 아님 (실제 ${fountainRooms.length})`
       return null
     }),
   },
