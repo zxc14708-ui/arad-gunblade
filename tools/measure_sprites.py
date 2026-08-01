@@ -52,31 +52,38 @@ def read(path):
 # ── 소스 파싱 ────────────────────────────────────────────────────────────
 
 def parse_frames(src):
-    """EnemySprite.ts 의 FRAMES 테이블: kind -> {state: count}"""
+    """EnemySprite.ts 의 FRAMES 테이블: kind -> {state: count}.
+    상태 키는 가변이다 — boss처럼 idle/walk/attack 외에 charge 등 추가
+    상태를 선언하는 kind도 있어, 먼저 kind 블록을 잡고 그 안에서
+    "키: 숫자" 쌍을 전부 수집한다."""
     m = re.search(r'const FRAMES[^=]*=\s*\{(.*?)\n\}', src, re.DOTALL)
     if not m:
         errors.append('EnemySprite.ts: FRAMES 테이블을 찾지 못함')
         return {}
     out = {}
-    for line in m.group(1).splitlines():
-        lm = re.match(r"\s*(\w+):\s*\{\s*idle:\s*(\d+),\s*walk:\s*(\d+),\s*attack:\s*(\d+)\s*\}", line)
-        if lm:
-            kind, idle, walk, attack = lm.groups()
-            out[kind] = {'idle': int(idle), 'walk': int(walk), 'attack': int(attack)}
+    for lm in re.finditer(r"(\w+):\s*\{([^}]*)\}", m.group(1)):
+        kind, body = lm.groups()
+        states = {k: int(v) for k, v in re.findall(r"(\w+):\s*(\d+)", body)}
+        if states:
+            out[kind] = states
     return out
 
 
 def parse_monster_paths(src):
-    """assets.ts 의 ASSET.monsters 테이블: kind -> {state: path}"""
+    """assets.ts 의 ASSET.monsters 테이블: kind -> {state: path}.
+    parse_frames와 마찬가지로 상태 키가 가변이므로 kind 블록을 먼저 잡고
+    그 안에서 "키: '경로'" 쌍을 전부 수집한다."""
     m = re.search(r'monsters:\s*\{(.*?)\n  \},\n  stage1:', src, re.DOTALL)
     if not m:
         errors.append('assets.ts: ASSET.monsters 테이블을 찾지 못함')
         return {}
     out = {}
     block = m.group(1)
-    for km in re.finditer(r"(\w+):\s*\{\s*idle:\s*'([^']+)',\s*walk:\s*'([^']+)',\s*attack:\s*'([^']+)',?\s*\}", block):
-        kind, idle, walk, attack = km.groups()
-        out[kind] = {'idle': idle, 'walk': walk, 'attack': attack}
+    for km in re.finditer(r"(\w+):\s*\{([^}]*)\}", block):
+        kind, body = km.groups()
+        states = dict(re.findall(r"(\w+):\s*'([^']+)'", body))
+        if states:
+            out[kind] = states
     return out
 
 
@@ -201,12 +208,19 @@ def check_monster_sheets():
     print(f'{"kind":9} {"state":7} {"size":>10} {"cell":>5} {"frames":>7} {"bodyH(med)":>11} {"ratio":>6}')
     print('-' * 64)
     for kind in kinds:
-        want = frames.get(kind)
-        rel = paths.get(kind)
+        want = frames.get(kind, {})
+        rel = paths.get(kind, {})
         if not want or not rel:
             continue
+        # kind는 양쪽에 있어도 그 안의 상태 집합이 갈라질 수 있다 — boss의
+        # charge가 정규식 미스매치로 조용히 빠졌던 사례가 정확히 이 형태였다.
+        if set(want) != set(rel):
+            errors.append(f'{kind}: EnemySprite.ts FRAMES 상태 {sorted(want)} 와 '
+                          f'assets.ts 상태 {sorted(rel)} 가 다름')
+
+        states = [s for s in want if s in rel]  # 소스에 선언된 순서 유지(idle, walk, attack, ...)
         got = {}
-        for state in ('idle', 'walk', 'attack'):
+        for state in states:
             full = os.path.join(PUBLIC, rel[state])
             if not os.path.exists(full):
                 errors.append(f'{rel[state]}: 파일 없음')
@@ -221,7 +235,7 @@ def check_monster_sheets():
         wm = got['walk']
         ref = (median(wm['heights']) / wm['cell']) if wm['heights'] else 0
 
-        for state in ('idle', 'walk', 'attack'):
+        for state in states:
             if state not in got:
                 continue
             m = got[state]
@@ -241,8 +255,8 @@ def check_monster_sheets():
                               f'(발y={[f for _, f in bad_feet]}, 기대 {m["cell"] - 1})')
             if state == 'idle' and not (0.85 <= ratio <= 1.2):
                 errors.append(f'{name}: 대기 캐릭터 크기가 걷기의 {ratio:.2f}배 (0.85~1.2 이어야 함)')
-            if state == 'attack' and not (0.5 <= ratio <= 1.2):
-                warnings.append(f'{name}: 공격 캐릭터 크기가 걷기의 {ratio:.2f}배 — 자세 때문인지 확인')
+            elif state not in ('idle', 'walk') and not (0.5 <= ratio <= 1.2):
+                warnings.append(f'{name}: {state} 캐릭터 크기가 걷기의 {ratio:.2f}배 — 자세 때문인지 확인')
         print()
 
 
