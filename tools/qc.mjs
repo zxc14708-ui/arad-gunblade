@@ -82,6 +82,34 @@ function chromePathWindows() {
 // 조작: 좌클릭 사격 · 우클릭/Space 베기 · Shift+이동 대시 · R 장전 · E 상호작용 · Tab 설정
 const aim = (p, dx) => p.mouse.move(VIEW.width / 2 + dx, VIEW.height / 2)
 
+/**
+ * 화면 고정 오프셋이 아니라 실제 월드 좌표(x, z)를 조준한다 — 지면(y=0) 평면
+ * 기준으로 카메라 투영한 뒤 캔버스 픽셀 좌표로 마우스를 옮긴다. Game.ts의
+ * aimPlane(y=0)·raycaster 조준 경로를 반대로 밟는 것과 같아서, 이 함수로
+ * 옮긴 지점을 그대로 클릭하면 실제로 그 좌표를 조준한 것과 동일하게 처리된다
+ * (zoomShot()의 project() 패턴 재사용, y 오프셋만 0으로 — aimPlane이 y=0).
+ */
+async function aimAtPoint(p, x, z) {
+  const pt = await p
+    .evaluate(({ x, z }) => {
+      const g = window.__game
+      if (!g?.player?.pos || !g?.camera) return null
+      const v = g.player.pos.clone()
+      v.set(x, 0, z)
+      v.project(g.camera)
+      const canvas = document.querySelector('canvas')
+      const rect = canvas?.getBoundingClientRect()
+      if (!rect) return null
+      return {
+        sx: rect.left + ((v.x + 1) / 2) * rect.width,
+        sy: rect.top + ((-v.y + 1) / 2) * rect.height,
+      }
+    }, { x, z })
+    .catch(() => null)
+  if (!pt) return
+  await p.mouse.move(pt.sx, pt.sy)
+}
+
 const STEPS = [
   {
     name: 'town-idle',
@@ -278,6 +306,101 @@ const STEPS = [
       }
       await p.waitForTimeout(200)
     },
+  },
+  {
+    name: 'aimed-density',
+    what: '조준 밀도 표본 — 실제 적 좌표를 조준해 검 스윙/총알 관통 계측(이슈 6)이 의미 있는 표본을 얻는가',
+    async run(p) {
+      await dismissLevelUp(p)
+      // 이하 실측 사거리/쿨다운은 계측 목적의 트리거일 뿐 게임플레이 수치를
+      // 바꾸지 않는다 — 매 시행마다 내부 타이머를 직접 0으로 되돌려 쿨다운
+      // 대기를 생략한다(맞는 수 분포는 쿨다운 길이와 무관하다). 총알은 실제
+      // 비행 시간만큼은 그대로 기다린다 — 관통 판정은 프레임마다 실제로
+      // 이동해야 나온다.
+      const MELEE_TRIALS = 55
+      const RANGED_TRIALS = 55
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.pos.set(0, 0, 0)
+      })
+      for (let i = 0; i < MELEE_TRIALS; i++) {
+        await dismissLevelUp(p) // 클러스터 처치로 레벨업 모달이 뜨면 게임 시계가 멈춘다
+        const target = await p.evaluate(() => {
+          const g = window.__game
+          g.debugClearEnemies()
+          // 스폰된 브루트에게 접촉당해 플레이어가 죽으면(gameover) 게임 시계가
+          // 영구히 멈춘다 — 이 스텝의 목적은 명중 밀도 계측이지 생존 검증이
+          // 아니므로, 시행마다 접촉 피해를 원천 차단한다.
+          g.player.invuln = 5
+          const dist = 1.5 + Math.random() * 3.5 // 카타나 range 5.4 안쪽
+          const angle = (Math.random() - 0.5) * (Math.PI / 3) // 아크 0.7π 절반(63°) 안쪽 여유
+          const bx = g.player.pos.x + Math.sin(angle) * dist
+          const bz = g.player.pos.z - Math.cos(angle) * dist
+          const count = 1 + Math.floor(Math.random() * 3)
+          for (let n = 0; n < count; n++) {
+            const e = g.debugSpawnEnemy('brute')
+            e.pos.set(bx + (Math.random() - 0.5) * 1.2, 0, bz + (Math.random() - 0.5) * 1.2)
+          }
+          return { x: bx, z: bz }
+        })
+        await aimAtPoint(p, target.x, target.z)
+        await p.evaluate(() => {
+          window.__game.player.swordTimer = 0
+        })
+        await p.mouse.down({ button: 'right' })
+        await waitGame(p, 0.05) // resolveSlash가 처리될 최소 한 프레임
+        await p.mouse.up({ button: 'right' })
+      }
+      await p.evaluate(() => {
+        window.__qcAimedDensityGunReady = window.__game.debugEquipWeapons('rifle', 'katana') // pierce 3 — 관통 표본 확보용
+      })
+      for (let i = 0; i < RANGED_TRIALS; i++) {
+        await dismissLevelUp(p)
+        const nearest = await p.evaluate(() => {
+          const g = window.__game
+          g.debugClearEnemies()
+          // Projectiles.clear()은 removeBullet()을 거치지 않고 배열을 바로
+          // 비운다 — qcDebugHooks의 관통 계측은 removeBullet() 래핑으로만
+          // 기록되므로, clear()를 쓰면 직전 시행에서 아직 사거리/수명이 남아
+          // 날아가던(이미 명중은 기록된) 총알의 표본이 통째로 사라진다.
+          // removeBullet()을 직접 호출해 남은 총알을 정리하며 표본을 보존한다.
+          for (let bi = g.projectiles.bullets.length - 1; bi >= 0; bi--) g.projectiles.removeBullet(bi)
+          g.player.invuln = 5
+          const angle = (Math.random() - 0.5) * 0.15 // 총기 spread 폭 안쪽 — 일직선 관통 유도
+          const dirX = Math.sin(angle)
+          const dirZ = -Math.cos(angle)
+          const count = 1 + Math.floor(Math.random() * 3)
+          let nearestPos = null
+          let d = 2 + Math.random() * 1.5
+          for (let n = 0; n < count; n++) {
+            const e = g.debugSpawnEnemy('brute')
+            e.pos.set(g.player.pos.x + dirX * d, 0, g.player.pos.z + dirZ * d)
+            if (!nearestPos) nearestPos = { x: e.pos.x, z: e.pos.z }
+            d += 1.5 + Math.random() * 1
+          }
+          g.player.ammo = g.player.magSize
+          g.player.reloading = false
+          g.player.gunTimer = 0
+          return nearestPos
+        })
+        await aimAtPoint(p, nearest.x, nearest.z)
+        await p.mouse.down()
+        await waitGame(p, 0.35) // 총알이 대열을 관통해 사라질 때까지(관통 소진/사거리 만료)
+        await p.mouse.up()
+      }
+      await p.evaluate(() => {
+        const g = window.__game
+        for (let bi = g.projectiles.bullets.length - 1; bi >= 0; bi--) g.projectiles.removeBullet(bi)
+        g.debugEquipWeapons('m1911', 'katana')
+        g.debugClearEnemies()
+      })
+    },
+    check: async (p) => p.evaluate(() => {
+      if (!window.__qcAimedDensityGunReady) return 'QC 무기 교체 훅이 실패함(rifle)'
+      const log = window.__game.debugGetDensityLog?.()
+      if (!log) return '밀도 계측 훅이 없음'
+      return null
+    }),
   },
   // ── 이하 보스/엘리트 접두사 — 절차 생성 던전에서는 매 실행마다 나온다는
   // 보장이 없어(보스방은 8개 방 완주, 특정 접두사는 확률) 정상 플레이 경로로는
@@ -1334,7 +1457,10 @@ async function contactSheet(page) {
   ${cards}`
   const p2 = await ctx.newPage()
   await p2.setViewportSize({ width: 1320, height: 900 })
-  await p2.setContent(html)
+  // base64로 25단계×2장을 인라인한 큰 페이지라, 느려진 샌드박스에서는 기본
+  // 30초 내비게이션 타임아웃을 넘길 수 있다(실측: 0.11배속 환경에서 초과) —
+  // 이건 요약 리포트 생성 단계일 뿐 게임 로직과 무관하므로 타임아웃만 늘린다.
+  await p2.setContent(html, { timeout: 120000 })
   await p2.screenshot({ path: join(OUT, 'contact.png'), fullPage: true })
   await p2.close()
 }
