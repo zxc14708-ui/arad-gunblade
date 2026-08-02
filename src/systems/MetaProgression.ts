@@ -102,8 +102,11 @@ export class MetaProgression {
     }
   }
 
-  grantStageClear(): MetaReward {
-    const reward = { ...CONFIG.meta.rewards.stageClear }
+  /** reward는 스테이지 정의(RunState.StageDef.reward)에서 받는다 — 이번 작업
+   * 지시(P2_prompt_stage_data_and_continuous_run_1 커밋1) 전에는
+   * CONFIG.meta.rewards.stageClear 단일값이었다. */
+  grantStageClear(reward: MetaReward): MetaReward {
+    reward = { ...reward }
     this.profile.crystals.faint += reward.faint
     this.profile.crystals.decent += reward.decent
     this.profile.crystals.strong += reward.strong

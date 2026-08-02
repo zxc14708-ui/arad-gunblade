@@ -83,12 +83,89 @@ export function roomLabel(plan: Pick<RoomPlan, 'kind' | 'affix'>) {
   return ROOM_LABEL[plan.kind]
 }
 
-export const STAGES = [
+/** 전투방(일반) 적 등장표 한 줄. weight는 병렬 정규화 가중치가 아니라
+ * 누적 임계값이다 — enemiesFor()가 배열 순서대로 "r < weight"를 검사해
+ * 처음 만족하는 항목을 고른다(기존 depth>=3 && r<0.2 같은 중첩 조건문을
+ * 그대로 데이터로 옮긴 것). 배열의 마지막 항목은 나머지 전부를 흡수하는
+ * 폴백이라 보통 weight: 1을 둔다. */
+export interface StageEnemyEntry {
+  kind: EnemyKind
+  weight: number
+  minDepth: number
+}
+
+export interface StageDef {
+  id: number
+  name: string
+  normalRooms: number
+  difficulty: {
+    baseHp: number
+    baseDmg: number
+    baseXp: number
+    /** depth 1당 hpMul 증가율 (기존 하드코딩 0.17) */
+    depthHpStep: number
+    /** depth 1당 dmgMul 증가율 (기존 하드코딩 0.1) */
+    depthDmgStep: number
+  }
+  /** 일반 전투방(combat) 적 구성표 — enemiesFor()가 읽는다. 엘리트/보물/보스방
+   * 구성은 이번 작업 지시 범위 밖(스키마에 명시된 필드가 아님)이라 기존
+   * 하드코딩된 확률을 그대로 둔다. */
+  enemies: StageEnemyEntry[]
+  boss: { kind: EnemyKind }
+  art: {
+    floor: string
+    foreground: {
+      treeA: string
+      treeB: string
+      bushA: string
+      bushB: string
+      stoneA: string
+      stoneB: string
+      vineTop: string
+    }
+    campfire: string
+  }
+  /** 방 종류별 크기. 'elite'는 기존과 동일하게 'combat' 크기로 대체한다
+   * (기존 코드가 SIZES['elite'] 미존재 시 SIZES.combat으로 폴백하던 것과 동일). */
+  roomSize: Record<'combat' | 'treasure' | 'shop' | 'rest' | 'boss', { w: number; d: number }>
+  reward: { faint: number; decent: number; strong: number; tokens: number }
+}
+
+export const STAGES: StageDef[] = [
   {
+    id: 1,
     name: '검은 숲 지하',
     normalRooms: 6,
-    baseHp: 1.0,
-    baseDmg: 1.0,
+    difficulty: { baseHp: 1.0, baseDmg: 1.0, baseXp: 1.0, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    // 기존 combat 블록: depth>=3 && r<0.2 → brute, depth>=2 && r<0.5 → shooter, else imp.
+    // enemiesFor()의 누적 임계값 검사로 그대로 옮겼다(표본 검사로 확인, 최종 보고 참고).
+    enemies: [
+      { kind: 'brute', weight: 0.2, minDepth: 3 },
+      { kind: 'shooter', weight: 0.5, minDepth: 2 },
+      { kind: 'imp', weight: 1, minDepth: 1 },
+    ],
+    boss: { kind: 'boss' },
+    art: {
+      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      foreground: {
+        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
+        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
+        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
+        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
+        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
+        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
+        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+      },
+      campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
+    },
+    roomSize: {
+      combat: { w: 42, d: 30 },
+      treasure: { w: 34, d: 26 },
+      shop: { w: 38, d: 26 },
+      rest: { w: 38, d: 26 },
+      boss: { w: 50, d: 36 },
+    },
+    reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
   },
 ]
 
@@ -141,17 +218,30 @@ export class RunState {
   private muls(depth: number) {
     const c = this.cfg
     return {
-      hpMul: c.baseHp * (1 + (depth - 1) * 0.17),
-      dmgMul: c.baseDmg * (1 + (depth - 1) * 0.1),
+      hpMul: c.difficulty.baseHp * (1 + (depth - 1) * c.difficulty.depthHpStep),
+      dmgMul: c.difficulty.baseDmg * (1 + (depth - 1) * c.difficulty.depthDmgStep),
       speedMul: Math.min(1.7, 1 + (depth - 1) * 0.035),
     }
+  }
+
+  /** 일반 전투방 적 1명 선택 — 스테이지 정의의 enemies 표를 읽는다(작업 지시
+   * P2_prompt_stage_data_and_continuous_run_1 커밋1). 배열 순서대로 "r < weight"를
+   * 검사해 처음 만족하는(그리고 depth >= minDepth인) 항목을 고른다 — 기존
+   * depth>=3 && r<0.2 → brute 같은 중첩 조건문과 동일한 결과를 낸다. */
+  private enemiesFor(depth: number): EnemyKind {
+    const r = Math.random()
+    const eligible = this.cfg.enemies.filter((e) => depth >= e.minDepth)
+    for (const e of eligible) {
+      if (r < e.weight) return e.kind
+    }
+    return eligible[eligible.length - 1]?.kind ?? this.cfg.enemies[this.cfg.enemies.length - 1].kind
   }
 
   private makePlan(id: string, depth: number, kind: RoomKind, x: number, y: number): RoomPlan {
     const m = this.muls(depth)
     if (kind === 'boss') {
       const adds: EnemyKind[] = ['imp', 'imp', 'brute', 'shooter', 'shooter']
-      return { id, kind, enemies: ['boss', ...adds], chests: 0, x, y, depth, hasFountain: false, ...m }
+      return { id, kind, enemies: [this.cfg.boss.kind, ...adds], chests: 0, x, y, depth, hasFountain: false, ...m }
     }
     if (kind === 'shop' || kind === 'rest') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
     if (kind === 'elite') {
@@ -173,13 +263,7 @@ export class RunState {
     }
 
     const count = Math.ceil((4 + Math.floor(depth * 1.2) + Math.floor(Math.random() * 3)) * CONFIG.spawn.roomDensity)
-    const enemies: EnemyKind[] = []
-    for (let i = 0; i < count; i++) {
-      const r = Math.random()
-      if (depth >= 3 && r < 0.2) enemies.push('brute')
-      else if (depth >= 2 && r < 0.5) enemies.push('shooter')
-      else enemies.push('imp')
-    }
+    const enemies: EnemyKind[] = Array.from({ length: count }, () => this.enemiesFor(depth))
     return { id, kind, enemies, chests: Math.random() < 0.4 ? 1 : 0, x, y, depth, hasFountain: false, ...m }
   }
 

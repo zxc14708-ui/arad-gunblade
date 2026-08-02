@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { dungeonWallTex, townFloorTex, townWallTex } from '../rendering/tiles'
-import { ASSET, cloneTex, loadTex } from '../rendering/assets'
+import { cloneTex, loadTex } from '../rendering/assets'
 import type { Direction } from './RunState'
 
 const TORCH_FRAMES = 3
@@ -21,7 +21,27 @@ export interface Bounds {
   maxZ: number
 }
 
-const SIZES: Record<string, { w: number; d: number }> = {
+export interface RoomArt {
+  floor: string
+  foreground: {
+    treeA: string
+    treeB: string
+    bushA: string
+    bushB: string
+    stoneA: string
+    stoneB: string
+    vineTop: string
+  }
+  campfire: string
+}
+
+/**
+ * 방 크기 기본값 — 스테이지 정의(RunState.StageDef.roomSize)가 우선이고, 이건
+ * town(스테이지 콘텐츠가 아님) 및 스테이지가 특정 종류를 명시하지 않았을 때
+ * 쓰는 폴백이다(작업 지시 P2_prompt_stage_data_and_continuous_run_1 커밋1 —
+ * "스테이지별 미지정 시 쓸 기본값은 남겨도 된다").
+ */
+export const DEFAULT_ROOM_SIZES: Record<string, { w: number; d: number }> = {
   combat: { w: 42, d: 30 },
   treasure: { w: 34, d: 26 },
   shop: { w: 38, d: 26 },
@@ -44,9 +64,12 @@ export class Room {
   private torchMap: THREE.Texture | null = null
   private torchTime = 0
 
-  constructor(scene: THREE.Scene, sizeKey: string, visual: RoomVisualKind) {
+  /** size/art는 호출부(Game.ts)가 스테이지 정의에서 뽑아 넘긴다 — Room 자신은
+   * 더 이상 ASSET.stage1을 직접 참조하지 않는다(작업 지시 커밋1). art는
+   * town(visual==='town')에서는 안 쓰여 생략할 수 있다. */
+  constructor(scene: THREE.Scene, size: { w: number; d: number }, visual: RoomVisualKind, art?: RoomArt) {
     this.scene = scene
-    const s = SIZES[sizeKey] ?? SIZES.combat
+    const s = size
     this.w = s.w
     this.d = s.d
     const halfW = this.w / 2
@@ -55,7 +78,7 @@ export class Room {
     this.bounds = { minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }
 
     const useForestBackdrop = visual !== 'town'
-    const floorTex = useForestBackdrop ? loadTex(ASSET.stage1.floor) : townFloorTex()
+    const floorTex = useForestBackdrop ? loadTex(art!.floor) : townFloorTex()
     const wallTex = visual === 'town' ? townWallTex() : dungeonWallTex()
 
     // ── 바닥 (카메라 시야를 항상 채우도록 벽 바깥까지 타일링해 연장) ──
@@ -110,7 +133,7 @@ export class Room {
         decor.position.set(x, 0.035, z)
         this.group.add(decor)
       }
-      const fg = ASSET.stage1.foreground
+      const fg = art!.foreground
       addDecor(fg.treeA, -halfW + 4, -halfD + 4.2, 4.2, 5.6)
       addDecor(fg.treeB, halfW - 4, -halfD + 4.2, 4.2, 5.6)
       addDecor(fg.bushA, -halfW + 3.2, halfD - 2.3, 2.6, 1.75)
@@ -122,7 +145,7 @@ export class Room {
 
     // ── 장식: 벽면 횃불 (2프레임 애니메이션) ──
     if (visual !== 'town') {
-      this.torchMap = cloneTex(ASSET.stage1.effects.campfire)
+      this.torchMap = cloneTex(art!.campfire)
       this.torchMap.repeat.set(1 / TORCH_FRAMES, 1)
       const torchMat = noOutline(
         new THREE.SpriteMaterial({ map: this.torchMap, transparent: true, depthWrite: false }),

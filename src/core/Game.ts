@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { CONFIG, COLORS } from '../config'
 import { Input } from './Input'
-import { Room, RoomVisualKind } from '../systems/Room'
+import { Room, RoomVisualKind, DEFAULT_ROOM_SIZES } from '../systems/Room'
 import { RunState, RoomPlan, ROOM_ICON, roomLabel, Direction, OPPOSITE } from '../systems/RunState'
 import { Player } from '../entities/Player'
 import { Enemy, EnemyAction, EnemyKind } from '../entities/Enemy'
@@ -261,7 +261,7 @@ export class Game {
   private enterTown() {
     this.clearWorld()
     this.room?.dispose()
-    this.room = new Room(this.scene, 'town', 'town')
+    this.room = new Room(this.scene, DEFAULT_ROOM_SIZES.town, 'town')
     this.mode = 'town'
     this.state = 'play'
     this.roomCleared = true
@@ -305,7 +305,11 @@ export class Game {
     this.clearWorld()
     this.room?.dispose()
     const visual: RoomVisualKind = plan.kind === 'boss' ? 'boss' : 'dungeon'
-    this.room = new Room(this.scene, plan.kind, visual)
+    // 'elite'는 스테이지 정의에 크기가 없다 — 기존에도 SIZES['elite'] 미존재로
+    // SIZES.combat 폴백이었던 것과 동일하게 'combat' 크기를 쓴다.
+    const sizeKey = plan.kind === 'elite' ? 'combat' : plan.kind
+    const size = this.run.cfg.roomSize[sizeKey as keyof typeof this.run.cfg.roomSize] ?? DEFAULT_ROOM_SIZES[sizeKey] ?? DEFAULT_ROOM_SIZES.combat
+    this.room = new Room(this.scene, size, visual, this.run.cfg.art)
     this.curPlan = plan
     this.state = 'play'
 
@@ -426,7 +430,7 @@ export class Game {
   private onStageClear() {
     this.state = 'clear'
     this.audio.levelup()
-    const reward = this.meta.grantStageClear()
+    const reward = this.meta.grantStageClear(this.run.cfg.reward)
     this.hud.showStageClear(this.run.stage, this.kills, this.run.gold, this.player.level, reward)
   }
 

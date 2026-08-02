@@ -68,7 +68,7 @@
 메타(영구) 강화 — 런 골드가 아닌 결정/증표로 구매한다.
 - 공격 숙련 단계당 +4% / 체력 단계당 +10
 - 단계 비용: faint 3 → faint 6 → decent 3 → decent 6 → strong 2
-- 스테이지 클리어 보상: faint 3, decent 1, strong 1, tokens 2 · 엘리트 증표 1
+- 스테이지 클리어 보상(스테이지 1): faint 3, decent 1, strong 1, tokens 2 · 엘리트 증표 1
 - 무기 해금 가격(증표): common 0 / rare 3 / epic 7 / legendary 15
 
 ## 플레이어

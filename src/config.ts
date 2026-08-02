@@ -156,8 +156,9 @@ export const CONFIG = {
       reviveCost: { decent: 5, strong: 3 },
       wardCost: { decent: 3, strong: 2 },
     },
+    // stageClear 보상은 RunState.StageDef.reward로 옮겼다(스테이지별로 다르게
+    // 두기 위함, 작업 지시 P2_prompt_stage_data_and_continuous_run_1 커밋1).
     rewards: {
-      stageClear: { faint: 3, decent: 1, strong: 1, tokens: 2 },
       eliteToken: 1,
     },
     weaponPrice: { common: 0, rare: 3, epic: 7, legendary: 15 },

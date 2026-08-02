@@ -147,7 +147,7 @@ function writeSnapshot(m) {
   L.push('메타(영구) 강화 — 런 골드가 아닌 결정/증표로 구매한다.')
   L.push(`- 공격 숙련 단계당 +${(CONFIG.meta.altar.damagePerRank * 100).toFixed(0)}% / 체력 단계당 +${CONFIG.meta.altar.maxHpPerRank}`)
   L.push(`- 단계 비용: ${CONFIG.meta.altar.rankCosts.map((c) => `${c.kind} ${c.amount}`).join(' → ')}`)
-  L.push(`- 스테이지 클리어 보상: ${Object.entries(CONFIG.meta.rewards.stageClear).map(([k, v]) => `${k} ${v}`).join(', ')} · 엘리트 증표 ${CONFIG.meta.rewards.eliteToken}`)
+  L.push(`- 스테이지 클리어 보상(스테이지 1): ${Object.entries(STAGES[0].reward).map(([k, v]) => `${k} ${v}`).join(', ')} · 엘리트 증표 ${CONFIG.meta.rewards.eliteToken}`)
   L.push(`- 무기 해금 가격(증표): ${Object.entries(CONFIG.meta.weaponPrice).map(([k, v]) => `${k} ${v}`).join(' / ')}`)
   L.push('')
 
