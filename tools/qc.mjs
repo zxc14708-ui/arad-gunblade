@@ -338,6 +338,7 @@ const STEPS = [
   },
   {
     name: 'combat',
+    needs: 'dungeon',
     what: '전투 — 피격 이펙트 / 데미지 숫자 / 사망 연출',
     async run(p) {
       for (let i = 0; i < 5; i++) {
@@ -354,6 +355,7 @@ const STEPS = [
   },
   {
     name: 'aimed-density',
+    needs: 'dungeon',
     what: '조준 밀도 표본 — 실제 적 좌표를 조준해 검 스윙/총알 관통 계측(이슈 6)이 의미 있는 표본을 얻는가',
     async run(p) {
       await dismissLevelUp(p)
@@ -453,6 +455,7 @@ const STEPS = [
   // 현재 방에 직접 스폰해 상태머신 타이밍·접두사 효과를 검증한다.
   {
     name: 'active-skills',
+    needs: 'dungeon',
     what: 'Q 발도 · E 더블 샷 · R 폭렬 난무 — 경로 이동/무적/탄약/쿨다운/마무리 충격파',
     async run(p) {
       await dismissLevelUp(p)
@@ -496,6 +499,7 @@ const STEPS = [
   },
   {
     name: 'iaido',
+    needs: 'dungeon',
     what: '발도 — 적을 관통해 검 공격력 비례 피해를 주고 이동 중 무적·종료 직후 보호가 적용되는가',
     async run(p) {
       await p.evaluate(() => {
@@ -565,6 +569,7 @@ const STEPS = [
   },
   {
     name: 'trait-slots',
+    needs: 'dungeon',
     what: '핵심 슬롯 특성(작업 지시 slot_system_phase1 커밋 3) — 발도참/조준사격/최후탄/표식/급전환 실제 발동과 슬롯 교체 UI',
     async run(p) {
       await dismissLevelUp(p)
@@ -721,8 +726,8 @@ const STEPS = [
       // ── 슬롯 교체 UI — 이미 찬 슬롯에 다른 특성을 고르면 "유지/교체" 카드가 나란히 뜨는가 ──
       const swapUi = await p.evaluate(() => {
         const g = window.__game
-        const current = { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', rarity: 'epic' }
-        const incoming = { id: 'last_bullet', name: '최후탄', desc: '', icon: '🎯', rarity: 'epic' }
+        const current = { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', slot: 'shot' }
+        const incoming = { id: 'last_bullet', name: '최후탄', desc: '', icon: '🎯', slot: 'shot' }
         g.hud.showSlotSwap(current, incoming, () => {})
         const cards = document.querySelectorAll('#cards .card')
         const tags = [...document.querySelectorAll('#cards .ctag')].map((el) => el.textContent)
@@ -782,6 +787,7 @@ const STEPS = [
   },
   {
     name: 'midcost-slash',
+    needs: 'dungeon',
     what: '일섬/이도류(작업 지시 slot_traits_midcost_v2 커밋1) — 단일 명중 배수, 2연타 각 60%+지연+온힛 2회',
     async run(p) {
       await dismissLevelUp(p)
@@ -924,6 +930,7 @@ const STEPS = [
   },
   {
     name: 'midcost-parry',
+    needs: 'dungeon',
     what: '흘리기(작업 지시 slot_traits_midcost_v2 커밋2) — 부채꼴 안 적 탄환 반사(검 피해 60%, 역방향), 성공 시에만 피드백',
     async run(p) {
       await dismissLevelUp(p)
@@ -987,6 +994,7 @@ const STEPS = [
   },
   {
     name: 'midcost-shot-dash',
+    needs: 'dungeon',
     what: '도탄/잔영(작업 지시 slot_traits_midcost_v2 커밋3) — 관통 소진 후 튕김(관통과 비배타), 대시 무적 피격 시 쿨 초기화(1회 한정, 피격후무적 제외)',
     async run(p) {
       await dismissLevelUp(p)
@@ -1166,6 +1174,7 @@ const STEPS = [
   },
   {
     name: 'fire-goblin',
+    needs: 'dungeon',
     what: '화염구 고블린 — 적정 거리에서 측면 이동하고 2배 크기 화염구를 발사하는가',
     async run(p) {
       await p.evaluate(() => {
@@ -1213,6 +1222,7 @@ const STEPS = [
   },
   {
     name: 'critical-south-edge',
+    needs: 'dungeon',
     what: '치명타 숫자·하단 가림 — 원거리 치명타도 붉고 적이 남쪽 전경 안쪽에 제한되는가',
     async run(p) {
       await p.evaluate(() => {
@@ -1241,6 +1251,7 @@ const STEPS = [
   },
   {
     name: 'boss-prep',
+    needs: 'dungeon',
     what: '보스 준비 장소 — 적 없이 상점·분수로 보스방 하나만 연결되는가',
     async run(p) {
       await p.evaluate(() => {
@@ -1296,6 +1307,7 @@ const STEPS = [
   },
   {
     name: 'boss-charge',
+    needs: 'dungeon',
     what: '보스 돌진 — 예고(0.7s)→돌진(1.0s,3.5배속)→경직(1.2s) 타이밍',
     async run(p) {
       // 09-combat 에서 처치한 적의 경험치로 레벨업 모달이 뜬 채 남아있을 수
@@ -1332,6 +1344,7 @@ const STEPS = [
   },
   {
     name: 'boss-slam',
+    needs: 'dungeon',
     what: '보스 슬램 — 예고(0.9s, 바닥 경고)→발동(반경7·2배피해)→경직(1.0s) 타이밍',
     async run(p) {
       await dismissLevelUp(p)
@@ -1361,6 +1374,7 @@ const STEPS = [
   },
   {
     name: 'boss-phase2',
+    needs: 'dungeon',
     what: '보스 2페이즈 — 체력 50% 시점 1회성 전환(배너·예고/경직 단축)',
     async run(p) {
       await dismissLevelUp(p)
@@ -1394,6 +1408,7 @@ const STEPS = [
   },
   {
     name: 'elite-ward-thorns',
+    needs: 'dungeon',
     what: '엘리트 접두사 — 보호막(피격 흡수) / 가시(근접 반사 25%)',
     async run(p) {
       await dismissLevelUp(p)
@@ -1421,6 +1436,7 @@ const STEPS = [
   },
   {
     name: 'elite-regen',
+    needs: 'dungeon',
     what: '엘리트 접두사 — 재생(피격 후 2초 지연, 초당 최대체력 3% 회복)',
     async run(p) {
       await dismissLevelUp(p)
@@ -1446,6 +1462,7 @@ const STEPS = [
   },
   {
     name: 'elite-split-volatile-swift',
+    needs: 'dungeon',
     what: '엘리트 접두사 — 분열(사망 시 자식 2) / 폭발(사망 시 광역) / 신속(이동속도↑)',
     async run(p) {
       await dismissLevelUp(p)
@@ -1583,6 +1600,70 @@ const STEPS = [
       })
     },
   },
+  {
+    name: 'trait-slot-badges',
+    what: '특성 rarity → 슬롯 배지 전환(작업 지시 skill_slot_and_rarity 커밋1) — 레벨업/상점/보유 목록은 슬롯으로, 무기 등급 표기는 그대로인가',
+    async run(p) {
+      const levelUp = await p.evaluate(() => {
+        const g = window.__game
+        const sigil = { id: 'hp', name: '강인한 육체', desc: '', icon: '❤️', slot: 'sigil', maxStacks: 3, apply: () => {} }
+        const slash = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'slash', maxStacks: 1, apply: () => {} }
+        g.hud.showLevelUp('레벨 업!', '', [sigil, slash], () => {})
+        const cards = [...document.querySelectorAll('#cards .card')]
+        const result = cards.map((c) => ({ className: c.className, crar: c.querySelector('.crar')?.textContent }))
+        document.querySelector('#levelOv')?.classList.remove('show')
+        return result
+      })
+      const shop = await p.evaluate(() => {
+        const g = window.__game
+        g.hud.renderShop(
+          [
+            { icon: '💫', name: '일섬', desc: '', badgeClass: 'slot-slash', price: 90, sold: false, tag: '특성' },
+            { icon: '🗡️', name: '카타나', desc: '', badgeClass: 'common', price: 35, sold: false, tag: '검' },
+          ],
+          500, 20,
+        )
+        const items = [...document.querySelectorAll('#shopItems .shop-item')].map((el) => el.className)
+        g.hud.closeShop()
+        return items
+      })
+      const settings = await p.evaluate(() => {
+        const g = window.__game
+        const slash = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'slash', maxStacks: 1, apply: () => {} }
+        const prevAcquired = new Map(g.acquired)
+        g.acquired.set('ilseom', { upgrade: slash, count: 1 })
+        g.hud.openSettings(
+          [...g.acquired.values()],
+          { master: 1, music: 1, sfx: 1 },
+          { gun: g.player.gun.name, gunIcon: g.player.gun.icon, sword: g.player.sword.name, swordIcon: g.player.sword.icon },
+          true,
+          g.input.keyBindings,
+        )
+        const el = document.querySelector('#traits .trait')
+        const className = el ? el.className : null
+        g.hud.closeSettings()
+        g.acquired = prevAcquired
+        return className
+      })
+      await p.evaluate((result) => { window.__qcTraitBadgeResult = result }, { levelUp, shop, settings })
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcTraitBadgeResult
+      if (!r) return '결과 없음'
+      const sigilCard = r.levelUp[0]
+      const slashCard = r.levelUp[1]
+      if (!sigilCard || sigilCard.className !== 'card slot-sigil' || sigilCard.crar !== '각인') {
+        return `레벨업 카드(각인)가 슬롯 배지로 표기되지 않음 (${JSON.stringify(sigilCard)})`
+      }
+      if (!slashCard || slashCard.className !== 'card slot-slash' || slashCard.crar !== '베기') {
+        return `레벨업 카드(베기)가 슬롯 배지로 표기되지 않음 (${JSON.stringify(slashCard)})`
+      }
+      if (r.shop[0] !== 'shop-item slot-slash') return `상점 특성 아이템이 슬롯 배지가 아님 (${r.shop[0]})`
+      if (r.shop[1] !== 'shop-item common') return `상점 무기 아이템의 등급 표기가 이전과 달라짐 (${r.shop[1]})`
+      if (r.settings !== 'trait slot-slash') return `보유 특성 목록이 슬롯 배지로 표기되지 않음 (${r.settings})`
+      return null
+    }),
+  },
 ]
 
 /**
@@ -1689,6 +1770,33 @@ function verifyStateSequence(samples, expected) {
 
 const inDungeon = (p) =>
   p.evaluate(() => window.__game?.mode === 'dungeon').catch(() => false)
+
+/**
+ * --only 로 특정 스텝만 돌릴 때, 앞선 스텝들이 실제로 실행되지 않아
+ * window.__game.player 조차 없는 상태로 시작해 모든 디버그 훅이 죽는
+ * 문제(known limitation)를 고친다. 각 스텝이 요구하는 건 대부분 "게임이
+ * 시작됐는가"와 "던전 모드인가" 두 가지뿐이다(무기/코어슬롯/적 배치는
+ * 스텝 자기 자신이 debugEquipWeapons 등으로 항상 직접 세팅한다) — 그래서
+ * 전체 스텝을 재생하는 대신 이 두 가지만 결정론적으로 맞춰준다.
+ * shop-persist 스텝이 이미 같은 패턴(g.enterDungeon() 직접 호출)을 쓰고
+ * 있었다 — TS의 private은 컴파일 타임 표시일 뿐 런타임에는 그대로 호출된다.
+ * --only 를 쓰지 않는 일반 전체 실행에는 전혀 관여하지 않는다(각 스텝이
+ * 이미 스스로 순서대로 상태를 쌓아가므로 끼어들 이유가 없다).
+ */
+async function ensureBaseline(p, needs) {
+  const state = await p.evaluate(() => window.__game?.state).catch(() => null)
+  if (state === 'start') {
+    await p.click('#startBtn').catch(() => {})
+    await p.waitForTimeout(300)
+  }
+  if (needs === 'dungeon') {
+    const mode = await p.evaluate(() => window.__game?.mode).catch(() => null)
+    if (mode !== 'dungeon') {
+      await p.evaluate(() => window.__game.enterDungeon())
+      await p.waitForTimeout(300)
+    }
+  }
+}
 
 /**
  * 게임 시계(Game.simClock, 초) 기준으로 gameSeconds만큼 진행될 때까지 기다린다.
@@ -1840,6 +1948,7 @@ let i = 0
 for (const s of STEPS) {
   i++
   if (only && !s.name.includes(only)) continue
+  if (only) await ensureBaseline(page, s.needs)
   const tag = `${String(i).padStart(2, '0')}-${s.name}`
   let fail = null
   try {

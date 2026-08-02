@@ -1,5 +1,4 @@
 import { Player } from '../entities/Player'
-import { Rarity } from './Weapons'
 
 /**
  * 특성을 관리하는 두 축.
@@ -11,12 +10,25 @@ export type UpgradeSlot = 'slash' | 'shot' | 'dash' | 'skill' | 'sigil'
 export type CoreSlot = Exclude<UpgradeSlot, 'sigil'>
 export const CORE_SLOTS: CoreSlot[] = ['slash', 'shot', 'dash', 'skill']
 
+/**
+ * 특성 등급(rarity)은 슬롯제 도입 때 이미 폐기된 개념이었는데 필드만 남아
+ * UI가 계속 소비하고 있었다(작업 지시 skill_slot_and_rarity 커밋1). 가격도
+ * 이미 슬롯 기준(핵심 90G / 각인 45G)이므로, 표기도 슬롯으로 통일한다 — 무기는
+ * 여전히 `Rarity`(Weapons.ts)를 쓰며 이 맵과 무관하다.
+ */
+export const SLOT_LABEL: Record<UpgradeSlot, string> = {
+  slash: '베기',
+  shot: '사격',
+  dash: '대시',
+  skill: '스킬',
+  sigil: '각인',
+}
+
 export interface Upgrade {
   id: string
   name: string
   desc: string
   icon: string
-  rarity: Rarity
   slot: UpgradeSlot
   maxStacks: number
   apply: (p: Player) => void
@@ -41,51 +53,51 @@ export interface Upgrade {
  */
 const RAW_POOL: Upgrade[] = [
   // ── 각인(sigil) 8종 — 스택 상한 3, 전부 가산/상시 배수 ──
-  { id: 'hp', name: '강인한 육체', desc: '최대 체력 +20, 완전 회복', icon: '❤️', rarity: 'common', slot: 'sigil', maxStacks: 3,
+  { id: 'hp', name: '강인한 육체', desc: '최대 체력 +20, 완전 회복', icon: '❤️', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.maxHp += 20; p.recompute(); p.hp = p.stats.maxHp } },
-  { id: 'speed', name: '경신법', desc: '이동 속도 +8%', icon: '👟', rarity: 'common', slot: 'sigil', maxStacks: 3,
+  { id: 'speed', name: '경신법', desc: '이동 속도 +8%', icon: '👟', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.moveSpeed *= 1.08; p.recompute() } },
-  { id: 'crit', name: '급소 간파', desc: '치명타 확률 +8%p', icon: '💥', rarity: 'rare', slot: 'sigil', maxStacks: 3,
+  { id: 'crit', name: '급소 간파', desc: '치명타 확률 +8%p', icon: '💥', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.critChance += 0.08; p.recompute() } },
-  { id: 'crit_dmg', name: '처형인', desc: '치명타 배율 +0.4', icon: '☠️', rarity: 'rare', slot: 'sigil', maxStacks: 3,
+  { id: 'crit_dmg', name: '처형인', desc: '치명타 배율 +0.4', icon: '☠️', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.critMult += 0.4; p.recompute() } },
-  { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 4% 회복', icon: '🩸', rarity: 'epic', slot: 'sigil', maxStacks: 3,
+  { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 4% 회복', icon: '🩸', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.lifesteal += 0.04; p.recompute() } },
-  { id: 'xp_gain', name: '전투의 깨달음', desc: '경험치 획득량 +10%', icon: '📘', rarity: 'common', slot: 'sigil', maxStacks: 3,
+  { id: 'xp_gain', name: '전투의 깨달음', desc: '경험치 획득량 +10%', icon: '📘', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.xpGain *= 1.1; p.recompute() } },
-  { id: 'reload', name: '신속 장전', desc: '장전 시간 -15%', icon: '🔁', rarity: 'rare', slot: 'sigil', maxStacks: 3,
+  { id: 'reload', name: '신속 장전', desc: '장전 시간 -15%', icon: '🔁', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.reloadTime *= 0.85; p.recompute() } },
-  { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해, 스택당 +14', icon: '💣', rarity: 'legendary', slot: 'sigil', maxStacks: 3,
+  { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해, 스택당 +14', icon: '💣', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.explodeOnKill += 14; p.recompute() } },
 
   // ── 핵심 슬롯: slash(4종 — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
-  { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', rarity: 'epic', slot: 'slash', maxStacks: 1,
+  { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'slash', maxStacks: 1,
     apply: () => { /* 발동 로직은 Player.update()의 slash 판정에서 stillTimer로 처리 — 상시 배수가 아니라 조건부라 apply는 상태만 등록한다(coreSlots에 이미 기록됨) */ } },
-  { id: 'ilseom', name: '일섬(一閃)', desc: '베기가 정확히 1명만 맞혔을 때 피해 +100% (2명 이상은 배수 없음)', icon: '💫', rarity: 'epic', slot: 'slash', maxStacks: 1,
+  { id: 'ilseom', name: '일섬(一閃)', desc: '베기가 정확히 1명만 맞혔을 때 피해 +100% (2명 이상은 배수 없음)', icon: '💫', slot: 'slash', maxStacks: 1,
     apply: () => { /* Game.resolveSlash()/resolveIaido()에서 명중 수 1일 때만 판정 */ } },
-  { id: 'dualblade', name: '이도류(二刀流)', desc: '베기가 2연타(각 60%, 합계 120%), 온힛 효과 각 타마다 발동', icon: '⚔️', rarity: 'epic', slot: 'slash', maxStacks: 1,
+  { id: 'dualblade', name: '이도류(二刀流)', desc: '베기가 2연타(각 60%, 합계 120%), 온힛 효과 각 타마다 발동', icon: '⚔️', slot: 'slash', maxStacks: 1,
     apply: () => { /* Game.ts pendingSlashes 대기열에서 0.12초 뒤 두 번째 타격 처리 */ } },
-  { id: 'parry', name: '흘리기', desc: '베기 부채꼴 안 적 탄환을 반사(검 피해의 60%, 역방향) — 근접 적에겐 무효', icon: '🛡️', rarity: 'epic', slot: 'slash', maxStacks: 1,
+  { id: 'parry', name: '흘리기', desc: '베기 부채꼴 안 적 탄환을 반사(검 피해의 60%, 역방향) — 근접 적에겐 무효', icon: '🛡️', slot: 'slash', maxStacks: 1,
     apply: () => { /* Game.resolveDeflect()에서 판정 — 근접 적은 접촉 피해라 대상이 없다(의도) */ } },
 
   // ── 핵심 슬롯: shot(3종) ──
-  { id: 'close_range', name: '밀착사격', desc: '거리 3 이하 명중 시 피해 +90%', icon: '🔫', rarity: 'epic', slot: 'shot', maxStacks: 1,
+  { id: 'close_range', name: '밀착사격', desc: '거리 3 이하 명중 시 피해 +90%', icon: '🔫', slot: 'shot', maxStacks: 1,
     apply: () => { /* Game.resolveBullets()에서 travelDist로 판정 */ } },
-  { id: 'last_bullet', name: '최후탄', desc: '탄창 마지막 1발 피해 220%', icon: '🎯', rarity: 'epic', slot: 'shot', maxStacks: 1,
+  { id: 'last_bullet', name: '최후탄', desc: '탄창 마지막 1발 피해 220%', icon: '🎯', slot: 'shot', maxStacks: 1,
     apply: () => { /* Player.update() 발사 블록에서 ammo===1로 판정 */ } },
-  { id: 'aimed_shot', name: '조준사격', desc: '0.35초 이상 사격을 쉰 뒤 첫 발 확정 치명타', icon: '🎯', rarity: 'epic', slot: 'shot', maxStacks: 1,
+  { id: 'aimed_shot', name: '조준사격', desc: '0.35초 이상 사격을 쉰 뒤 첫 발 확정 치명타', icon: '🎯', slot: 'shot', maxStacks: 1,
     apply: () => { /* Player.update() 발사 블록에서 aimPauseTimer로 판정 */ } },
-  { id: 'ricochet', name: '도탄(跳彈)', desc: '탄환이 소멸할 때 반경 8 안의 안 맞은 가장 가까운 적으로 1회 튕긴다', icon: '🔀', rarity: 'epic', slot: 'shot', maxStacks: 1,
+  { id: 'ricochet', name: '도탄(跳彈)', desc: '탄환이 소멸할 때 반경 8 안의 안 맞은 가장 가까운 적으로 1회 튕긴다', icon: '🔀', slot: 'shot', maxStacks: 1,
     apply: () => { /* Game.resolveBullets()에서 관통 소진 시점에 판정 — 관통과 배타 아님 */ } },
 
   // ── 핵심 슬롯: dash(4종, lg_blink 이관 포함) ──
-  { id: 'mark', name: '표식(標識)', desc: '대시로 관통한 적은 3초간 받는 피해 +35%', icon: '🏷️', rarity: 'epic', slot: 'dash', maxStacks: 1,
+  { id: 'mark', name: '표식(標識)', desc: '대시로 관통한 적은 3초간 받는 피해 +35%', icon: '🏷️', slot: 'dash', maxStacks: 1,
     apply: () => { /* Game.resolveDashMark()에서 대시 종료 시 판정 */ } },
-  { id: 'quick_switch', name: '급전환', desc: '대시 종료 후 0.5초간 검 쿨 절반 + 총 즉시 장전', icon: '🔄', rarity: 'epic', slot: 'dash', maxStacks: 1,
+  { id: 'quick_switch', name: '급전환', desc: '대시 종료 후 0.5초간 검 쿨 절반 + 총 즉시 장전', icon: '🔄', slot: 'dash', maxStacks: 1,
     apply: () => { /* Player.onDashEnd()에서 처리 */ } },
-  { id: 'afterimage', name: '잔영(殘影)', desc: '대시 무적으로 공격을 흘리면 대시 쿨타임 즉시 초기화(대시 1회당 1번)', icon: '👥', rarity: 'epic', slot: 'dash', maxStacks: 1,
+  { id: 'afterimage', name: '잔영(殘影)', desc: '대시 무적으로 공격을 흘리면 대시 쿨타임 즉시 초기화(대시 1회당 1번)', icon: '👥', slot: 'dash', maxStacks: 1,
     apply: () => { /* Player.takeDamage()의 dashBlock 이벤트를 Game.ts가 감지해 tryRefreshDashOnBlock() 호출 */ } },
-  { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', rarity: 'legendary', slot: 'dash', maxStacks: 1,
+  { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', slot: 'dash', maxStacks: 1,
     apply: (p) => { p.mods.dashStrike += 44; p.recompute() } },
 ]
 

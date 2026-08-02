@@ -386,6 +386,12 @@ canvas.pixelated {
   background: linear-gradient(160deg, rgba(60, 40, 10, 0.9), rgba(20, 16, 24, 0.85));
   box-shadow: 0 0 16px rgba(240, 160, 48, 0.3);
 }
+/* 특성 슬롯 배지 — 무기 등급(common/rare/epic/legendary) 색과 겹치지 않는 색상 */
+.shop-item.slot-slash { border-color: rgba(255, 92, 92, 0.65); }
+.shop-item.slot-shot { border-color: rgba(74, 222, 128, 0.65); }
+.shop-item.slot-dash { border-color: rgba(56, 209, 209, 0.65); }
+.shop-item.slot-skill { border-color: rgba(255, 107, 203, 0.65); }
+.shop-item.slot-sigil { border-color: rgba(144, 152, 168, 0.55); }
 .shop-item .si-icon { font-size: 34px; }
 .shop-item .si-name { font-size: 15px; font-weight: bold; color: #fff; }
 .shop-item .si-desc { font-size: 11.5px; color: #b8b0a0; line-height: 1.45; }
@@ -684,9 +690,11 @@ canvas.pixelated {
   border-radius: 6px;
   padding: 8px 12px;
 }
-.trait.common { border-left-color: #ccc; }
-.trait.rare { border-left-color: #6aa0ff; }
-.trait.epic { border-left-color: #c878ff; }
+.trait.slot-slash { border-left-color: #ff5c5c; }
+.trait.slot-shot { border-left-color: #4ade80; }
+.trait.slot-dash { border-left-color: #38d1d1; }
+.trait.slot-skill { border-left-color: #ff6bcb; }
+.trait.slot-sigil { border-left-color: #9098a8; }
 .trait .ticon {
   font-size: 24px;
 }
@@ -942,6 +950,27 @@ canvas.pixelated {
 }
 .card.legendary .cname { color: #ffd873; text-shadow: 0 0 8px rgba(255,190,60,0.6); }
 .card.legendary .crar { color: #ffca50; }
+
+/*
+ * 특성 카드 슬롯 배지 — 무기 등급색(회색/파랑/보라/금색)과 겹치지 않는 색상.
+ * 핵심 슬롯 4종은 서로 뚜렷이 구분되고, 각인은 무채색 계열로 덜 눈에 띈다
+ * (작업 지시 skill_slot_and_rarity 커밋1).
+ */
+.card.slot-slash { border-color: rgba(255, 92, 92, 0.6); }
+.card.slot-slash:hover { border-color: #ff5c5c; box-shadow: 0 12px 28px rgba(255,92,92,0.3); }
+.card.slot-slash .crar { color: #ff5c5c; }
+.card.slot-shot { border-color: rgba(74, 222, 128, 0.6); }
+.card.slot-shot:hover { border-color: #4ade80; box-shadow: 0 12px 28px rgba(74,222,128,0.3); }
+.card.slot-shot .crar { color: #4ade80; }
+.card.slot-dash { border-color: rgba(56, 209, 209, 0.6); }
+.card.slot-dash:hover { border-color: #38d1d1; box-shadow: 0 12px 28px rgba(56,209,209,0.3); }
+.card.slot-dash .crar { color: #38d1d1; }
+.card.slot-skill { border-color: rgba(255, 107, 203, 0.6); }
+.card.slot-skill:hover { border-color: #ff6bcb; box-shadow: 0 12px 28px rgba(255,107,203,0.3); }
+.card.slot-skill .crar { color: #ff6bcb; }
+.card.slot-sigil { border-color: rgba(144, 152, 168, 0.5); }
+.card.slot-sigil:hover { border-color: #9098a8; box-shadow: 0 12px 28px rgba(144,152,168,0.25); }
+.card.slot-sigil .crar { color: #9098a8; }
 
 /* 카드 좌상단 태그(총/검) */
 .card { position: relative; }

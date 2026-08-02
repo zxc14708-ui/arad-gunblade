@@ -719,18 +719,19 @@ export class Game {
         icon: it.def.icon,
         name: it.def.name,
         desc: it.def.desc,
-        rarity: it.def.rarity as string,
+        badgeClass: it.def.rarity as string,
         price: it.price,
         sold: it.sold,
         tag: it.def.kind === 'gun' ? '총' : '검',
       }
     }
     if (it.type === 'trait') {
+      // 특성 등급(rarity) 축은 슬롯제 도입 때 이미 폐기됐다 — 슬롯으로 표기한다.
       return {
         icon: it.def.icon,
         name: it.def.name,
         desc: it.def.desc,
-        rarity: it.def.rarity as string,
+        badgeClass: `slot-${it.def.slot}`,
         price: it.price,
         sold: it.sold,
         tag: '특성',
@@ -740,7 +741,7 @@ export class Game {
       icon: '❤️',
       name: '치유 물약',
       desc: `체력 ${it.amount} 회복`,
-      rarity: 'common',
+      badgeClass: 'common',
       price: it.price,
       sold: it.sold,
       tag: '회복',

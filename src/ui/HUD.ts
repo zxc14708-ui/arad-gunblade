@@ -1,4 +1,4 @@
-import { Upgrade } from '../systems/Upgrades'
+import { Upgrade, SLOT_LABEL } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
@@ -372,7 +372,7 @@ export class HUD {
       const sorted = [...traits].sort((a, b) => b.count - a.count)
       for (const t of sorted) {
         const el = document.createElement('div')
-        el.className = `trait ${t.upgrade.rarity}`
+        el.className = `trait slot-${t.upgrade.slot}`
         el.innerHTML = `
           <span class="ticon">${t.upgrade.icon}</span>
           <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
@@ -527,7 +527,7 @@ export class HUD {
     this.q('#levelHead').textContent = head
     this.q('#levelSub').textContent = sub
     this.renderCards(
-      choices.map((u) => ({ icon: u.icon, name: u.name, desc: u.desc, rarity: u.rarity })),
+      choices.map((u) => ({ icon: u.icon, name: u.name, desc: u.desc, badgeClass: `slot-${u.slot}`, badgeLabel: SLOT_LABEL[u.slot] })),
       (i) => onPick(choices[i]),
     )
   }
@@ -542,14 +542,14 @@ export class HUD {
     this.q('#levelSub').textContent = `이미 "${current.name}"을(를) 보유 중입니다 — 교체할까요?`
     this.renderCards(
       [
-        { icon: current.icon, name: current.name, desc: current.desc, rarity: current.rarity, tag: '유지' },
-        { icon: incoming.icon, name: incoming.name, desc: incoming.desc, rarity: incoming.rarity, tag: '교체' },
+        { icon: current.icon, name: current.name, desc: current.desc, badgeClass: `slot-${current.slot}`, badgeLabel: SLOT_LABEL[current.slot], tag: '유지' },
+        { icon: incoming.icon, name: incoming.name, desc: incoming.desc, badgeClass: `slot-${incoming.slot}`, badgeLabel: SLOT_LABEL[incoming.slot], tag: '교체' },
       ],
       (i) => onPick(i === 0),
     )
   }
 
-  /** 보스 보상 장비(무기) 선택 */
+  /** 보스 보상 장비(무기) 선택 — 무기는 여전히 등급(rarity)으로 표기한다 */
   showEquipment(weapons: WeaponDef[], onPick: (w: WeaponDef) => void) {
     this.q('#levelHead').textContent = '보스 보상 · 장비'
     this.q('#levelSub').textContent = '무기를 하나 선택해 교체하세요'
@@ -558,28 +558,36 @@ export class HUD {
         icon: w.icon,
         name: w.name,
         desc: w.desc,
-        rarity: w.rarity,
+        badgeClass: w.rarity,
+        badgeLabel: w.rarity,
         tag: w.kind === 'gun' ? '총' : '검',
       })),
       (i) => onPick(weapons[i]),
     )
   }
 
+  /**
+   * badgeClass/badgeLabel은 호출부가 정한다 — 무기는 등급(rarity, 예: 'epic')을
+   * 그대로 쓰고, 특성은 슬롯(예: 'slot-slash' / '베기')을 쓴다. 특성 등급 축은
+   * 슬롯제 도입 때 이미 폐기됐는데(가격도 핵심 90G/각인 45G로 슬롯 기준) 이
+   * 카드가 여태 rarity를 그대로 출력해 각인은 뒤섞인 색, 핵심 특성은 전부
+   * 같은 색(epic)으로 뜨는 표기 오류가 있었다(작업 지시 skill_slot_and_rarity).
+   */
   private renderCards(
-    items: { icon: string; name: string; desc: string; rarity: string; tag?: string }[],
+    items: { icon: string; name: string; desc: string; badgeClass: string; badgeLabel: string; tag?: string }[],
     onPick: (index: number) => void,
   ) {
     const cards = this.q('#cards')
     cards.innerHTML = ''
     items.forEach((it, i) => {
       const card = document.createElement('div')
-      card.className = `card ${it.rarity}`
+      card.className = `card ${it.badgeClass}`
       card.innerHTML = `
         ${it.tag ? `<div class="ctag">${it.tag}</div>` : ''}
         <div class="cicon">${it.icon}</div>
         <div class="cname">${it.name}</div>
         <div class="cdesc">${it.desc}</div>
-        <div class="crar">${it.rarity}</div>`
+        <div class="crar">${it.badgeLabel}</div>`
       card.onclick = () => {
         this.levelOv.classList.remove('show')
         onPick(i)
@@ -608,9 +616,12 @@ export class HUD {
     }
   }
 
-  /** 상점 열기/갱신 */
+  /**
+   * 상점 열기/갱신. badgeClass는 호출부가 정한다 — 무기/물약은 등급(rarity),
+   * 특성은 슬롯(예: 'slot-slash')을 넘긴다(Game.shopItemView() 참고).
+   */
   renderShop(
-    items: { icon: string; name: string; desc: string; rarity: string; price: number; sold: boolean; tag?: string }[],
+    items: { icon: string; name: string; desc: string; badgeClass: string; price: number; sold: boolean; tag?: string }[],
     gold: number,
     rerollPrice: number,
   ) {
@@ -621,7 +632,7 @@ export class HUD {
     items.forEach((it, i) => {
       const el = document.createElement('div')
       const afford = gold >= it.price && !it.sold
-      el.className = `shop-item ${it.rarity}${it.sold ? ' sold' : ''}${afford ? '' : ' poor'}`
+      el.className = `shop-item ${it.badgeClass}${it.sold ? ' sold' : ''}${afford ? '' : ' poor'}`
       el.innerHTML = `
         ${it.tag ? `<div class="ctag">${it.tag}</div>` : ''}
         <div class="si-icon">${it.icon}</div>
