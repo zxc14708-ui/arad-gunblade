@@ -195,6 +195,21 @@ export const CONFIG = {
     // 급전환(dash): 대시 종료 직후 지속시간 동안 검 쿨타임 배율 + 총 즉시 장전.
     quickSwitchDuration: 0.5,
     quickSwitchSwordCooldownMult: 0.5,
+
+    // ── 중비용 슬롯 특성(slot_traits_midcost_v2) ──
+    // 일섬(slash): 정확히 1명 명중 시 배율. 2명 이상은 1.0배(보정 없음 — 의도된 교환).
+    ilseomMult: 2.0,
+    // 이도류(slash): 2연타, 각 타 피해 배율(합계 120%) + 두 번째 타격까지의 지연(초).
+    dualbladeHitMult: 0.6,
+    dualbladeDelaySec: 0.12,
+    // 이도류 두 번째 타격의 히트스톱/화면 흔들림 배율 — 같은 강도로 두 번 걸리면 끊겨 보인다.
+    dualbladeSecondHitFxScale: 0.5,
+    // 흘리기(slash): 부채꼴 판정 안 적 탄환 반사 — 반사탄 피해는 현재 검 피해의 배율.
+    deflectDamageMult: 0.6,
+    // 도탄(shot): 탄환 소멸 시 튕길 반경, 배율은 없음(원 데미지 그대로 재사용).
+    ricochetRadius: 8,
+    // 잔영(dash): 대시 무적으로 공격을 흘리면 대시 쿨타임을 즉시 초기화.
+    // (수치 없음 — 즉시 0으로 리셋. 항목만 문서화 목적으로 남겨둔다.)
   },
 
   // 타격감 연출 (히트스톱/화면 흔들림/피격 플래시)

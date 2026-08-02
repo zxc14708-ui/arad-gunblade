@@ -58,9 +58,15 @@ const RAW_POOL: Upgrade[] = [
   { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해, 스택당 +14', icon: '💣', rarity: 'legendary', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.explodeOnKill += 14; p.recompute() } },
 
-  // ── 핵심 슬롯: slash(1종) ──
+  // ── 핵심 슬롯: slash(4종 — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
   { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', rarity: 'epic', slot: 'slash', maxStacks: 1,
     apply: () => { /* 발동 로직은 Player.update()의 slash 판정에서 stillTimer로 처리 — 상시 배수가 아니라 조건부라 apply는 상태만 등록한다(coreSlots에 이미 기록됨) */ } },
+  { id: 'ilseom', name: '일섬(一閃)', desc: '베기가 정확히 1명만 맞혔을 때 피해 +100% (2명 이상은 배수 없음)', icon: '💫', rarity: 'epic', slot: 'slash', maxStacks: 1,
+    apply: () => { /* Game.resolveSlash()/resolveIaido()에서 명중 수 1일 때만 판정 */ } },
+  { id: 'dualblade', name: '이도류(二刀流)', desc: '베기가 2연타(각 60%, 합계 120%), 온힛 효과 각 타마다 발동', icon: '⚔️', rarity: 'epic', slot: 'slash', maxStacks: 1,
+    apply: () => { /* Game.ts pendingSlashes 대기열에서 0.12초 뒤 두 번째 타격 처리 */ } },
+  { id: 'parry', name: '흘리기', desc: '베기 부채꼴 안 적 탄환을 반사(검 피해의 60%, 역방향) — 근접 적에겐 무효', icon: '🛡️', rarity: 'epic', slot: 'slash', maxStacks: 1,
+    apply: () => { /* Game.resolveDeflect()에서 판정 — 근접 적은 접촉 피해라 대상이 없다(의도) */ } },
 
   // ── 핵심 슬롯: shot(3종) ──
   { id: 'close_range', name: '밀착사격', desc: '거리 3 이하 명중 시 피해 +90%', icon: '🔫', rarity: 'epic', slot: 'shot', maxStacks: 1,
@@ -69,12 +75,16 @@ const RAW_POOL: Upgrade[] = [
     apply: () => { /* Player.update() 발사 블록에서 ammo===1로 판정 */ } },
   { id: 'aimed_shot', name: '조준사격', desc: '0.35초 이상 사격을 쉰 뒤 첫 발 확정 치명타', icon: '🎯', rarity: 'epic', slot: 'shot', maxStacks: 1,
     apply: () => { /* Player.update() 발사 블록에서 aimPauseTimer로 판정 */ } },
+  { id: 'ricochet', name: '도탄(跳彈)', desc: '탄환이 소멸할 때 반경 8 안의 안 맞은 가장 가까운 적으로 1회 튕긴다', icon: '🔀', rarity: 'epic', slot: 'shot', maxStacks: 1,
+    apply: () => { /* Game.resolveBullets()에서 관통 소진 시점에 판정 — 관통과 배타 아님 */ } },
 
-  // ── 핵심 슬롯: dash(3종, lg_blink 이관 포함) ──
+  // ── 핵심 슬롯: dash(4종, lg_blink 이관 포함) ──
   { id: 'mark', name: '표식(標識)', desc: '대시로 관통한 적은 3초간 받는 피해 +35%', icon: '🏷️', rarity: 'epic', slot: 'dash', maxStacks: 1,
     apply: () => { /* Game.resolveDashMark()에서 대시 종료 시 판정 */ } },
   { id: 'quick_switch', name: '급전환', desc: '대시 종료 후 0.5초간 검 쿨 절반 + 총 즉시 장전', icon: '🔄', rarity: 'epic', slot: 'dash', maxStacks: 1,
     apply: () => { /* Player.onDashEnd()에서 처리 */ } },
+  { id: 'afterimage', name: '잔영(殘影)', desc: '대시 무적으로 공격을 흘리면 대시 쿨타임 즉시 초기화(대시 1회당 1번)', icon: '👥', rarity: 'epic', slot: 'dash', maxStacks: 1,
+    apply: () => { /* Player.takeDamage()의 dashBlock 이벤트를 Game.ts가 감지해 tryRefreshDashOnBlock() 호출 */ } },
   { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', rarity: 'legendary', slot: 'dash', maxStacks: 1,
     apply: (p) => { p.mods.dashStrike += 44; p.recompute() } },
 ]

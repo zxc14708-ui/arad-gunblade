@@ -124,7 +124,7 @@ export class Player {
   private revivesRemaining = 0
   private wardReady = false
   /** 마지막 피격의 영구 성장 이벤트. HUD 연출에서만 읽고 게임 로직에는 의존하지 않는다. */
-  lastDamageEvent: 'none' | 'ward' | 'hit' | 'revive' | 'dead' = 'none'
+  lastDamageEvent: 'none' | 'ward' | 'hit' | 'revive' | 'dead' | 'dashBlock' = 'none'
 
   level = 1
   xp = 0
@@ -146,6 +146,8 @@ export class Player {
   private aimPauseTimer = 0
   /** '급전환'(dash) 버프 — 대시 종료 직후 남은 지속시간 */
   private quickSwitchTimer = 0
+  /** 잔영(dash) - 이번 대시에서 이미 쿨타임을 초기화했는지(대시 1회당 최대 1회) */
+  private afterimageDashRefreshed = false
   private chargeTimer = 0
   private chargeCdTimer = 0
   private chargeDir = new THREE.Vector3()
@@ -256,6 +258,19 @@ export class Player {
   }
 
   /**
+   * '잔영'(dash) — 대시 무적으로 공격을 흘렸을 때 호출된다(Game.ts가
+   * lastDamageEvent==='dashBlock'을 감지해 부른다). 대시 1회당 최대 1회만
+   * 초기화되도록 이 함수 자체가 가드를 갖는다(afterimageDashRefreshed는
+   * 새 대시가 시작될 때만 풀린다).
+   */
+  tryRefreshDashOnBlock(): boolean {
+    if (this.afterimageDashRefreshed) return false
+    this.afterimageDashRefreshed = true
+    this.dashCdTimer = 0
+    return true
+  }
+
+  /**
    * 조건부 핵심 슬롯 특성의 발동 게이지(0~1)와 표시 색 — Game이 매 프레임
    * Effects.requestGauge에 그대로 넘긴다. 동시에 여러 조건이 진행 중이면
    * 진행률이 더 높은 쪽만 반환한다(발밑 게이지는 최대 1개).
@@ -300,9 +315,12 @@ export class Player {
     return this.chargeTimer > 0
   }
   get invulnerable() {
-    return this.invuln > 0
-      || this.isIaido
-      || (this.isDashing && this.dashTimer > CONFIG.player.dashDuration - CONFIG.player.dashIFrames)
+    return this.invuln > 0 || this.isIaido || this.dashInvulnerable
+  }
+  /** 대시 무적 창(i-frame)만 — invuln>0(피격 후 무적)이나 발도 무적과 구분해야
+   * '잔영'이 "대시로 흘렸을 때만" 초기화되고 피격 후 무적에는 반응하지 않는다. */
+  get dashInvulnerable() {
+    return this.isDashing && this.dashTimer > CONFIG.player.dashDuration - CONFIG.player.dashIFrames
   }
   get dashReady() {
     return this.dashCdTimer <= 0
@@ -437,12 +455,18 @@ export class Player {
         this.pos.z += nz * this.stats.moveSpeed * dt
         this.walkPhase += dt * 13 // 걷기 다리 회전
       }
-      // 대시 시작
-      if (input.downAction('dash') && this.dashReady && (mv.x !== 0 || mv.z !== 0)) {
+      // 대시 시작 — dashReady는 원래 대시 애니메이션(dashDuration) 동안은
+      // 쿨타임(dashCooldown)이 항상 더 길어 참일 수 없었지만, '잔영'이 대시
+      // 무적 중 피격 시 dashCdTimer를 0으로 초기화하면서 이 전제가 깨졌다.
+      // Shift가 계속 눌려있으면(downAction은 레벨 트리거) 같은 프레임에 대시가
+      // 즉시 재시작돼 afterimageDashRefreshed 가드까지 함께 풀려버려, 공격을
+      // 계속 흘리는 한 무한 대시 사슬이 생긴다. isDashing 가드로 막는다.
+      if (input.downAction('dash') && this.dashReady && !this.isDashing && (mv.x !== 0 || mv.z !== 0)) {
         this.dashDir.set(mv.x, 0, mv.z).normalize()
         this.dashTimer = CONFIG.player.dashDuration
         this.dashCdTimer = this.stats.dashCooldown
         this.dashStart.copy(this.pos)
+        this.afterimageDashRefreshed = false
       }
     }
 
@@ -645,7 +669,13 @@ export class Player {
 
   takeDamage(amount: number): boolean {
     this.lastDamageEvent = 'none'
-    if (this.invulnerable || !this.alive) return false
+    if (!this.alive) return false
+    if (this.invulnerable) {
+      // '잔영'(dash)이 참고할 수 있게, 대시 무적으로 막았다는 사실만 구분해 남긴다
+      // — 피격 후 무적(invuln>0)이나 발도 무적으로 막았을 때는 남기지 않는다.
+      if (this.dashInvulnerable) this.lastDamageEvent = 'dashBlock'
+      return false
+    }
     if (this.wardReady) {
       this.wardReady = false
       this.lastDamageEvent = 'ward'

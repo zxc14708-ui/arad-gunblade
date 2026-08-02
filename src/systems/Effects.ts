@@ -236,10 +236,13 @@ export class Effects {
     this.groundFx.push({ mesh, time: 0, duration, frames })
   }
 
-  /** 데미지 숫자 (크리티컬이면 강조, rangeBonus면 거리 보너스 발동 색으로 표시) */
-  damageNumber(world: THREE.Vector3, amount: number, crit = false, rangeBonus = false) {
+  /**
+   * 데미지 숫자 (크리티컬이면 강조, rangeBonus면 거리 보너스 발동 색으로 표시,
+   * special이면 그 외 특수 발동 강조 색 — 현재 '일섬' 단일 명중 보너스 전용)
+   */
+  damageNumber(world: THREE.Vector3, amount: number, crit = false, rangeBonus = false, special = false) {
     const el = document.createElement('div')
-    el.className = 'floater' + (crit ? ' crit' : '') + (rangeBonus ? ' range' : '')
+    el.className = 'floater' + (crit ? ' crit' : '') + (rangeBonus ? ' range' : '') + (special ? ' special' : '')
     el.textContent = crit ? `${Math.round(amount)}!` : `${Math.round(amount)}`
     this.layer.appendChild(el)
     this.floaters.push({ el, world: world.clone(), life: 0.8, vy: 2.2 })

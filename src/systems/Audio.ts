@@ -69,10 +69,12 @@ export class AudioManager {
     const data = this.noiseBuf.getChannelData(0)
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1
 
-    // M1911 실 녹음 샘플 — 로드 전/실패 시에는 각 호출부가 기존 합성음으로 대체한다.
+    // 실 녹음 샘플 — 로드 전/실패 시에는 각 호출부가 기존 합성음으로 대체한다.
     this.loadSample(AudioManager.M1911_FIRE_URL)
     this.loadSample(AudioManager.M1911_RELOAD_URL)
     this.loadSample(AudioManager.M1911_RELOAD_TRIGGER_URL)
+    this.loadSample(AudioManager.IAIDO_START_URL)
+    this.loadSample(AudioManager.MELEE_HIT_URL)
   }
 
   // ── 실 오디오 파일 샘플 (public/assets/audio/) ──
@@ -80,6 +82,9 @@ export class AudioManager {
   private static readonly M1911_FIRE_URL = 'assets/audio/m1911_fire.wav'
   private static readonly M1911_RELOAD_URL = 'assets/audio/m1911_reload.mp3'
   private static readonly M1911_RELOAD_TRIGGER_URL = 'assets/audio/m1911_reload_trigger.wav'
+  // 확장자만 .wav였던 실제 Ogg Vorbis — import 시 .ogg로 바로잡았다(m1911_reload.mp3와 같은 사례).
+  private static readonly IAIDO_START_URL = 'assets/audio/iaido_start.ogg'
+  private static readonly MELEE_HIT_URL = 'assets/audio/melee_hit.wav'
   private sampleCache = new Map<string, AudioBuffer | 'loading' | 'failed'>()
 
   private loadSample(url: string) {
@@ -267,8 +272,9 @@ export class AudioManager {
     })
   }
 
-  /** 발도 시작의 짧은 칼집 마찰음. */
+  /** 발도 시작의 짧은 칼집 마찰음 — 실 녹음 샘플이 준비되면 그걸 쓴다. */
   iaidoStart() {
+    if (this.playSample(AudioManager.IAIDO_START_URL)) return
     this.noise(0.09, { type: 'highpass', freq: 2800, slideTo: 6200, gain: 0.22, q: 3 })
     this.tone(980, 0.08, { type: 'triangle', gain: 0.1, slideTo: 1500 })
   }
@@ -280,10 +286,15 @@ export class AudioManager {
     this.tone(1200, 0.12, { type: 'square', gain: 0.12, slideTo: 260 })
   }
 
-  hit() {
+  /**
+   * 피격음 — 근접·원거리 공용. melee=true면 실 녹음 샘플(근접 전용으로
+   * 받은 파일)을 우선 쓰고, 원거리는 그런 샘플이 없어 항상 합성음이다.
+   */
+  hit(melee = false) {
     const t = this.now()
     if (t - this.lastHit < 0.035) return // 연타 스팸 방지
     this.lastHit = t
+    if (melee && this.playSample(AudioManager.MELEE_HIT_URL)) return
     this.tone(320, 0.06, { type: 'square', gain: 0.14, slideTo: 160 })
     this.noise(0.04, { type: 'highpass', freq: 2000, gain: 0.1 })
   }
@@ -291,6 +302,18 @@ export class AudioManager {
   death() {
     this.noise(0.2, { type: 'lowpass', freq: 1200, slideTo: 200, gain: 0.28 })
     this.tone(180, 0.22, { type: 'sawtooth', gain: 0.18, slideTo: 50 })
+  }
+
+  /** '흘리기'(slash) — 적 탄환을 실제로 반사시켰을 때만 재생하는 금속성 챙 소리 */
+  parry() {
+    this.noise(0.05, { type: 'highpass', freq: 4500, gain: 0.28, q: 2 })
+    this.tone(1600, 0.09, { type: 'triangle', gain: 0.16, slideTo: 500 })
+  }
+
+  /** '잔영'(dash) — 대시 쿨타임이 즉시 초기화됐을 때 재생하는 상승 신호음 */
+  dashRefresh() {
+    this.tone(700, 0.12, { type: 'sine', gain: 0.18, slideTo: 1400 })
+    this.noise(0.06, { type: 'highpass', freq: 3000, gain: 0.15 })
   }
 
   bossDeath() {

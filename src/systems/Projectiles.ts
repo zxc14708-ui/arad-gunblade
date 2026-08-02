@@ -14,6 +14,8 @@ export interface Bullet {
   crit: boolean
   pierce: number
   hitSet: Set<number>
+  /** '도탄'(shot) — 이 총알이 이미 한 번 튕겼는지(탄환당 1회만 허용) */
+  ricocheted: boolean
 }
 
 export interface EnemyBullet {
@@ -60,6 +62,7 @@ export class Projectiles {
       crit,
       pierce,
       hitSet: new Set(),
+      ricocheted: false,
     })
   }
 

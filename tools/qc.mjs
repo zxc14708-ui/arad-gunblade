@@ -577,6 +577,9 @@ const STEPS = [
         g.debugClearEnemies()
         g.player.pos.set(0, 0, 0)
         g.player.invuln = 5
+        // 기본 10% 치명타 확률이 배율 검증(최후탄 등)을 이따금 흔들지 않도록 끈다
+        g.player.mods.critChance = -0.1
+        g.player.recompute()
         g.debugSetCoreSlot('slash', 'iaijutsu')
         const iaiTarget = g.debugSpawnEnemy('brute')
         iaiTarget.pos.set(0, 0, -3)
@@ -772,6 +775,390 @@ const STEPS = [
         const g = window.__game
         g.debugSetGauge(null)
         g.debugClearEnemies()
+        g.player.coreSlots.clear()
+        g.debugEquipWeapons('m1911', 'katana')
+      })
+    },
+  },
+  {
+    name: 'midcost-slash',
+    what: '일섬/이도류(작업 지시 slot_traits_midcost_v2 커밋1) — 단일 명중 배수, 2연타 각 60%+지연+온힛 2회',
+    async run(p) {
+      await dismissLevelUp(p)
+      await aim(p, 0)
+      const setup = await p.evaluate(() => {
+        const g = window.__game
+        g.debugEquipWeapons('m1911', 'katana')
+        g.player.pos.set(0, 0, 0)
+        g.player.invuln = 5
+        // 기본 치명타 확률(10%)이 무작위로 섞이면 배율 검증이 이따금(1/10) 실패한다
+        // (치명타 배율 2.0×까지 겹쳐 "60%가 아님" 식 오탐이 남). 결정적 측정을 위해 끈다.
+        g.player.mods.critChance = -0.1
+        g.player.recompute()
+        return { swordDamage: g.player.stats.swordDamage }
+      })
+
+      // ── 일섬 — 정확히 1명 명중 시 200% ──
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugSetCoreSlot('slash', 'ilseom')
+        g.debugClearEnemies()
+        g.player.swordTimer = 0
+        const e = g.debugSpawnEnemy('brute')
+        e.pos.set(0, 0, -3)
+        window.__qcMidSlash = { hpBefore: e.hp, id: e.id }
+      })
+      await aimAtPoint(p, 0, -3)
+      await p.mouse.down({ button: 'right' })
+      await waitGame(p, 0.05)
+      await p.mouse.up({ button: 'right' })
+      const ilseomSolo = await p.evaluate(() => {
+        const g = window.__game
+        const e = g.enemies.find((it) => it.id === window.__qcMidSlash.id)
+        return e ? window.__qcMidSlash.hpBefore - e.hp : null
+      })
+
+      // ── 일섬 — 2명 이상 명중 시 배수 없음(1.0배) ──
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.swordTimer = 0
+        const e1 = g.debugSpawnEnemy('brute')
+        e1.pos.set(-0.5, 0, -3)
+        const e2 = g.debugSpawnEnemy('brute')
+        e2.pos.set(0.5, 0, -3)
+        window.__qcMidSlash = { hpBefore1: e1.hp, id1: e1.id, hpBefore2: e2.hp, id2: e2.id }
+      })
+      await aimAtPoint(p, 0, -3)
+      await p.mouse.down({ button: 'right' })
+      await waitGame(p, 0.05)
+      await p.mouse.up({ button: 'right' })
+      const ilseomDuo = await p.evaluate(() => {
+        const g = window.__game
+        const e1 = g.enemies.find((it) => it.id === window.__qcMidSlash.id1)
+        const e2 = g.enemies.find((it) => it.id === window.__qcMidSlash.id2)
+        return {
+          dealt1: e1 ? window.__qcMidSlash.hpBefore1 - e1.hp : null,
+          dealt2: e2 ? window.__qcMidSlash.hpBefore2 - e2.hp : null,
+        }
+      })
+
+      // ── 이도류 — 2연타 각 60%, 두 번째는 0.12초 뒤, 온힛(장전) 2회 ──
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugSetCoreSlot('slash', 'dualblade')
+        g.debugClearEnemies()
+        g.player.swordTimer = 0
+        g.player.ammo = 0
+        g.player.reloading = false
+        const e = g.debugSpawnEnemy('brute')
+        e.pos.set(0, 0, -3)
+        window.__qcMidSlash = { hpBefore: e.hp, id: e.id }
+      })
+      await aimAtPoint(p, 0, -3)
+      await p.mouse.down({ button: 'right' })
+      // dt가 프레임당 최대 0.05초까지 뭉치는 이 샌드박스에서는 이도류의 0.12초
+      // 지연이 단 2~3프레임 만에 끝나버려, waitGame()의 벽시계 왕복 지연만으로도
+      // 두 번째 타격까지 끝나버릴 수 있다(실측: 외부 폴링 경유 시 100% 재현).
+      // 그래서 벽시계 폴링 대신 페이지 내부 rAF로 직접 대기열(pendingSlashes)이
+      // 채워진 첫 프레임(=첫 타만 적용되고 두 번째는 아직 큐에 대기 중인 시점)을
+      // 잡는다 — Game.step()이 같은 프레임 안에서 push와 처리(dt<0.12라 미소진)를
+      // 순서대로 하므로, 이 프레임에서 관측하면 정확히 "1타만 적용됨"이 보장된다.
+      const dualbladeFirst = await p.evaluate(() => {
+        const g = window.__game
+        return new Promise((resolve) => {
+          let framesLeft = 180 // 안전장치 — 못 잡아도 무한 대기하지 않음
+          const tick = () => {
+            if (g.pendingSlashes.length > 0 || framesLeft-- <= 0) {
+              const e = g.enemies.find((it) => it.id === window.__qcMidSlash.id)
+              resolve({ dealt: e ? window.__qcMidSlash.hpBefore - e.hp : null, ammoAfterFirst: g.player.ammo })
+              return
+            }
+            requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        })
+      })
+      await p.mouse.up({ button: 'right' })
+      await waitGame(p, 0.25) // 0.12초 지연 + 처리 여유
+      const dualbladeSecond = await p.evaluate(() => {
+        const g = window.__game
+        const e = g.enemies.find((it) => it.id === window.__qcMidSlash.id)
+        return { dealtTotal: e ? window.__qcMidSlash.hpBefore - e.hp : null, ammoAfterSecond: g.player.ammo }
+      })
+
+      await p.evaluate((result) => {
+        window.__qcMidSlashResult = result
+      }, { swordDamage: setup.swordDamage, ilseomSolo, ilseomDuo, dualbladeFirst, dualbladeSecond })
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcMidSlashResult
+      if (!r) return '결과 없음'
+      const ilseomExpected = r.swordDamage * 2.0
+      if (r.ilseomSolo == null || Math.abs(r.ilseomSolo - ilseomExpected) > ilseomExpected * 0.05) {
+        return `일섬 단일 명중 배수가 200%가 아님 (${r.ilseomSolo} / 기대 ${ilseomExpected.toFixed(1)})`
+      }
+      if (r.ilseomDuo.dealt1 == null || r.ilseomDuo.dealt2 == null) return '일섬 2명 명중 테스트에서 적을 찾지 못함'
+      if (Math.abs(r.ilseomDuo.dealt1 - r.swordDamage) > r.swordDamage * 0.05 || Math.abs(r.ilseomDuo.dealt2 - r.swordDamage) > r.swordDamage * 0.05) {
+        return `일섬 2명 이상 명중 시에도 배수가 적용됨 (${r.ilseomDuo.dealt1}, ${r.ilseomDuo.dealt2} / 기대 각 ${r.swordDamage.toFixed(1)})`
+      }
+      const dualExpected = r.swordDamage * 0.6
+      if (r.dualbladeFirst.dealt == null || Math.abs(r.dualbladeFirst.dealt - dualExpected) > dualExpected * 0.05) {
+        return `이도류 첫 타격이 60%가 아님 (${r.dualbladeFirst.dealt} / 기대 ${dualExpected.toFixed(1)})`
+      }
+      if (r.dualbladeFirst.ammoAfterFirst !== 1) return `이도류 첫 타격 온힛(장전)이 발동하지 않음 (ammo=${r.dualbladeFirst.ammoAfterFirst})`
+      const dualTotalExpected = r.swordDamage * 1.2
+      if (r.dualbladeSecond.dealtTotal == null || Math.abs(r.dualbladeSecond.dealtTotal - dualTotalExpected) > dualTotalExpected * 0.05) {
+        return `이도류 2타 합산이 120%가 아님 (${r.dualbladeSecond.dealtTotal} / 기대 ${dualTotalExpected.toFixed(1)})`
+      }
+      if (r.dualbladeSecond.ammoAfterSecond !== 2) return `이도류 두 번째 타격 온힛(장전)이 발동하지 않음 (ammo=${r.dualbladeSecond.ammoAfterSecond})`
+      return null
+    }),
+    async after(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.coreSlots.clear()
+      })
+    },
+  },
+  {
+    name: 'midcost-parry',
+    what: '흘리기(작업 지시 slot_traits_midcost_v2 커밋2) — 부채꼴 안 적 탄환 반사(검 피해 60%, 역방향), 성공 시에만 피드백',
+    async run(p) {
+      await dismissLevelUp(p)
+      await aim(p, 0)
+      const setup = await p.evaluate(() => {
+        const g = window.__game
+        g.debugEquipWeapons('m1911', 'katana')
+        g.player.pos.set(0, 0, 0)
+        g.player.invuln = 5
+        g.player.swordTimer = 0
+        g.player.mods.critChance = -0.1 // 기본 10% 치명타 확률이 배율 검증을 흔들지 않도록
+        g.player.recompute()
+        g.debugSetCoreSlot('slash', 'parry')
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        // 부채꼴 판정 범위(katana range) 안, 플레이어 쪽(+Z)으로 날아오는 적 탄환을 직접 스폰
+        const pos = g.player.pos.clone()
+        pos.set(0, 1, -3)
+        const dir = g.player.pos.clone()
+        dir.set(0, 0, 1)
+        g.projectiles.spawnEnemyBullet(pos, dir, 6, 5)
+        return { swordDamage: g.player.stats.swordDamage }
+      })
+      await aimAtPoint(p, 0, -3)
+      await p.mouse.down({ button: 'right' })
+      await waitGame(p, 0.05)
+      await p.mouse.up({ button: 'right' })
+      const result = await p.evaluate((s) => {
+        const g = window.__game
+        const reflected = g.projectiles.bullets[0]
+        return {
+          enemyBulletsLeft: g.projectiles.enemyBullets.length,
+          reflectedDamage: reflected ? reflected.damage : null,
+          reflectedDirZ: reflected ? reflected.dir.z : null,
+          swordDamage: s.swordDamage,
+        }
+      }, setup)
+      await p.evaluate((r) => {
+        window.__qcParryResult = r
+      }, result)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcParryResult
+      if (!r) return '결과 없음'
+      if (r.enemyBulletsLeft !== 0) return `흘리기 후에도 적 탄환이 남아있음 (${r.enemyBulletsLeft}개)`
+      const expected = r.swordDamage * 0.6
+      if (r.reflectedDamage == null || Math.abs(r.reflectedDamage - expected) > expected * 0.05) {
+        return `반사탄 피해가 검 피해의 60%가 아님 (${r.reflectedDamage} / 기대 ${expected.toFixed(1)})`
+      }
+      if (r.reflectedDirZ == null || r.reflectedDirZ >= 0) return `반사탄 방향이 원래 진행 방향의 반대가 아님 (dirZ=${r.reflectedDirZ})`
+      return null
+    }),
+    async after(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        g.player.coreSlots.clear()
+      })
+    },
+  },
+  {
+    name: 'midcost-shot-dash',
+    what: '도탄/잔영(작업 지시 slot_traits_midcost_v2 커밋3) — 관통 소진 후 튕김(관통과 비배타), 대시 무적 피격 시 쿨 초기화(1회 한정, 피격후무적 제외)',
+    async run(p) {
+      await dismissLevelUp(p)
+      await aim(p, 0)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.pos.set(0, 0, 0)
+        g.player.invuln = 5
+      })
+
+      // ── 도탄 — 관통 소진 시점(4번째 명중)에 튕기는지, 관통과 배타가 아닌지 ──
+      // 실사격(발사 → 물리 이동 → 자연 충돌)에 기대는 대신, 이미 3명(더미 id)을
+      // 맞힌 상태의 총알을 직접 구성해 다음 프레임에 "4번째 명중"만 결정적으로
+      // 재현한다. 실사격 버전은 저격소총 bulletSpeed(62)와 프레임당 dt 상한
+      // (0.05, 즉 프레임당 최대 3.1유닛 이동)이 겹쳐 판정 반경(1.3)보다 촘촘한
+      // 대형을 종종 건너뛰어(터널링) 실패가 배치/타이밍에 따라 들쭉날쭉했다 —
+      // 게임 로직이 아니라 물리 기반 테스트 자체의 불안정성이라 판단해 방식을
+      // 바꿨다. target=4번째 명중 대상(관통 소진 트리거), off=반경 8 안의
+      // 아직 안 맞은 적(도탄 목적지) — 관통 소진을 일으킨 그 히트 자체도 target
+      // 에게 피해를 입히므로 "관통과 배타가 아님"이 같은 판정 안에서 검증된다.
+      const ricochetSetup = await p.evaluate(() => {
+        const g = window.__game
+        g.debugEquipWeapons('rifle', 'katana') // 관통 3
+        g.debugSetCoreSlot('shot', 'ricochet')
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        const target = g.debugSpawnEnemy('brute')
+        target.pos.set(0, 0, -3)
+        const off = g.debugSpawnEnemy('brute')
+        off.pos.set(2.5, 0, -3) // target에서 반경 8 안 — 튕겨야만 맞는 위치
+        const pos = g.player.pos.clone()
+        pos.set(0, 0, -2.9) // target 바로 앞 — 다음 프레임 이동으로 반드시 명중 반경 진입
+        const dir = g.player.pos.clone()
+        dir.set(0, 0, -1)
+        g.projectiles.spawnBullet(pos, dir, 20, 30, false, g.player.stats.pierce)
+        const b = g.projectiles.bullets[g.projectiles.bullets.length - 1]
+        b.hitSet.add(-1)
+        b.hitSet.add(-2)
+        b.hitSet.add(-3) // 이미 3명 맞은 것으로 간주(존재하지 않는 더미 id) — pierce(3) 소진 직전 상태
+        return { targetId: target.id, targetHpBefore: target.hp, offId: off.id, offHpBefore: off.hp }
+      })
+      await waitGame(p, 0.4) // 4번째 명중(관통 소진) + 튕겨서 off까지 도달할 시간
+      const ricochetResult = await p.evaluate((setup) => {
+        const g = window.__game
+        const target = g.enemies.find((e) => e.id === setup.targetId)
+        const off = g.enemies.find((e) => e.id === setup.offId)
+        return {
+          targetHit: target ? target.hp < setup.targetHpBefore : true, // 사망(배열에서 사라짐)도 명중으로 친다
+          offDealt: off ? setup.offHpBefore - off.hp : null,
+        }
+      }, ricochetSetup)
+
+      // 도탄 서브테스트에서 브루트 5마리를 죽여 XP를 얻는다 — 레벨업 조건을
+      // 채우면 다음 프레임에 'levelup' 모달이 뜨고 state !== 'play'가 되어
+      // simClock이 멈춘다(바로 다음 잔영 서브테스트의 waitGame이 "게임 시계
+      // 정지"로 실패하던 원인). 대시 서브테스트를 시작하기 전에 반드시 닫는다.
+      await dismissLevelUp(p)
+
+      // ── 잔영 — 대시 무적 피격 시 쿨 초기화(1회), 피격 후 무적 중에는 초기화 안 됨 ──
+      // dashDuration(0.16s) 내내 dashInvulnerable이 true다(dashIFrames 0.22 >
+      // dashDuration 0.16이라 실질적으로 대시 전체가 무적 구간 — Player.ts 확인됨).
+      // 적 AI/접촉 판정 타이밍에 기대지 않고 player.takeDamage()를 직접 호출해
+      // 결정적으로 검증한다(적 접촉에 맡기면 이 느린 샌드박스에서 타이밍이 밀려
+      // 무방비 상태로 실제 피해를 입고 gameover로 게임 시계가 멈추는 사고가 났다).
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugEquipWeapons('m1911', 'katana')
+        g.debugSetCoreSlot('dash', 'afterimage')
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        g.player.pos.set(0, 0, 0)
+        g.player.hp = g.player.stats.maxHp
+        g.player.invuln = 0
+        g.player.dashCdTimer = 0 // 대시가 즉시 발동하려면 쿨 없이 시작해야 한다
+      })
+      // dashDuration(0.16s)이 이 샌드박스의 프레임 dt 상한(0.05s)·왕복 지연과
+      // 같은 자릿수라, waitGame()/실제 대기로 "같은 대시 안"을 노리면 실측상
+      // 대시가 자연히 끝나고 Shift+D가 계속 눌려있어 새 대시가 자동 재시작되며
+      // (쿨 가득 참) "1회 한정 위반"처럼 보이는 오탐이 났다(실측 확인됨). 매
+      // 판정 직전 dashTimer를 안전한 값으로 다시 세팅해 "여전히 이 대시 안"을
+      // 보장하고, 페이지 내부 rAF로 이 프레임의 피격 이벤트가 실제로
+      // 처리(consumeDamageEvent가 'none'으로 리셋)될 때까지만 기다린다 — 벽시계
+      // 왕복 지연에 좌우되지 않는다.
+      async function afterDamageEventProcessed(p) {
+        await p.evaluate(() => new Promise((resolve) => {
+          const g = window.__game
+          let framesLeft = 60
+          const tick = () => {
+            if (g.player.lastDamageEvent === 'none' || framesLeft-- <= 0) { resolve(); return }
+            requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        }))
+      }
+
+      await p.keyboard.down('KeyD')
+      await p.keyboard.down('ShiftLeft')
+      await p.evaluate(() => new Promise((resolve) => {
+        const g = window.__game
+        let framesLeft = 60
+        const tick = () => {
+          if (g.player.isDashing || framesLeft-- <= 0) { resolve(); return }
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      })) // 대시가 실제로 시작될 때까지(무적 구간 진입)
+      const duringDashCd = await p.evaluate(() => {
+        const g = window.__game
+        g.player.dashTimer = Math.max(g.player.dashTimer, 0.1) // 판정 시점까지 "이 대시 안"을 보장
+        const dashInvulnerable = g.player.dashInvulnerable
+        const hpBefore = g.player.hp
+        const blocked = !g.player.takeDamage(10)
+        return { dashInvulnerable, blocked, hpUnchanged: g.player.hp === hpBefore }
+      })
+      await afterDamageEventProcessed(p)
+      const cdAfterDashBlock = await p.evaluate(() => window.__game.player.dashCdTimer)
+
+      // 같은 대시 안에서 두 번째 피격 — 1회 한정이라 추가로 초기화되면 안 됨(쿨을 다시 세팅해 판별).
+      const secondHitSameDash = await p.evaluate(() => {
+        const g = window.__game
+        g.player.dashTimer = Math.max(g.player.dashTimer, 0.1) // 여전히 "같은 대시" 보장
+        g.player.dashCdTimer = 3
+        const dashInvulnerable = g.player.dashInvulnerable
+        g.player.takeDamage(10)
+        return dashInvulnerable
+      })
+      await afterDamageEventProcessed(p)
+      await p.keyboard.up('ShiftLeft')
+      await p.keyboard.up('KeyD')
+      const cdAfterSecondHitSameDash = await p.evaluate(() => window.__game.player.dashCdTimer)
+
+      // 피격 후 무적(invulnAfterHit) 중에는 초기화되지 않아야 한다 — 대시가 완전히
+      // 끝난(dashInvulnerable=false) 뒤여야 순수하게 invuln>0만으로 판정된다.
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.dashTimer = 0 // 대시를 확실히 끝낸다(dashInvulnerable=false)
+        g.player.invuln = 0.5 // 피격 후 무적 상태를 직접 재현
+        g.player.dashCdTimer = 3
+        g.player.takeDamage(10)
+      })
+      const cdAfterPostHitInvuln = await p.evaluate(() => window.__game.player.dashCdTimer)
+
+      await p.evaluate((result) => {
+        window.__qcShotDashResult = result
+      }, {
+        ricochet: ricochetResult,
+        duringDashCd,
+        cdAfterDashBlock,
+        secondHitSameDash,
+        cdAfterSecondHitSameDash,
+        cdAfterPostHitInvuln,
+      })
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcShotDashResult
+      if (!r) return '결과 없음'
+      if (!r.ricochet.targetHit) return '도탄 — 관통 소진을 일으킨 4번째 명중 자체가 대상에 적용되지 않음(관통과 배타 의심)'
+      if (r.ricochet.offDealt == null || r.ricochet.offDealt <= 0) return '도탄 — 관통 소진 후 반경 안의 다른 적으로 튕기지 않음'
+      if (!r.duringDashCd.dashInvulnerable) return '잔영 테스트 전제 실패 — 대시 무적 구간이 아닌 시점에 피해를 시도함'
+      if (!r.duringDashCd.blocked || !r.duringDashCd.hpUnchanged) return '잔영 테스트 전제 실패 — 대시 무적인데 피해가 들어감'
+      if (r.cdAfterDashBlock > 0.05) return `잔영 — 대시 무적으로 흘렸는데 대시 쿨이 초기화되지 않음 (${r.cdAfterDashBlock})`
+      if (r.secondHitSameDash && r.cdAfterSecondHitSameDash < 2) {
+        return `잔영 — 같은 대시 안에서 두 번째 피격에도 쿨이 또 초기화됨(1회 한정 위반) (${r.cdAfterSecondHitSameDash})`
+      }
+      if (r.cdAfterPostHitInvuln < 2) return `잔영 — 피격 후 무적 중 접촉인데도 대시 쿨이 초기화됨 (${r.cdAfterPostHitInvuln})`
+      return null
+    }),
+    async after(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.projectiles.clear()
         g.player.coreSlots.clear()
         g.debugEquipWeapons('m1911', 'katana')
       })

@@ -71,6 +71,8 @@ export class Game {
    */
   private simClock = 0
   private wasDashing = false
+  /** '이도류'(slash) 두 번째 타격 대기열 — dt 누적으로 소진(step()에서 처리) */
+  private pendingSlashes: { timer: number; arc: number; range: number; damage: number; crit: boolean; knockback: number }[] = []
   private wasIaido = false
   private ghostTimer = 0
   private settingsOpen = false
@@ -952,7 +954,39 @@ export class Game {
     if (slash) {
       this.audio.slash(this.player.sword.id)
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
-      this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
+      if (this.player.coreSlots.get('slash') === 'dualblade') {
+        // '이도류' — 2연타, 각 타 60%(합계 120%). 첫 타는 즉시, 두 번째 타는
+        // 0.12초 뒤 그 시점의 플레이어 위치/각도로 다시 판정한다(대기열 방식,
+        // Game.step()에서 dt 누적으로 소진 — 히트스톱 중에도 자연히 느려진다).
+        const hitDmg = slash.damage * CONFIG.traits.dualbladeHitMult
+        this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, hitDmg, slash.crit, slash.knockback)
+        this.pendingSlashes.push({
+          timer: CONFIG.traits.dualbladeDelaySec,
+          arc: slash.arc,
+          range: slash.range,
+          damage: hitDmg,
+          crit: slash.crit,
+          knockback: slash.knockback,
+        })
+      } else {
+        this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
+        if (this.player.coreSlots.get('slash') === 'parry') {
+          this.resolveDeflect(slash.pos, slash.angle, slash.arc, slash.range, slash.damage)
+        }
+      }
+    }
+    // '이도류' 두 번째 타격 대기열 — dt 누적(simClock 아님)이라 히트스톱 중엔 같이 느려진다.
+    for (let i = this.pendingSlashes.length - 1; i >= 0; i--) {
+      const q = this.pendingSlashes[i]
+      q.timer -= dt
+      if (q.timer <= 0) {
+        this.pendingSlashes.splice(i, 1)
+        const pos = this.player.pos.clone()
+        const angle = this.player.angle
+        this.audio.slash(this.player.sword.id)
+        this.effects.slash(pos, angle, q.arc, q.range)
+        this.resolveSlash(pos, angle, q.arc, q.range, q.damage, q.crit, q.knockback, { halfFx: true })
+      }
     }
     if (chargeSlash) {
       this.audio.iaido(this.player.sword.id)
@@ -963,7 +997,7 @@ export class Game {
       this.audio.slash(this.player.sword.id)
       for (const slashPart of ultimate.slashes) {
         this.effects.slash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range)
-        this.resolveSlash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range, slashPart.damage, slashPart.crit, slashPart.knockback)
+        this.resolveSlash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range, slashPart.damage, slashPart.crit, slashPart.knockback, { isUltimatePart: true })
       }
       this.effects.ultimateCross(this.player.pos)
       this.effects.playGroundFx('shockwave', this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius * 2)
@@ -1066,6 +1100,15 @@ export class Game {
     const damageEvent = this.player.consumeDamageEvent()
     if (damageEvent === 'ward') this.hud.banner_('수호막이 피해를 막았습니다!')
     else if (damageEvent === 'revive') this.hud.banner_('불굴 발동 — 체력 50%로 부활!')
+    else if (damageEvent === 'dashBlock' && this.player.coreSlots.get('dash') === 'afterimage' && this.player.tryRefreshDashOnBlock()) {
+      // '잔영' — 대시 무적으로 흘렸을 때만(피격 후 무적은 dashBlock을 만들지 않는다),
+      // 대시 1회당 최대 1회(tryRefreshDashOnBlock 자체가 가드). 적 탄환 피격
+      // (resolveEnemyBullets)과 근접 접촉 피해(위 contactDamage 블록) 모두
+      // Player.takeDamage()를 거치므로 이 한 지점에서 양쪽 다 처리된다.
+      this.audio.dashRefresh()
+      this.effects.burst(new THREE.Vector3(this.player.pos.x, 1.2, this.player.pos.z), COLORS.slash, 10, 6)
+      this.hud.banner_('잔영 — 대시 재충전!')
+    }
 
     if (!this.player.alive) this.gameOver()
   }
@@ -1266,6 +1309,20 @@ export class Game {
           this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, b.crit, rangeBonus)
           if (b.hitSet.size > b.pierce) {
+            // '도탄'(shot) — 관통 소진으로 소멸하는 시점이 기준이라 무기 고유
+            // 관통과 자연스럽게 합쳐진다(관통 3인 무기는 3명 뚫은 뒤 튕긴다).
+            // 탄환당 1회만, 아직 안 맞은 적 중 가장 가까운 쪽으로 튕긴다.
+            // hitSet은 그대로 유지 — 같은 적을 다시 맞히지 않는다.
+            if (this.player.coreSlots.get('shot') === 'ricochet' && !b.ricocheted) {
+              const target = this.nearestUnhitEnemy(b.pos, CONFIG.traits.ricochetRadius, b.hitSet)
+              if (target) {
+                b.ricocheted = true
+                b.dir.set(target.pos.x - b.pos.x, 0, target.pos.z - b.pos.z).normalize()
+                b.spawnPos.copy(b.pos) // 다음 구간의 사거리 보너스는 튕긴 지점부터 새로 잰다
+                this.effects.burst(b.pos.clone(), COLORS.slash, 6, 4) // 튕기는 궤적 — 전용 이펙트
+                break // consumed=false 유지 — 이번 프레임엔 더 판정하지 않고 다음 프레임부터 새 방향으로 날아간다
+              }
+            }
             consumed = true
             break
           }
@@ -1273,6 +1330,21 @@ export class Game {
       }
       if (consumed) this.projectiles.removeBullet(i)
     }
+  }
+
+  /** '도탄'(shot) 대상 탐색 — 반경 안, 아직 이 탄환에 안 맞은 적 중 가장 가까운 하나. */
+  private nearestUnhitEnemy(pos: THREE.Vector3, radius: number, hitSet: ReadonlySet<number>): Enemy | null {
+    let best: Enemy | null = null
+    let bestDist = radius
+    for (const e of this.enemies) {
+      if (!e.alive || hitSet.has(e.id)) continue
+      const dist = Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z)
+      if (dist <= bestDist) {
+        best = e
+        bestDist = dist
+      }
+    }
+    return best
   }
 
   private resolveEnemyBullets() {
@@ -1292,6 +1364,74 @@ export class Game {
     }
   }
 
+  /**
+   * 베기 부채꼴(pos/angle/arc/range) 판정 — 검 스윙(resolveSlash)과 흘리기의
+   * 적 탄환 판정이 이 함수를 공유한다(작업 지시 slot_traits_midcost_v2 커밋2:
+   * "중복 구현을 만들지 마라"). extraRadius는 대상별 판정 반경 가산치
+   * (적은 자기 radius, 적 탄환은 스프라이트가 작아 고정 소반경을 쓴다).
+   */
+  private inArc<T extends { pos: THREE.Vector3 }>(
+    items: T[],
+    pos: THREE.Vector3,
+    angle: number,
+    arc: number,
+    range: number,
+    extraRadius: (item: T) => number,
+  ): T[] {
+    const hits: T[] = []
+    for (const item of items) {
+      const dx = item.pos.x - pos.x
+      const dz = item.pos.z - pos.z
+      const dist = Math.hypot(dx, dz)
+      if (dist > range + extraRadius(item)) continue
+      const toAng = Math.atan2(dx, dz)
+      let diff = Math.abs(toAng - angle)
+      if (diff > Math.PI) diff = Math.PI * 2 - diff
+      if (diff <= arc / 2 + 0.15) hits.push(item)
+    }
+    return hits
+  }
+
+  private enemiesInArc(pos: THREE.Vector3, angle: number, arc: number, range: number): Enemy[] {
+    return this.inArc(this.enemies.filter((e) => e.alive), pos, angle, arc, range, (e) => e.radius)
+  }
+
+  /**
+   * '흘리기'(slash) — 베기 부채꼴 안 적 탄환을 소멸시키고 플레이어 탄환으로
+   * 반사한다(피해는 검 피해의 배율, 방향은 원래 진행 방향의 반대). 근접 적
+   * (imp/brute)은 접촉 피해라 흘릴 대상이 없다 — 슈터·보스 전용은 의도된
+   * 제약이라 보정하지 않는다(작업 지시).
+   */
+  private resolveDeflect(pos: THREE.Vector3, angle: number, arc: number, range: number, swordDamage: number) {
+    // 적 탄환은 별도 radius 필드가 없다 — resolveEnemyBullets()의 플레이어
+    // 충돌 판정(0.9 고정)과 달리 스프라이트가 작아 더 작은 고정치를 쓴다.
+    const DEFLECT_BULLET_RADIUS = 0.3
+    const bs = this.projectiles.enemyBullets
+    const hitBullets = this.inArc(bs, pos, angle, arc, range, () => DEFLECT_BULLET_RADIUS)
+    if (hitBullets.length === 0) return
+    for (const b of hitBullets) {
+      const idx = bs.indexOf(b)
+      if (idx === -1) continue
+      const reflectDir = b.dir.clone().negate()
+      this.projectiles.spawnBullet(b.pos.clone(), reflectDir, this.player.stats.bulletSpeed, swordDamage * CONFIG.traits.deflectDamageMult, false, this.player.stats.pierce)
+      this.projectiles.removeEnemyBullet(idx)
+    }
+    // 실제로 흘렸을 때만(탄환이 있었을 때만) 전용 피드백 — 성공 여부가 바로 느껴져야 한다.
+    this.audio.parry()
+    this.effects.burst(new THREE.Vector3(pos.x, 1.4, pos.z), COLORS.slash, 10, 7)
+  }
+
+  /**
+   * 2패스 판정 — 1패스로 부채꼴 안 적을 모두 수집한 뒤(피해 계산 전), 2패스에서
+   * 배수를 확정해 적용한다. '일섬'이 "몇 명을 맞혔는가"를 피해 적용 전에 알아야
+   * 해서 나눴다(작업 지시 slot_traits_midcost_v2 커밋1). 기존 동작(부채꼴 내
+   * 전원 풀 데미지, 스윙당 검 장전 1회)은 그대로다 — 명중 수와 무관하게
+   * 전원이 맞고, 일섬 조건이 아니면 배수는 항상 1.0이다.
+   *
+   * opts.isUltimatePart: 궁극기(R) 다단 참격 — 일섬을 적용하지 않는다(각 참격을
+   * 개별 스윙으로 세면 의도치 않게 발동하므로 제외 지시).
+   * opts.halfFx: 이도류 두 번째 타격 — 히트스톱/화면 흔들림을 절반으로 줄인다.
+   */
   private resolveSlash(
     pos: THREE.Vector3,
     angle: number,
@@ -1300,36 +1440,38 @@ export class Game {
     damage: number,
     crit: boolean,
     knockback: number,
+    opts: { isUltimatePart?: boolean; halfFx?: boolean } = {},
   ) {
+    // 1패스 — 판정만, 피해 계산/적용 없음
+    const hits = this.enemiesInArc(pos, angle, arc, range)
+
+    // '일섬(一閃)' — 정확히 1명 명중 시에만 배수, 2명 이상이면 절반이라도 주는
+    // 완충 없이 1.0배(작업 지시: "교환이 흐려진다" — 의도된 전부-아니면-없음).
+    const ilseomActive = !opts.isUltimatePart && this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
+    const finalDamage = ilseomActive ? damage * CONFIG.traits.ilseomMult : damage
+    const fxScale = opts.halfFx ? CONFIG.traits.dualbladeSecondHitFxScale : 1
+
+    // 2패스 — 확정된 배수로 피해/넉백/이펙트 적용
     let hitAny = false
-    for (const e of this.enemies) {
-      if (!e.alive) continue
-      const dx = e.pos.x - pos.x
-      const dz = e.pos.z - pos.z
-      const dist = Math.hypot(dx, dz)
-      if (dist > range + e.radius) continue
-      const toAng = Math.atan2(dx, dz)
-      let diff = Math.abs(toAng - angle)
-      if (diff > Math.PI) diff = Math.PI * 2 - diff
-      if (diff <= arc / 2 + 0.15) {
-        hitAny = true
-        const reflected = e.takeDamage(damage, 'melee', crit)
-        e.knockback(pos.x, pos.z, knockback)
-        this.audio.hit()
-        this.triggerHitstop(crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
-        this.effects.shake(crit ? CONFIG.effects.shakeCrit : CONFIG.effects.shakeSwordHit)
-        this.applyLifesteal(damage)
-        this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
-        this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), damage, crit)
-        if (reflected > 0 && this.player.takeDamage(reflected)) {
-          this.audio.hurt()
-          this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
-          this.effects.shake(CONFIG.effects.shakePlayerHit)
-        }
+    for (const e of hits) {
+      hitAny = true
+      const reflected = e.takeDamage(finalDamage, 'melee', crit)
+      e.knockback(pos.x, pos.z, knockback)
+      this.audio.hit(true)
+      this.triggerHitstop((crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit) * fxScale)
+      this.effects.shake((crit ? CONFIG.effects.shakeCrit : CONFIG.effects.shakeSwordHit) * fxScale)
+      this.applyLifesteal(finalDamage)
+      this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
+      this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), finalDamage, crit, false, ilseomActive)
+      if (reflected > 0 && this.player.takeDamage(reflected)) {
+        this.audio.hurt()
+        this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
+        this.effects.shake(CONFIG.effects.shakePlayerHit)
       }
     }
     // 검 적중 시 총알 장전(기본 메커니즘) — 여러 적을 맞혀도 스윙당 1회만
     if (hitAny) this.player.reloadFromSwordHit()
+    return hits.length
   }
 
   /** 발도 경로(시작점→실제 종료점)를 캡슐 형태로 판정해 스친 모든 적을 한 번씩 벤다. */
@@ -1355,11 +1497,15 @@ export class Game {
     }
   }
 
+  /**
+   * 발도(Q) 참격 — resolveSlash와 같은 2패스 구조. '일섬'은 경로 판정이지만
+   * "한 명만 벴다"는 조건이 동일하게 성립해 여기도 적용한다(작업 지시).
+   */
   private resolveIaido(start: THREE.Vector3, end: THREE.Vector3, damage: number, crit: boolean, knockback: number) {
     const abx = end.x - start.x
     const abz = end.z - start.z
     const lenSq = abx * abx + abz * abz
-    let hitAny = false
+    const hits: Enemy[] = []
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue
       const apx = enemy.pos.x - start.x
@@ -1369,16 +1515,23 @@ export class Game {
       const closestZ = start.z + abz * t
       const distance = Math.hypot(enemy.pos.x - closestX, enemy.pos.z - closestZ)
       if (distance > enemy.radius + CONFIG.player.radius) continue
+      hits.push(enemy)
+    }
 
+    const ilseomActive = this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
+    const finalDamage = ilseomActive ? damage * CONFIG.traits.ilseomMult : damage
+
+    let hitAny = false
+    for (const enemy of hits) {
       hitAny = true
-      const reflected = enemy.takeDamage(damage, 'melee', crit)
+      const reflected = enemy.takeDamage(finalDamage, 'melee', crit)
       enemy.knockback(start.x, start.z, knockback)
-      this.audio.hit()
+      this.audio.hit(true)
       this.triggerHitstop(crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
       this.effects.shake(crit ? CONFIG.effects.shakeCrit : CONFIG.effects.shakeSwordHit)
-      this.applyLifesteal(damage)
+      this.applyLifesteal(finalDamage)
       this.effects.hitImpact(enemy.pos.x, enemy.pos.z, crit ? 2.0 : 1.4)
-      this.effects.damageNumber(new THREE.Vector3(enemy.pos.x, 1.8, enemy.pos.z), damage, crit)
+      this.effects.damageNumber(new THREE.Vector3(enemy.pos.x, 1.8, enemy.pos.z), finalDamage, crit, false, ilseomActive)
       if (reflected > 0 && this.player.takeDamage(reflected)) {
         this.audio.hurt()
         this.effects.hitImpact(this.player.pos.x, this.player.pos.z)

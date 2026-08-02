@@ -792,6 +792,12 @@ canvas.pixelated {
   color: #ff3f3f;
   text-shadow: 0 0 8px #c41428, 0 2px 3px #000;
 }
+/* '일섬' — 단일 명중 보너스 발동 전용 강조색(보라) */
+.floater.special {
+  font-size: 22px;
+  color: #c58bff;
+  text-shadow: 0 0 8px #7a3fd4, 0 2px 3px #000;
+}
 
 /* ===== 오버레이 (시작/레벨업/게임오버) ===== */
 .overlay {
