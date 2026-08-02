@@ -213,7 +213,7 @@ export function installQcDebugHooks(game: Game) {
 
   api.debugSpawnBoss = () => {
     const g = internals(game)
-    const e = new Enemy('boss', g.player.pos.x, g.player.pos.z - 6, 1, 1, 1, false)
+    const e = new Enemy('boss', 'boss', g.player.pos.x, g.player.pos.z - 6, 1, 1, 1, false)
     g.enemies.push(e)
     g.scene.add(e.group)
     g.boss = e
@@ -223,7 +223,7 @@ export function installQcDebugHooks(game: Game) {
 
   api.debugSpawnEnemy = (kind) => {
     const g = internals(game)
-    const e = new Enemy(kind, g.player.pos.x, g.player.pos.z - 8, 1, 1, 1, false)
+    const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 8, 1, 1, 1, false)
     g.enemies.push(e)
     g.scene.add(e.group)
     return e
@@ -231,7 +231,7 @@ export function installQcDebugHooks(game: Game) {
 
   api.debugSpawnElite = (kind, affix) => {
     const g = internals(game)
-    const e = new Enemy(kind, g.player.pos.x, g.player.pos.z - 4, 1, 1, 1, true, affix)
+    const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 4, 1, 1, 1, true, affix)
     g.enemies.push(e)
     g.scene.add(e.group)
     return e

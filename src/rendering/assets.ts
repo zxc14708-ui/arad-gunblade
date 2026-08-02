@@ -126,6 +126,9 @@ export const ASSET = {
     ultimateCross: { path: 'assets/fx/ultimate_cross_temp_4f.png', frames: 4, cell: { w: 128, h: 128 } },
     iaido: { path: 'assets/fx/iaido_flash_temp_v2.png', frames: 1, cell: { w: 256, h: 64 } },
   },
+  // 키는 EnemyKind(행동)가 아니라 artSet(외형) — 같은 kind가 여러 외형을 쓸 수
+  // 있다(작업 지시 P2_prompt_stage_data_and_continuous_run_1 커밋2). 스테이지 1은
+  // artSet id를 kind 이름과 동일하게 둬 기존 동작을 그대로 유지한다.
   monsters: {
     imp: {
       idle: 'assets/stage1/stage1_goblins/melee_goblin_idle_4f.png',
@@ -148,7 +151,7 @@ export const ASSET = {
       attack: 'assets/stage1/stage1_tau/tau_chief_slam_6f.png',
       charge: 'assets/stage1/stage1_tau/tau_chief_charge_6f.png',
     },
-  },
+  } as Record<string, { idle: string; walk: string; attack: string; charge?: string }>,
   stage1: {
     floor: 'assets/stage1/stage1_background/forest_floor_room.png',
     foreground: {

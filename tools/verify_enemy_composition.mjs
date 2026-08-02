@@ -73,11 +73,11 @@ function run(RunState) {
       if (plan.kind !== 'combat') continue
       const bucket = bucketOf(plan.depth)
       const b = counts[bucket]
-      for (const kind of plan.enemies) {
+      for (const enemy of plan.enemies) {
         b.total++
-        if (kind === 'imp') b.imp++
-        else if (kind === 'shooter') b.shooter++
-        else if (kind === 'brute') b.brute++
+        if (enemy.kind === 'imp') b.imp++
+        else if (enemy.kind === 'shooter') b.shooter++
+        else if (enemy.kind === 'brute') b.brute++
       }
     }
   }

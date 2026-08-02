@@ -3,9 +3,9 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { CONFIG, COLORS } from '../config'
 import { Input } from './Input'
 import { Room, RoomVisualKind, DEFAULT_ROOM_SIZES } from '../systems/Room'
-import { RunState, RoomPlan, ROOM_ICON, roomLabel, Direction, OPPOSITE } from '../systems/RunState'
+import { RunState, RoomPlan, RoomEnemy, ROOM_ICON, roomLabel, Direction, OPPOSITE } from '../systems/RunState'
 import { Player } from '../entities/Player'
-import { Enemy, EnemyAction, EnemyKind } from '../entities/Enemy'
+import { Enemy, EnemyAction } from '../entities/Enemy'
 import { enemyDeathArt, ENEMY_SCALE } from '../entities/EnemySprite'
 import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
@@ -53,7 +53,7 @@ export class Game {
   private state: State = 'start'
   private roomCleared = false
   /** 룸 입장 시 순차 스폰 대기열 */
-  private spawnQueue: EnemyKind[] = []
+  private spawnQueue: RoomEnemy[] = []
   private spawnTimer = 0
   /** 방 입장 직후 스폰을 미루는 유예 시간 — 문 열자마자 맞는 것을 막는다 */
   private entrySafeTimer = 0
@@ -1041,14 +1041,14 @@ export class Game {
       this.spawnTimer -= dt
       if (this.spawnTimer <= 0) {
         this.spawnTimer = 0.14
-        const kind = this.spawnQueue.shift()!
+        const spawn = this.spawnQueue.shift()!
         const p = this.safeSpawnPoint()
         const plan = this.curPlan!
-        const e = new Enemy(kind, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.kind === 'elite', plan.affix)
+        const e = new Enemy(spawn.kind, spawn.artSet, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.kind === 'elite', plan.affix)
         this.enemies.push(e)
         this.scene.add(e.group)
         this.effects.burst(new THREE.Vector3(p.x, 1, p.z), 0x8a4a6a, 8, 5)
-        if (kind === 'boss') {
+        if (spawn.kind === 'boss') {
           this.boss = e
           this.hud.showBoss(true)
         }
@@ -1581,9 +1581,9 @@ export class Game {
     this.effects.shake(CONFIG.effects.shakeKill)
     this.scene.remove(e.group)
     this.kills++
-    const death = enemyDeathArt(e.kind)
+    const death = enemyDeathArt(e.artSet)
     this.effects.deathDissolve(e.pos, death.map, death.scale)
-    this.effects.playFx('death', e.pos.x, 1.0, e.pos.z, ENEMY_SCALE[e.kind] * 1.3)
+    this.effects.playFx('death', e.pos.x, 1.0, e.pos.z, ENEMY_SCALE[e.artSet] * 1.3)
 
     if (e.affix === 'split') {
       for (const child of e.createSplitChildren()) {

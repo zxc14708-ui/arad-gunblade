@@ -20,10 +20,17 @@ const DELTA: Record<Direction, { x: number; y: number }> = {
   west: { x: -1, y: 0 },
 }
 
+/** 방 안에 스폰될 적 1개체 — kind(행동/AI)와 artSet(외형)를 분리한다(작업 지시
+ * P2_prompt_stage_data_and_continuous_run_1 커밋2). */
+export interface RoomEnemy {
+  kind: EnemyKind
+  artSet: string
+}
+
 export interface RoomPlan {
   id: string
   kind: RoomKind
-  enemies: EnemyKind[]
+  enemies: RoomEnemy[]
   chests: number
   hpMul: number
   dmgMul: number
@@ -90,6 +97,9 @@ export function roomLabel(plan: Pick<RoomPlan, 'kind' | 'affix'>) {
  * 폴백이라 보통 weight: 1을 둔다. */
 export interface StageEnemyEntry {
   kind: EnemyKind
+  /** 외형 — ASSET.monsters의 키(작업 지시 커밋2). 스테이지 1은 kind와 동일한
+   * 문자열을 써 기존 1:1 매핑을 그대로 유지한다. */
+  artSet: string
   weight: number
   minDepth: number
 }
@@ -111,7 +121,7 @@ export interface StageDef {
    * 구성은 이번 작업 지시 범위 밖(스키마에 명시된 필드가 아님)이라 기존
    * 하드코딩된 확률을 그대로 둔다. */
   enemies: StageEnemyEntry[]
-  boss: { kind: EnemyKind }
+  boss: { kind: EnemyKind; artSet: string }
   art: {
     floor: string
     foreground: {
@@ -140,11 +150,11 @@ export const STAGES: StageDef[] = [
     // 기존 combat 블록: depth>=3 && r<0.2 → brute, depth>=2 && r<0.5 → shooter, else imp.
     // enemiesFor()의 누적 임계값 검사로 그대로 옮겼다(표본 검사로 확인, 최종 보고 참고).
     enemies: [
-      { kind: 'brute', weight: 0.2, minDepth: 3 },
-      { kind: 'shooter', weight: 0.5, minDepth: 2 },
-      { kind: 'imp', weight: 1, minDepth: 1 },
+      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
+      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
+      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
     ],
-    boss: { kind: 'boss' },
+    boss: { kind: 'boss', artSet: 'boss' },
     art: {
       floor: 'assets/stage1/stage1_background/forest_floor_room.png',
       foreground: {
@@ -228,42 +238,60 @@ export class RunState {
    * P2_prompt_stage_data_and_continuous_run_1 커밋1). 배열 순서대로 "r < weight"를
    * 검사해 처음 만족하는(그리고 depth >= minDepth인) 항목을 고른다 — 기존
    * depth>=3 && r<0.2 → brute 같은 중첩 조건문과 동일한 결과를 낸다. */
-  private enemiesFor(depth: number): EnemyKind {
+  private enemiesFor(depth: number): StageEnemyEntry {
     const r = Math.random()
     const eligible = this.cfg.enemies.filter((e) => depth >= e.minDepth)
     for (const e of eligible) {
-      if (r < e.weight) return e.kind
+      if (r < e.weight) return e
     }
-    return eligible[eligible.length - 1]?.kind ?? this.cfg.enemies[this.cfg.enemies.length - 1].kind
+    return eligible[eligible.length - 1] ?? this.cfg.enemies[this.cfg.enemies.length - 1]
+  }
+
+  /** kind만 정해진 고정 스폰(보스방 잡몹, 엘리트/보물방 확률표)의 외형을 찾는다
+   * — 커밋1의 enemies 표에서 같은 kind의 artSet을 읽고, 없으면(보스 kind처럼
+   * 표에 없는 경우) kind 문자열 그대로 폴백한다(스테이지 1은 artSet===kind라
+   * 폴백이 실제로 쓰이지 않는다). */
+  private artSetFor(kind: EnemyKind): string {
+    if (kind === this.cfg.boss.kind) return this.cfg.boss.artSet
+    return this.cfg.enemies.find((e) => e.kind === kind)?.artSet ?? kind
   }
 
   private makePlan(id: string, depth: number, kind: RoomKind, x: number, y: number): RoomPlan {
     const m = this.muls(depth)
     if (kind === 'boss') {
       const adds: EnemyKind[] = ['imp', 'imp', 'brute', 'shooter', 'shooter']
-      return { id, kind, enemies: [this.cfg.boss.kind, ...adds], chests: 0, x, y, depth, hasFountain: false, ...m }
+      const enemies: RoomEnemy[] = [
+        { kind: this.cfg.boss.kind, artSet: this.cfg.boss.artSet },
+        ...adds.map((k) => ({ kind: k, artSet: this.artSetFor(k) })),
+      ]
+      return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, ...m }
     }
     if (kind === 'shop' || kind === 'rest') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
     if (kind === 'elite') {
       const affix = rollEliteAffix(this.previousEliteAffix)
       this.previousEliteAffix = affix
       const count = Math.ceil((3 + depth * 1.4) * CONFIG.spawn.roomDensity)
-      const enemies: EnemyKind[] = []
+      const enemies: RoomEnemy[] = []
       for (let i = 0; i < count; i++) {
-        if (i === 0 || (depth >= 3 && Math.random() < 0.38)) enemies.push('brute')
-        else if (Math.random() < 0.55) enemies.push('shooter')
-        else enemies.push('imp')
+        const eliteKind: EnemyKind = i === 0 || (depth >= 3 && Math.random() < 0.38) ? 'brute' : Math.random() < 0.55 ? 'shooter' : 'imp'
+        enemies.push({ kind: eliteKind, artSet: this.artSetFor(eliteKind) })
       }
       return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
     }
     if (kind === 'treasure') {
       const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))
-      const enemies: EnemyKind[] = Array.from({ length: n }, () => (Math.random() < 0.5 ? 'imp' : 'shooter'))
+      const enemies: RoomEnemy[] = Array.from({ length: n }, () => {
+        const treasureKind: EnemyKind = Math.random() < 0.5 ? 'imp' : 'shooter'
+        return { kind: treasureKind, artSet: this.artSetFor(treasureKind) }
+      })
       return { id, kind, enemies, chests: 2, x, y, depth, hasFountain: false, ...m }
     }
 
     const count = Math.ceil((4 + Math.floor(depth * 1.2) + Math.floor(Math.random() * 3)) * CONFIG.spawn.roomDensity)
-    const enemies: EnemyKind[] = Array.from({ length: count }, () => this.enemiesFor(depth))
+    const enemies: RoomEnemy[] = Array.from({ length: count }, () => {
+      const e = this.enemiesFor(depth)
+      return { kind: e.kind, artSet: e.artSet }
+    })
     return { id, kind, enemies, chests: Math.random() < 0.4 ? 1 : 0, x, y, depth, hasFountain: false, ...m }
   }
 

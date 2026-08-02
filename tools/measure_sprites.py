@@ -60,38 +60,41 @@ def read(path):
 # ── 소스 파싱 ────────────────────────────────────────────────────────────
 
 def parse_frames(src):
-    """EnemySprite.ts 의 FRAMES 테이블: kind -> {state: count}.
-    상태 키는 가변이다 — boss처럼 idle/walk/attack 외에 charge 등 추가
-    상태를 선언하는 kind도 있어, 먼저 kind 블록을 잡고 그 안에서
-    "키: 숫자" 쌍을 전부 수집한다."""
+    """EnemySprite.ts 의 FRAMES 테이블: art_set -> {state: count}.
+    art_set은 외형 키다(EnemyKind와 분리 — 작업 지시
+    P2_prompt_stage_data_and_continuous_run_1 커밋2). 상태 키는 가변이다 —
+    boss처럼 idle/walk/attack 외에 charge 등 추가 상태를 선언하는 art_set도
+    있어, 먼저 art_set 블록을 잡고 그 안에서 "키: 숫자" 쌍을 전부 수집한다."""
     m = re.search(r'const FRAMES[^=]*=\s*\{(.*?)\n\}', src, re.DOTALL)
     if not m:
         errors.append('EnemySprite.ts: FRAMES 테이블을 찾지 못함')
         return {}
     out = {}
     for lm in re.finditer(r"(\w+):\s*\{([^}]*)\}", m.group(1)):
-        kind, body = lm.groups()
+        art_set, body = lm.groups()
         states = {k: int(v) for k, v in re.findall(r"(\w+):\s*(\d+)", body)}
         if states:
-            out[kind] = states
+            out[art_set] = states
     return out
 
 
 def parse_monster_paths(src):
-    """assets.ts 의 ASSET.monsters 테이블: kind -> {state: path}.
-    parse_frames와 마찬가지로 상태 키가 가변이므로 kind 블록을 먼저 잡고
-    그 안에서 "키: '경로'" 쌍을 전부 수집한다."""
-    m = re.search(r'monsters:\s*\{(.*?)\n  \},\n  stage1:', src, re.DOTALL)
+    """assets.ts 의 ASSET.monsters 테이블: art_set -> {state: path}.
+    art_set은 외형 키다(EnemyKind와 분리됨). parse_frames와 마찬가지로 상태
+    키가 가변이므로 art_set 블록을 먼저 잡고 그 안에서 "키: '경로'" 쌍을
+    전부 수집한다. monsters 블록은 "as Record<...>" 캐스트가 붙어 있을 수
+    있어 닫는 "}"부터 다음 최상위 키(stage1:) 사이는 느슨하게 잡는다."""
+    m = re.search(r'monsters:\s*\{(.*?)\n  \}[^\n]*\n  stage1:', src, re.DOTALL)
     if not m:
         errors.append('assets.ts: ASSET.monsters 테이블을 찾지 못함')
         return {}
     out = {}
     block = m.group(1)
     for km in re.finditer(r"(\w+):\s*\{([^}]*)\}", block):
-        kind, body = km.groups()
+        art_set, body = km.groups()
         states = dict(re.findall(r"(\w+):\s*'([^']+)'", body))
         if states:
-            out[kind] = states
+            out[art_set] = states
     return out
 
 
@@ -139,7 +142,7 @@ def parse_props_paths(src):
 
 def parse_fx(src):
     """assets.ts 의 ASSET.fx 테이블: key -> {path, frames, cell:(w,h)}"""
-    m = re.search(r'\n  fx:\s*\{(.*?)\n  \},\n  monsters:', src, re.DOTALL)
+    m = re.search(r'\n  fx:\s*\{(.*?)\n  \},\n(?:\s*//[^\n]*\n)*  monsters:', src, re.DOTALL)
     if not m:
         errors.append('assets.ts: ASSET.fx 테이블을 찾지 못함')
         return {}
@@ -223,24 +226,28 @@ def check_player_sheet():
 # ── 1. 몬스터 시트 규격 ──────────────────────────────────────────────────
 
 def check_monster_sheets():
+    """art_set(외형 키, EnemyKind와 분리됨 — 커밋2) 단위로 EnemySprite.ts의
+    FRAMES 테이블과 assets.ts의 ASSET.monsters 테이블을 대조한다. 두 테이블의
+    art_set 집합 자체가 다르거나(신규 art_set 누락), 같은 art_set 안에서
+    상태 집합이 다르면(예: boss의 charge만 한쪽에서 빠짐) 반드시 에러로
+    잡는다 — 정규식 미스매치로 boss의 charge 시트가 검사를 조용히 피해간
+    사례가 정확히 이 형태였다."""
     frames = parse_frames(read(ENEMY_SPRITE_TS))
     paths = parse_monster_paths(read(ASSETS_TS))
-    kinds = sorted(set(frames) | set(paths))
+    art_sets = sorted(set(frames) | set(paths))
     if set(frames) != set(paths):
         errors.append(f'EnemySprite.ts FRAMES 키 {sorted(frames)} 와 '
                        f'assets.ts ASSET.monsters 키 {sorted(paths)} 가 다름')
 
-    print(f'{"kind":9} {"state":7} {"size":>10} {"cell":>5} {"frames":>7} {"bodyH(med)":>11} {"ratio":>6}')
+    print(f'{"artSet":9} {"state":7} {"size":>10} {"cell":>5} {"frames":>7} {"bodyH(med)":>11} {"ratio":>6}')
     print('-' * 64)
-    for kind in kinds:
-        want = frames.get(kind, {})
-        rel = paths.get(kind, {})
+    for art_set in art_sets:
+        want = frames.get(art_set, {})
+        rel = paths.get(art_set, {})
         if not want or not rel:
             continue
-        # kind는 양쪽에 있어도 그 안의 상태 집합이 갈라질 수 있다 — boss의
-        # charge가 정규식 미스매치로 조용히 빠졌던 사례가 정확히 이 형태였다.
         if set(want) != set(rel):
-            errors.append(f'{kind}: EnemySprite.ts FRAMES 상태 {sorted(want)} 와 '
+            errors.append(f'{art_set}: EnemySprite.ts FRAMES 상태 {sorted(want)} 와 '
                           f'assets.ts 상태 {sorted(rel)} 가 다름')
 
         states = [s for s in want if s in rel]  # 소스에 선언된 순서 유지(idle, walk, attack, ...)
@@ -267,7 +274,7 @@ def check_monster_sheets():
             name = rel[state]
             bh = median(m['heights']) if m['heights'] else 0
             ratio = (bh / m['cell']) / ref if ref else float('nan')
-            print(f'{kind:9} {state:7} {m["w"]}x{m["h"]:<5} {m["cell"]:>5} '
+            print(f'{art_set:9} {state:7} {m["w"]}x{m["h"]:<5} {m["cell"]:>5} '
                   f'{m["frames"]:>7} {bh:>11.0f} {ratio:>6.2f}')
 
             if m['w'] % m['cell']:

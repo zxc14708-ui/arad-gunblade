@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { CONFIG } from '../config'
-import type { EnemyKind } from './Enemy'
 import { noOutline } from '../rendering/toon'
 import { ASSET, cloneTex } from '../rendering/assets'
 import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
@@ -10,11 +9,13 @@ type StandardEnemyAnimState = Exclude<EnemyAnimState, 'charge'>
 type EnemyFrames = Record<StandardEnemyAnimState, number> & Partial<Record<'charge', number>>
 
 /**
- * 각 애니메이션의 프레임 수 (시트 = 가로 스트립, 정사각 셀)
- * 시트 규격은 tools/measure_sprites.py 로 검사한다 — 셀 크기·프레임 수가 맞고
- * 모든 프레임의 발이 셀 아래변에 닿아 있어야 이 단순한 렌더링이 성립한다.
+ * 각 애니메이션의 프레임 수 (시트 = 가로 스트립, 정사각 셀). artSet(외형) 기준
+ * — kind(행동)가 아니다(작업 지시 P2_prompt_stage_data_and_continuous_run_1
+ * 커밋2). 시트 규격은 tools/measure_sprites.py 로 검사한다 — 셀 크기·프레임
+ * 수가 맞고 모든 프레임의 발이 셀 아래변에 닿아 있어야 이 단순한 렌더링이
+ * 성립한다.
  */
-const FRAMES: Record<EnemyKind, EnemyFrames> = {
+const FRAMES: Record<string, EnemyFrames> = {
   imp: { idle: 4, walk: 6, attack: 4 },
   brute: { idle: 4, walk: 6, attack: 4 },
   shooter: { idle: 4, walk: 6, attack: 4 },
@@ -22,17 +23,17 @@ const FRAMES: Record<EnemyKind, EnemyFrames> = {
 }
 const FPS: Record<EnemyAnimState, number> = { idle: 5, walk: 10, attack: 12, charge: 12 }
 
-/** 셀(=캐릭터) 월드 높이 */
-const SCALE: Record<EnemyKind, number> = { imp: 2.2, brute: 3.5, shooter: 2.4, boss: 5.4 }
+/** 셀(=캐릭터) 월드 높이 — artSet 기준 */
+const SCALE: Record<string, number> = { imp: 2.2, brute: 3.5, shooter: 2.4, boss: 5.4 }
 
 /**
  * 사망 연출용 스프라이트 재료 — 대기 시트의 첫 프레임 기준.
  * (시트 전체를 그대로 넘기면 프레임 4장이 가로로 눌려 나온다)
  */
-export function enemyDeathArt(kind: EnemyKind): { map: THREE.Texture; scale: number } {
-  const map = cloneTex(ASSET.monsters[kind].idle)
-  map.repeat.set(1 / FRAMES[kind].idle, 1)
-  return { map, scale: SCALE[kind] }
+export function enemyDeathArt(artSet: string): { map: THREE.Texture; scale: number } {
+  const map = cloneTex(ASSET.monsters[artSet].idle)
+  map.repeat.set(1 / FRAMES[artSet].idle, 1)
+  return { map, scale: SCALE[artSet] }
 }
 export { SCALE as ENEMY_SCALE }
 
@@ -45,7 +46,7 @@ export class EnemySprite {
   private sprite: THREE.Sprite
   private mat: THREE.SpriteMaterial
   private texes: Record<StandardEnemyAnimState, THREE.Texture> & Partial<Record<'charge', THREE.Texture>>
-  private kind: EnemyKind
+  private artSet: string
   private state: EnemyAnimState = 'idle'
   private time = 0
   private flip = 1
@@ -53,25 +54,25 @@ export class EnemySprite {
   private attackTimer = 0
   private chargeTimer = 0
 
-  constructor(kind: EnemyKind) {
-    this.kind = kind
-    const src = ASSET.monsters[kind]
+  constructor(artSet: string) {
+    this.artSet = artSet
+    const src = ASSET.monsters[artSet]
     this.texes = {
       idle: cloneTex(src.idle),
       walk: cloneTex(src.walk),
       attack: cloneTex(src.attack),
     }
     for (const k of ['idle', 'walk', 'attack'] as StandardEnemyAnimState[]) {
-      this.texes[k].repeat.set(1 / FRAMES[kind][k], 1)
+      this.texes[k].repeat.set(1 / FRAMES[artSet][k], 1)
     }
-    if ('charge' in src) {
+    if (src.charge) {
       this.texes.charge = cloneTex(src.charge)
-      this.texes.charge.repeat.set(1 / (FRAMES[kind].charge ?? 1), 1)
+      this.texes.charge.repeat.set(1 / (FRAMES[artSet].charge ?? 1), 1)
     }
 
     this.mat = new THREE.SpriteMaterial({ map: this.texes.idle, transparent: true, depthWrite: false })
     this.sprite = makeBottomAnchoredSprite(this.mat)
-    const sc = SCALE[kind]
+    const sc = SCALE[artSet]
     setSpriteWorldHeight(this.sprite, sc)
     this.group.add(this.sprite)
 
@@ -115,7 +116,7 @@ export class EnemySprite {
     }
     this.time += dt
 
-    const n = FRAMES[this.kind][this.state] ?? FRAMES[this.kind].idle
+    const n = FRAMES[this.artSet][this.state] ?? FRAMES[this.artSet].idle
     const idx = Math.floor(this.time * FPS[this.state]) % n
     const fw = 1 / n
     const map = this.mat.map!
@@ -134,7 +135,7 @@ export class EnemySprite {
     // 보스는 매 명중마다 번쩍이면 시야를 방해하므로 강도를 절반으로 낮춘다
     // (지속시간은 Enemy.ts에서 이미 짧게 준다).
     if (hitFlash > 0) {
-      const peak = CONFIG.effects.flashIntensity * (this.kind === 'boss' ? CONFIG.effects.flashBossIntensityMul : 1)
+      const peak = CONFIG.effects.flashIntensity * (this.artSet === 'boss' ? CONFIG.effects.flashBossIntensityMul : 1)
       if (hitFlashCrit) this.mat.color.setRGB(peak, peak, peak * 0.3) // 치명타는 흰색 대신 노란색
       else this.mat.color.setRGB(peak, peak, peak)
     } else {

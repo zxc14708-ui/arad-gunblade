@@ -64,6 +64,7 @@ let NEXT_ID = 1
 export class Enemy {
   id = NEXT_ID++
   kind: EnemyKind
+  artSet: string
   group: THREE.Group
   pos = new THREE.Vector3()
   vel = new THREE.Vector3()
@@ -106,6 +107,7 @@ export class Enemy {
 
   constructor(
     kind: EnemyKind,
+    artSet: string,
     x: number,
     z: number,
     hpMul: number,
@@ -115,9 +117,10 @@ export class Enemy {
     affix?: EliteAffix,
   ) {
     this.kind = kind
+    this.artSet = artSet
     this.rangedStrafeSign = this.id % 2 === 0 ? 1 : -1
     this.def = DEFS[kind]
-    this.sprite = new EnemySprite(kind)
+    this.sprite = new EnemySprite(artSet)
     this.group = this.sprite.group
     this.pos.set(x, 0, z)
     this.group.position.copy(this.pos)
@@ -407,7 +410,7 @@ export class Enemy {
   createSplitChildren(): Enemy[] {
     if (this.affix !== 'split' || this.kind === 'boss') return []
     return Array.from({ length: ELITE_AFFIX.split.childCount }, () => {
-      const child = new Enemy(this.kind, this.pos.x, this.pos.z, 1, 1, 1)
+      const child = new Enemy(this.kind, this.artSet, this.pos.x, this.pos.z, 1, 1, 1)
       child.maxHp = this.maxHp * ELITE_AFFIX.split.hpMultiplier
       child.hp = child.maxHp
       child.speed = this.speed
