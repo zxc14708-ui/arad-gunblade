@@ -41,6 +41,7 @@ interface GameInternals {
   mode: 'town' | 'dungeon'
   spawnQueue: EnemyKind[]
   curPlan: RoomPlan | null
+  enterDungeon: () => void
   resolveSlash: (
     pos: THREE.Vector3,
     angle: number,
@@ -119,6 +120,7 @@ export function installQcDebugHooks(game: Game) {
     debugGetDensityLog: () => DensityLog
     debugSetGauge: (v: { progress: number; color: string } | null) => void
     debugSetCoreSlot: (slot: string, id: string) => void
+    debugEnterDungeon: () => void
   }
 
   const swings: SwingDensityRecord[] = []
@@ -197,6 +199,13 @@ export function installQcDebugHooks(game: Game) {
       if (plans.some((p) => (p.kind === 'treasure' || p.kind === 'elite') && p.hasFountain)) supplementUsed++
     }
     return { n, counts, shopMissing, restMissing, bossHasFountain, supplementUsed }
+  }
+
+  // `--only` 단일 스텝 실행 지원 — 던전 모드가 필요한 스텝을 포탈 실걷기
+  // 없이 곧장 진입시킨다(tools/qc.mjs의 부트스트랩에서 사용).
+  api.debugEnterDungeon = () => {
+    const g = internals(game)
+    if (g.mode !== 'dungeon') g.enterDungeon()
   }
 
   api.debugClearEnemies = () => {

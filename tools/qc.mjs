@@ -4,7 +4,13 @@
  *
  *   npm run qc                 빌드 + 프리뷰 서버 + 전 시나리오 주행
  *   npm run qc -- --url <URL>  이미 떠 있는 서버에 붙어서 주행 (빌드 생략)
- *   npm run qc -- --only town  이름에 'town'이 들어간 단계만
+ *   npm run qc -- --only town  이름에 'town'이 들어간 단계만 — 게임 시작
+ *                              (+ 필요시 debugEnterDungeon()으로 던전 모드
+ *                              곧장 진입)만 부트스트랩하고 선행 단계는 다시
+ *                              재생하지 않는다(DUNGEON_STEPS 참고). 개발 중
+ *                              특정 트레잇 하나만 반복 검증할 때 이 옵션을
+ *                              써야 풀 30단계를 매번 안 돈다. run-reset/
+ *                              shop-persist는 예외 — 전체 주행으로 검증할 것.
  *
  * 산출물 (qc-out/):
  *   contact.png      전 단계 한 장 요약 — 리뷰는 이것부터 본다
@@ -1667,6 +1673,25 @@ const STEPS = [
 ]
 
 /**
+ * `--only`로 이 이름들 중 하나가 선택되면, 선행 스텝을 처음부터 다시 재생하는
+ * 대신 debugEnterDungeon()으로 곧장 던전 모드에 진입시킨다(부트스트랩, 아래
+ * STEPS 루프 진입 직전 참고). 여기 없는 이름(town-* 등)은 마을 상태로도 충분해
+ * 부트스트랩이 필요 없다.
+ *
+ * run-reset/shop-persist는 제외했다 — 여러 방을 실제로 옮겨 다니며 상태
+ * 영속성을 검증하는 시나리오라 단일 진입으로 대체할 수 없다. --only로 이
+ * 둘만 선택하면 여전히 처음부터(town-idle 스킵, startBtn만 부트스트랩) 실행돼
+ * 필요한 선행 조건이 안 갖춰져 실패할 수 있다 — 이 둘은 전체 주행으로 검증한다.
+ */
+const DUNGEON_STEPS = new Set([
+  'combat', 'aimed-density', 'active-skills', 'iaido', 'trait-slots',
+  'midcost-slash', 'midcost-parry', 'midcost-shot-dash',
+  'fire-goblin', 'critical-south-edge',
+  'boss-prep', 'boss-charge', 'boss-slam', 'boss-phase2',
+  'elite-ward-thorns', 'elite-regen', 'elite-split-volatile-swift',
+])
+
+/**
  * 09-combat 등에서 처치한 적의 경험치로 레벨업/보스보상 모달(state==='levelup')이
  * 열린 채 남아있으면 Game의 프레임 루프가 적을 갱신하지 않는다(this.state==='play'
  * 로만 진행) — 보스/엘리트 디버그 단계 진입 전에 항상 치운다. 모달이 없으면 아무것도
@@ -1943,6 +1968,31 @@ await page.waitForTimeout(1200)
 await installQcSamplerFn(page)
 const displayFailure = await checkDisplayContract(page)
 if (displayFailure) errors.push(`display: ${displayFailure}`)
+
+// ── `--only` 부트스트랩 ──────────────────────────────────────────────
+// 기본 동작(선행 스텝을 처음부터 순서대로 재생)은 town-idle의 #startBtn
+// 클릭부터 시작해야 해서, 특정 한 스텝만 보고 싶어도 그 앞의 모든 스텝을
+// 그대로 다시 돌아야 했다(전투/트레잇 스텝 하나 고치는데 매번 풀 30단계
+// 왕복). 여기서 최소 선행 상태만 직접 세팅해 그 왕복을 없앤다:
+//   1) 게임 시작(#startBtn) — 아직 안 했으면
+//   2) 매치된 스텝이 던전 모드가 필요하면(DUNGEON_STEPS) debugEnterDungeon()
+//      으로 포탈 실걷기 없이 곧장 진입
+if (only) {
+  const hasPlayer = await page.evaluate(() => !!(window.__game && window.__game.player))
+  if (!hasPlayer) {
+    await page.click('#startBtn')
+    await page.waitForFunction(() => window.__game && window.__game.player, { timeout: 15000 })
+    await page.waitForTimeout(300) // 마을 씬 안정화(에셋 로드 등, town-idle 스텝의 기존 대기와 동일한 취지)
+  }
+  const matched = STEPS.filter((s) => s.name.includes(only))
+  if (matched.length === 0) {
+    console.log(`· 경고: --only ${only} 에 매치되는 스텝이 없음`)
+  } else if (matched.some((s) => DUNGEON_STEPS.has(s.name))) {
+    await page.evaluate(() => window.__game.debugEnterDungeon())
+    await page.waitForTimeout(300) // 방 구성(적 배치 등) 안정화
+    console.log(`· --only ${only}: debugEnterDungeon()으로 던전 모드 곧장 진입`)
+  }
+}
 
 let i = 0
 for (const s of STEPS) {
