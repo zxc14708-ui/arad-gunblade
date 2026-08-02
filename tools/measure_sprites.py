@@ -17,6 +17,14 @@ FRAMES/ASPECT/경로는 소스(EnemySprite.ts / Interactable.ts / assets.ts)에�
   5. public/assets 전체를 훑어 src/ 어디에서도 참조되지 않는 파일(고아 에셋) —
      이건 경고만 남긴다(실패 아님). 의도적으로 보관 중인 미연결 장식 프롭이
      있어 단순 "미참조 = 삭제 대상"으로 볼 수 없다 — DESIGN_LOG.md D1 참고.
+  6. 팔레트 리컬러 파이프라인 자산(public/assets/monsters/manifest.json 기준,
+     quantize_sheet.py/recolor_sheet.py 산출물에만 적용) — 마스터가 모드 P·
+     32색 이하·인덱스 0=투명인지, 변형본의 픽셀 인덱스 배열이 마스터와 완전히
+     같은지(실루엣·프레임 정합이 이 한 검사로 보장된다), recolor_sheet.py
+     --all을 다시 돌린 결과가 커밋된 변형본과 바이트까지 같은지(재생성 일치 —
+     state_snapshot.mjs --check와 같은 방식). 매니페스트에 아키타입이 없으면
+     (아직 실제 자산을 이 파이프라인으로 옮기지 않았으면) 통과한다 — 이 검사는
+     파이프라인을 쓰는 자산에만 적용되고, 기존 자산은 그대로 1~5번만 받는다.
 
 사용법:
   python3 tools/measure_sprites.py
@@ -435,6 +443,122 @@ def check_orphan_assets():
         print('고아 에셋 없음')
 
 
+# ── 6. 팔레트 리컬러 파이프라인 자산 ───────────────────────────────────────
+# quantize_sheet.py/recolor_sheet.py(P0_prompt_palette_pipeline)가 다루는
+# 자산에만 적용된다. manifest.json이 없거나 아키타입이 비어 있으면(아직 아무
+# 자산도 이 파이프라인으로 옮기지 않았으면) 조용히 통과한다.
+
+MONSTERS_DIR = os.path.join(PUBLIC, 'assets', 'monsters')
+MONSTERS_MANIFEST = os.path.join(MONSTERS_DIR, 'manifest.json')
+
+
+def _load_manifest():
+    if not os.path.exists(MONSTERS_MANIFEST):
+        return None
+    import json
+    with open(MONSTERS_MANIFEST, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def check_palette_assets():
+    manifest = _load_manifest()
+    if not manifest or not manifest.get('archetypes'):
+        print('팔레트 파이프라인 자산 없음(manifest.json 아키타입 0개) - 검사 스킵')
+        return
+
+    import json as json_mod
+    import sys as sys_mod
+    sys_mod.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import recolor_sheet  # noqa: E402  (경로 추가 이후 임포트)
+
+    total_masters = 0
+    total_variants = 0
+    for arche in manifest['archetypes']:
+        name = arche['name']
+        sheets = arche.get('sheets', [])
+        variants = arche.get('variants', [])
+        arche_dir = os.path.join(MONSTERS_DIR, name)
+        master_dir = os.path.join(arche_dir, 'master')
+
+        for sheet in sheets:
+            master_path = os.path.join(master_dir, sheet)
+            if not os.path.exists(master_path):
+                errors.append(f'팔레트 마스터 없음: {os.path.relpath(master_path, ROOT)}')
+                continue
+            img = Image.open(master_path)
+            if img.mode != 'P':
+                errors.append(f'{sheet} ({name}/master): 모드가 P가 아님 ({img.mode})')
+                continue
+            n_colors = len(img.getpalette()) // 3
+            used = img.getcolors(maxcolors=256) or []
+            max_index_used = max((idx for _, idx in used), default=0)
+            if max_index_used + 1 > 32:
+                errors.append(f'{sheet} ({name}/master): 색 인덱스가 32개를 넘음 (최대 인덱스 {max_index_used})')
+            if img.info.get('transparency') != 0:
+                errors.append(f'{sheet} ({name}/master): 인덱스 0이 투명으로 지정되지 않음')
+            total_masters += 1
+
+            master_indices = list(img.getdata())
+
+            for variant_name in variants:
+                variant_path = os.path.join(arche_dir, variant_name, sheet)
+                if not os.path.exists(variant_path):
+                    errors.append(f'팔레트 변형 없음: {os.path.relpath(variant_path, ROOT)}')
+                    continue
+                vimg = Image.open(variant_path)
+                if vimg.size != img.size or list(vimg.getdata()) != master_indices:
+                    errors.append(
+                        f'{name}/{variant_name}/{sheet}: 픽셀 인덱스 배열이 마스터와 다름 '
+                        f'(팔레트 테이블만 바뀌어야 한다 — recolor_sheet.py가 인덱스를 건드렸는지 확인)'
+                    )
+                total_variants += 1
+
+    # 재생성 일치 — recolor_sheet.py --all을 임시 디렉터리에 다시 돌려
+    # 커밋된 산출물과 바이트까지 같은지 비교한다(작업 트리는 건드리지 않는다).
+    import shutil
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        shadow_monsters = os.path.join(tmp, 'monsters')
+        shutil.copytree(MONSTERS_DIR, shadow_monsters)
+        # 커밋된 변형 산출물을 지우고 --all로 다시 만들어 위와 비교한다.
+        for arche in manifest['archetypes']:
+            for variant_name in arche.get('variants', []):
+                variant_dir = os.path.join(shadow_monsters, arche['name'], variant_name)
+                if os.path.isdir(variant_dir):
+                    shutil.rmtree(variant_dir)
+
+        orig_monsters_dir = recolor_sheet.MONSTERS_DIR
+        orig_manifest_path = recolor_sheet.MANIFEST_PATH
+        orig_palettes_dir = recolor_sheet.PALETTES_DIR
+        try:
+            recolor_sheet.MONSTERS_DIR = shadow_monsters
+            recolor_sheet.MANIFEST_PATH = os.path.join(shadow_monsters, 'manifest.json')
+            recolor_sheet.PALETTES_DIR = os.path.join(shadow_monsters, 'palettes')
+            recolor_sheet.run_all()
+        finally:
+            recolor_sheet.MONSTERS_DIR = orig_monsters_dir
+            recolor_sheet.MANIFEST_PATH = orig_manifest_path
+            recolor_sheet.PALETTES_DIR = orig_palettes_dir
+
+        for arche in manifest['archetypes']:
+            name = arche['name']
+            for variant_name in arche.get('variants', []):
+                for sheet in arche.get('sheets', []):
+                    committed = os.path.join(MONSTERS_DIR, name, variant_name, sheet)
+                    regenerated = os.path.join(shadow_monsters, name, variant_name, sheet)
+                    if not os.path.exists(committed) or not os.path.exists(regenerated):
+                        continue  # 이미 위에서 "변형 없음"으로 보고됨
+                    with open(committed, 'rb') as f1, open(regenerated, 'rb') as f2:
+                        if f1.read() != f2.read():
+                            errors.append(
+                                f'{name}/{variant_name}/{sheet}: recolor_sheet.py --all 재생성 결과가 '
+                                f'커밋된 파일과 바이트가 다름(마스터 palette.json 또는 변형 팔레트 JSON을 '
+                                f'고친 뒤 재생성을 안 돌렸을 가능성)'
+                            )
+
+    print(f'팔레트 파이프라인 자산 검사: 마스터 {total_masters}개, 변형 {total_variants}개')
+
+
 # ── 실행 ─────────────────────────────────────────────────────────────────
 
 check_player_sheet()
@@ -443,6 +567,7 @@ check_all_paths_exist()
 check_prop_aspect()
 check_fx_sheets()
 check_orphan_assets()
+check_palette_assets()
 
 for w in warnings:
     print(f'경고: {w}')
