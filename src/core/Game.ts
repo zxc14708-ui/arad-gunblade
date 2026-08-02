@@ -1044,7 +1044,7 @@ export class Game {
         const spawn = this.spawnQueue.shift()!
         const p = this.safeSpawnPoint()
         const plan = this.curPlan!
-        const e = new Enemy(spawn.kind, spawn.artSet, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.kind === 'elite', plan.affix)
+        const e = new Enemy(spawn.kind, spawn.artSet, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.xpMul, plan.kind === 'elite', plan.affix)
         this.enemies.push(e)
         this.scene.add(e.group)
         this.effects.burst(new THREE.Vector3(p.x, 1, p.z), 0x8a4a6a, 8, 5)

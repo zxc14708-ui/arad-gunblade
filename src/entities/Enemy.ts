@@ -113,6 +113,7 @@ export class Enemy {
     hpMul: number,
     dmgMul: number,
     speedMul: number,
+    xpMul = 1,
     elite = false,
     affix?: EliteAffix,
   ) {
@@ -136,7 +137,7 @@ export class Enemy {
     this.speed = CONFIG.enemy.baseSpeed * this.def.speed * speedMul
     if (this.affix === 'swift') this.speed *= ELITE_AFFIX.swift.speedMultiplier
     this.damage = CONFIG.enemy.baseDamage * this.def.damage * dmgMul
-    this.xp = CONFIG.enemy.baseXp * this.def.xp
+    this.xp = CONFIG.enemy.baseXp * this.def.xp * xpMul
     this.radius = this.def.radius
     this.shootTimer = kind === 'boss' ? 0 : (this.def.shootCd ?? 0) * Math.random()
     if (this.elite) this.createEliteMarker()

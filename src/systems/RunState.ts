@@ -35,6 +35,7 @@ export interface RoomPlan {
   hpMul: number
   dmgMul: number
   speedMul: number
+  xpMul: number
   affix?: EliteAffix
   x: number
   y: number
@@ -231,6 +232,9 @@ export class RunState {
       hpMul: c.difficulty.baseHp * (1 + (depth - 1) * c.difficulty.depthHpStep),
       dmgMul: c.difficulty.baseDmg * (1 + (depth - 1) * c.difficulty.depthDmgStep),
       speedMul: Math.min(1.7, 1 + (depth - 1) * 0.035),
+      // 스테이지 배수만 적용(depth 배수는 이번 작업 범위 밖) — 스테이지 정의의
+      // difficulty.baseXp 자체가 그 배수다. 스테이지 1은 1.0 = 기존과 동일.
+      xpMul: c.difficulty.baseXp,
     }
   }
 
@@ -276,7 +280,7 @@ export class RunState {
         const eliteKind: EnemyKind = i === 0 || (depth >= 3 && Math.random() < 0.38) ? 'brute' : Math.random() < 0.55 ? 'shooter' : 'imp'
         enemies.push({ kind: eliteKind, artSet: this.artSetFor(eliteKind) })
       }
-      return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
+      return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08, xpMul: m.xpMul }
     }
     if (kind === 'treasure') {
       const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))
