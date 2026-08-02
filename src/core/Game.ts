@@ -149,7 +149,10 @@ export class Game {
 
     this.hud.onStart(() => this.startGame())
     this.hud.onRestart(() => this.startGame())
-    this.hud.onStageClear(() => this.enterTown())
+    this.hud.onStageClear(() => {
+      if (this.run.isLastStage) this.enterTown()
+      else this.advanceStage()
+    })
     this.hud.onOpenSettings(() => this.toggleSettings())
     this.hud.onCloseSettings(() => this.closeSettings())
     this.hud.onVolume((kind, v) => {
@@ -300,6 +303,23 @@ export class Game {
     this.audio.waveStart()
   }
 
+  /**
+   * 이어가기 런 — 챕터(5스테이지) 완주 전까지는 마을을 거치지 않고 다음
+   * 스테이지 첫 방으로 바로 넘어간다(작업 지시
+   * P2_prompt_stage_data_and_continuous_run_1 커밋4). 레벨/경험치/특성/
+   * 골드/장비/스킬 쿨다운은 그대로 유지된다 — startRun()(플레이어 재생성)은
+   * 호출하지 않는다, 그건 "마을 입장" 시점 전용 규칙이라 여기서 건드리지
+   * 않는다. 방 맵/깊이/상점 재고/분수·제련소 사용 이력만 새로 시작한다.
+   */
+  private advanceStage() {
+    this.shopRooms.clear()
+    this.run.advanceStage()
+    const plan = this.run.enterFirst()
+    this.loadRoom(plan)
+    this.player.heal(this.player.stats.maxHp * 0.3)
+    this.audio.waveStart()
+  }
+
   /** 방 하나 구성 */
   private loadRoom(plan: RoomPlan, enteredFrom: Direction = 'south') {
     this.clearWorld()
@@ -431,7 +451,7 @@ export class Game {
     this.state = 'clear'
     this.audio.levelup()
     const reward = this.meta.grantStageClear(this.run.cfg.reward)
-    this.hud.showStageClear(this.run.stage, this.kills, this.run.gold, this.player.level, reward)
+    this.hud.showStageClear(this.run.stage, this.kills, this.run.gold, this.player.level, this.run.isLastStage, reward)
   }
 
   /**

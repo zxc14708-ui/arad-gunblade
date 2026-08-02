@@ -178,6 +178,150 @@ export const STAGES: StageDef[] = [
     },
     reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
   },
+  // ── 임시 테스트 데이터 — 스테이지 2~5는 스테이지 1의 복제본이며 콘텐츠
+  // 교체 예정이다(작업 지시 P2_prompt_stage_data_and_continuous_run_1 커밋4).
+  // 이어가기 전환 흐름(마을을 거치지 않고 다음 스테이지로 넘어가는 것)을
+  // 검증하려면 STAGES가 최소 5개 있어야 하는데 아직 실제 스테이지 2~5
+  // 콘텐츠(적 구성/아트/방크기)가 없어 채워 넣었다. difficulty(baseHp/
+  // baseDmg/baseXp 램프)만 스테이지별로 다르고 나머지(enemies/boss/art/
+  // roomSize/reward)는 스테이지 1과 완전히 동일하다 — 실제 콘텐츠가
+  // 정해지면 이 4개 항목을 교체해야 한다. baseXp = 1 + (stage-1) * 0.15
+  // 공식(작업 지시 커밋3)을 그대로 따랐다. baseHp/baseDmg 램프는 depth당
+  // 증가폭(depthHpStep 0.17 / depthDmgStep 0.1)과 같은 폭을 스테이지
+  // 단위로도 적용한 것으로, 실제 밸런스 수치가 아니라 전환 흐름 테스트용
+  // placeholder다.
+  {
+    id: 2,
+    name: '검은 숲 지하 (임시 복제 — 스테이지 2)',
+    normalRooms: 6,
+    difficulty: { baseHp: 1.17, baseDmg: 1.1, baseXp: 1.15, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    enemies: [
+      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
+      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
+      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+    ],
+    boss: { kind: 'boss', artSet: 'boss' },
+    art: {
+      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      foreground: {
+        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
+        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
+        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
+        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
+        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
+        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
+        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+      },
+      campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
+    },
+    roomSize: {
+      combat: { w: 42, d: 30 },
+      treasure: { w: 34, d: 26 },
+      shop: { w: 38, d: 26 },
+      rest: { w: 38, d: 26 },
+      boss: { w: 50, d: 36 },
+    },
+    reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
+  },
+  {
+    id: 3,
+    name: '검은 숲 지하 (임시 복제 — 스테이지 3)',
+    normalRooms: 6,
+    difficulty: { baseHp: 1.34, baseDmg: 1.2, baseXp: 1.3, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    enemies: [
+      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
+      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
+      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+    ],
+    boss: { kind: 'boss', artSet: 'boss' },
+    art: {
+      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      foreground: {
+        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
+        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
+        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
+        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
+        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
+        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
+        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+      },
+      campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
+    },
+    roomSize: {
+      combat: { w: 42, d: 30 },
+      treasure: { w: 34, d: 26 },
+      shop: { w: 38, d: 26 },
+      rest: { w: 38, d: 26 },
+      boss: { w: 50, d: 36 },
+    },
+    reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
+  },
+  {
+    id: 4,
+    name: '검은 숲 지하 (임시 복제 — 스테이지 4)',
+    normalRooms: 6,
+    difficulty: { baseHp: 1.51, baseDmg: 1.3, baseXp: 1.45, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    enemies: [
+      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
+      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
+      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+    ],
+    boss: { kind: 'boss', artSet: 'boss' },
+    art: {
+      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      foreground: {
+        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
+        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
+        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
+        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
+        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
+        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
+        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+      },
+      campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
+    },
+    roomSize: {
+      combat: { w: 42, d: 30 },
+      treasure: { w: 34, d: 26 },
+      shop: { w: 38, d: 26 },
+      rest: { w: 38, d: 26 },
+      boss: { w: 50, d: 36 },
+    },
+    reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
+  },
+  {
+    id: 5,
+    name: '검은 숲 지하 (임시 복제 — 스테이지 5)',
+    normalRooms: 6,
+    difficulty: { baseHp: 1.68, baseDmg: 1.4, baseXp: 1.6, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    enemies: [
+      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
+      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
+      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+    ],
+    boss: { kind: 'boss', artSet: 'boss' },
+    art: {
+      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      foreground: {
+        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
+        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
+        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
+        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
+        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
+        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
+        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+      },
+      campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
+    },
+    roomSize: {
+      combat: { w: 42, d: 30 },
+      treasure: { w: 34, d: 26 },
+      shop: { w: 38, d: 26 },
+      rest: { w: 38, d: 26 },
+      boss: { w: 50, d: 36 },
+    },
+    reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
+  },
 ]
 
 /**
@@ -211,11 +355,32 @@ export class RunState {
   get isBossRoom() {
     return this.current?.kind === 'boss'
   }
+  /** 챕터(5스테이지) 완주 여부 — true면 이번 보스 클리어로 마을 복귀 */
+  get isLastStage() {
+    return this.stage >= STAGES.length
+  }
 
   reset(stage = 1) {
     this.stage = stage
     this.depth = 0
     this.gold = 0
+    this.roomsCleared = 0
+    this.current = null
+    this.currentId = null
+    this.nodes.clear()
+    this.previousEliteAffix = undefined
+    this.dungeonForgePrice = CONFIG.economy.dungeonForgeBasePrice
+    this.fountainFreeUsed = false
+    this.fountainPrice = CONFIG.economy.fountainBasePrice
+  }
+
+  /** 이어가기 런의 스테이지 전환 — reset()과 달리 골드를 유지한다(작업 지시
+   * P2_prompt_stage_data_and_continuous_run_1 커밋4). 레벨/경험치/특성/장비는
+   * Player 쪽 상태라 이 메서드가 건드리지 않는다. 방 맵(nodes)/depth/분수·
+   * 제련소 가격 사다리·사용 이력은 새로 시작한다. */
+  advanceStage() {
+    this.stage++
+    this.depth = 0
     this.roomsCleared = 0
     this.current = null
     this.currentId = null

@@ -764,10 +764,11 @@ export class HUD {
     }
   }
 
-  showStageClear(stage: number, kills: number, gold: number, level: number, reward?: { faint: number; decent: number; strong: number; tokens: number }) {
+  showStageClear(stage: number, kills: number, gold: number, level: number, chapterDone: boolean, reward?: { faint: number; decent: number; strong: number; tokens: number }) {
     this.q('#clearStats').innerHTML = `
       스테이지 <b>${stage}</b> 클리어! &nbsp;·&nbsp; 레벨 <b>${level}</b><br/>
       처치 <b>${kills}</b> &nbsp;·&nbsp; 획득 골드 <b>🪙 ${gold}</b>${reward ? `<br/><span class="clear-meta">◇ ${reward.faint} &nbsp;◆ ${reward.decent} &nbsp;✦ ${reward.strong} &nbsp; 모험가 증표 ${reward.tokens}</span>` : ''}`
+    ;(this.q('#clearBtn') as HTMLButtonElement).textContent = chapterDone ? '마을로 귀환' : '다음 스테이지로'
     this.q<HTMLDivElement>('#clearOv').classList.add('show')
   }
 
