@@ -80,6 +80,8 @@ export interface BulletSpec {
   dir: THREE.Vector3
   damage: number
   crit: boolean
+  /** '순환'(skill) — 이 탄환이 처치를 낸 스킬을 식별한다. 일반 사격은 없음(undefined) */
+  skillSource?: 'doubleShot' | 'ultimate'
 }
 
 export interface SlashSpec {
@@ -160,6 +162,16 @@ export class Player {
   private ultimateShotsLeft = 0
   private ultimateShotTimer = 0
   private ultimateDir = new THREE.Vector3()
+  /** 역행(skill) — Q 종료 후 대시 입력을 되돌아가기로 바꿔치기하는 창(감소, 0이면 없음) */
+  private reverseWindowTimer = 0
+  /** 역행(skill) — 현재 진행 중인 chargeTimer 구간이 되돌아가기인지(재무장 방지용) */
+  private isReverseTrip = false
+  private reverseReturnDir = new THREE.Vector3()
+  private reverseReturnDamage = 0
+  private reverseReturnCrit = false
+  private reverseReturnKnockback = 0
+  /** 여운(skill) — R 종료 후 남은 지속시간(초), 0이면 비활성 */
+  private aftertasteTimer = 0
   private invuln = 0
   private hitFlash = 0
   private walkPhase = 0
@@ -271,17 +283,42 @@ export class Player {
   }
 
   /**
+   * '순환'(skill) — Game.ts가 스킬(Q/E/R) 기인 피해로 적을 처치했을 때 호출한다.
+   * 처치에 쓰인 스킬을 제외한 나머지 두 스킬의 쿨타임을 감소시킨다. 처치 1건당
+   * 1회 호출된다 — 광역으로 여럿을 죽이면 Game.ts가 그만큼 여러 번 부른다
+   * (의도된 동작, 여기서 횟수를 제한하지 않는다). 쿨 감소가 실제로 일어난
+   * 스킬 키('q'/'e'/'r') 목록을 반환해 HUD 피드백에 쓴다.
+   */
+  onSkillKill(skill: 'charge' | 'doubleShot' | 'ultimate'): ('q' | 'e' | 'r')[] | null {
+    if (this.coreSlots.get('skill') !== 'circulation') return null
+    const reduce = CONFIG.traits.circulationCooldownReduction
+    const flashed: ('q' | 'e' | 'r')[] = []
+    if (skill !== 'charge') { this.chargeCdTimer = Math.max(0, this.chargeCdTimer - reduce); flashed.push('q') }
+    if (skill !== 'doubleShot') { this.doubleShotCdTimer = Math.max(0, this.doubleShotCdTimer - reduce); flashed.push('e') }
+    if (skill !== 'ultimate') { this.ultimateCdTimer = Math.max(0, this.ultimateCdTimer - reduce); flashed.push('r') }
+    return flashed
+  }
+
+  /**
    * 조건부 핵심 슬롯 특성의 발동 게이지(0~1)와 표시 색 — Game이 매 프레임
    * Effects.requestGauge에 그대로 넘긴다. 동시에 여러 조건이 진행 중이면
    * 진행률이 더 높은 쪽만 반환한다(발밑 게이지는 최대 1개).
+   *
+   * decreasing: 발도참·조준사격은 0→1로 차오르는 창인 반면, 역행은 0.8초가
+   * 줄어드는 창이다 — 같은 방향으로 그리면 "지금 채우는 중"과 "곧 닫히는
+   * 중"이 구분되지 않아 Effects.drawGauge()가 이 값으로 아크 방향을 반대로
+   * 그린다(줄어드는 쪽은 12시에서 반시계 방향).
    */
-  conditionGauge(): { progress: number; color: string } | null {
-    const candidates: { progress: number; color: string }[] = []
+  conditionGauge(): { progress: number; color: string; decreasing?: boolean } | null {
+    const candidates: { progress: number; color: string; decreasing?: boolean }[] = []
     if (this.coreSlots.get('slash') === 'iaijutsu') {
       candidates.push({ progress: Math.min(1, this.stillTimer / CONFIG.traits.iaijutsuIdleThreshold), color: '#f97316' })
     }
     if (this.coreSlots.get('shot') === 'aimed_shot') {
       candidates.push({ progress: Math.min(1, this.aimPauseTimer / CONFIG.traits.aimedShotPauseThreshold), color: '#38bdf8' })
+    }
+    if (this.reverseWindowTimer > 0) {
+      candidates.push({ progress: this.reverseWindowTimer / CONFIG.traits.reverseWindowSec, color: '#facc15', decreasing: true })
     }
     if (candidates.length === 0) return null
     return candidates.reduce((best, c) => (c.progress > best.progress ? c : best))
@@ -331,6 +368,9 @@ export class Player {
   get chargeReady() { return this.chargeCdTimer <= 0 }
   get doubleShotReady() { return this.doubleShotCdTimer <= 0 }
   get ultimateReady() { return this.ultimateCdTimer <= 0 }
+  /** 여운(skill) — R 종료 후 8초간 true. Game.ts의 4개 피해 적용 지점
+   * (resolveSlash/resolveIaido/resolveBullets/aoeDamage)이 이 값으로 +25%를 건다. */
+  get aftertasteActive() { return this.aftertasteTimer > 0 }
   get activeSkillCooldowns() {
     return {
       charge: Math.max(0, this.chargeCdTimer) / CONFIG.skills.charge.cooldown,
@@ -412,6 +452,8 @@ export class Player {
     if (this.swingCommitTimer > 0) this.swingCommitTimer -= dt
     if (this.invuln > 0) this.invuln -= dt
     if (this.hitFlash > 0) this.hitFlash -= dt
+    if (this.reverseWindowTimer > 0) this.reverseWindowTimer -= dt
+    if (this.aftertasteTimer > 0) this.aftertasteTimer -= dt
 
     // 발도 이동 — 설정된 총 이동거리를 duration 동안 정확히 나눠 이동한다.
     // 이동이 끝난 프레임에 실제 시작점~현재 위치 선분을 한 번만 타격한다.
@@ -433,6 +475,17 @@ export class Player {
         // 이동 종료 뒤에는 대시와 같은 짧은 후속 무적만 남긴다.
         this.invuln = Math.max(this.invuln, CONFIG.player.dashIFrames)
         this.swingAnim = 0.3
+        // 역행(skill) — 방금 끝난 구간이 정방향(왕복의 첫 다리)이었을 때만
+        // 되돌아가기 창을 새로 연다. 되돌아가기 구간 자체가 끝난 경우
+        // (isReverseTrip) 재무장하지 않는다 — 왕복은 한 번뿐이다.
+        if (!this.isReverseTrip && this.coreSlots.get('skill') === 'reverse') {
+          this.reverseWindowTimer = CONFIG.traits.reverseWindowSec
+          this.reverseReturnDir = this.chargeDir.clone().negate()
+          this.reverseReturnDamage = this.chargeDamage * CONFIG.traits.reverseDamageMult
+          this.reverseReturnCrit = this.chargeCrit
+          this.reverseReturnKnockback = this.chargeKnockback
+        }
+        this.isReverseTrip = false
       }
     } else if (this.dashTimer > 0) {
       this.dashTimer -= dt
@@ -455,13 +508,27 @@ export class Player {
         this.pos.z += nz * this.stats.moveSpeed * dt
         this.walkPhase += dt * 13 // 걷기 다리 회전
       }
-      // 대시 시작 — dashReady는 원래 대시 애니메이션(dashDuration) 동안은
-      // 쿨타임(dashCooldown)이 항상 더 길어 참일 수 없었지만, '잔영'이 대시
-      // 무적 중 피격 시 dashCdTimer를 0으로 초기화하면서 이 전제가 깨졌다.
-      // Shift가 계속 눌려있으면(downAction은 레벨 트리거) 같은 프레임에 대시가
-      // 즉시 재시작돼 afterimageDashRefreshed 가드까지 함께 풀려버려, 공격을
-      // 계속 흘리는 한 무한 대시 사슬이 생긴다. isDashing 가드로 막는다.
-      if (input.downAction('dash') && this.dashReady && !this.isDashing && (mv.x !== 0 || mv.z !== 0)) {
+      // 역행(skill) — 창이 열려 있는 동안의 대시 입력은 평소 대시 대신 되돌아가기로
+      // 바꿔치기한다(창을 놓치면 아래 평소 대시로 폴스루). chargeTimer 기반 이동을
+      // 재사용하므로 무적(isIaido)도 자동으로 동일하게 적용되고, 대시 쿨/이동
+      // 입력 조건과 무관하게 발동한다 — "대시 쿨을 소모하지 않는다"는 요구사항이
+      // dashCdTimer를 아예 건드리지 않는 것만으로 자연히 만족된다.
+      if (this.reverseWindowTimer > 0 && input.downAction('dash')) {
+        this.reverseWindowTimer = 0
+        this.isReverseTrip = true
+        this.chargeDir.copy(this.reverseReturnDir)
+        this.chargeStart.copy(this.pos)
+        this.chargeTimer = CONFIG.skills.charge.duration
+        this.chargeDamage = this.reverseReturnDamage
+        this.chargeCrit = this.reverseReturnCrit
+        this.chargeKnockback = this.reverseReturnKnockback
+      } else if (input.downAction('dash') && this.dashReady && !this.isDashing && (mv.x !== 0 || mv.z !== 0)) {
+        // 대시 시작 — dashReady는 원래 대시 애니메이션(dashDuration) 동안은
+        // 쿨타임(dashCooldown)이 항상 더 길어 참일 수 없었지만, '잔영'이 대시
+        // 무적 중 피격 시 dashCdTimer를 0으로 초기화하면서 이 전제가 깨졌다.
+        // Shift가 계속 눌려있으면(downAction은 레벨 트리거) 같은 프레임에 대시가
+        // 즉시 재시작돼 afterimageDashRefreshed 가드까지 함께 풀려버려, 공격을
+        // 계속 흘리는 한 무한 대시 사슬이 생긴다. isDashing 가드로 막는다.
         this.dashDir.set(mv.x, 0, mv.z).normalize()
         this.dashTimer = CONFIG.player.dashDuration
         this.dashCdTimer = this.stats.dashCooldown
@@ -506,17 +573,22 @@ export class Player {
     }
 
     // E: 탄약 두 발을 동시에 소비하고, 조준선 양 옆으로 100% 위력의 탄환을 발사한다.
+    // '삼연사'(skill)면 중앙 탄환이 추가돼 3발이 되지만 탄약 소모는 그대로 2다.
     if (activeSkillsEnabled && input.consumeAction('doubleShot') && this.doubleShotReady && !this.reloading && this.ammo >= CONFIG.skills.doubleShot.ammoCost) {
       this.doubleShotCdTimer = CONFIG.skills.doubleShot.cooldown
       this.ammo -= CONFIG.skills.doubleShot.ammoCost
       this.shootAnim = Math.max(0.16, this.stats.gunCooldown)
-      for (const offset of [-CONFIG.skills.doubleShot.angleOffset, CONFIG.skills.doubleShot.angleOffset]) {
+      const offsets = this.coreSlots.get('skill') === 'triple_shot'
+        ? [-CONFIG.skills.doubleShot.angleOffset, 0, CONFIG.skills.doubleShot.angleOffset]
+        : [-CONFIG.skills.doubleShot.angleOffset, CONFIG.skills.doubleShot.angleOffset]
+      for (const offset of offsets) {
         const dir = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
         dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), offset)
         const crit = this.rollCrit()
         bullets.push({
           pos: new THREE.Vector3(this.pos.x, 2.6, this.pos.z).addScaledVector(dir, 0.9), dir,
           damage: this.stats.gunDamage * CONFIG.skills.doubleShot.damageMultiplier * (crit ? this.stats.critMult : 1), crit,
+          skillSource: 'doubleShot',
         })
       }
       if (this.ammo === 0) startedReload = this.startReload()
@@ -540,6 +612,7 @@ export class Player {
         bullets.push({
           pos: new THREE.Vector3(this.pos.x, 2.6, this.pos.z).addScaledVector(dir, 0.9), dir,
           damage: this.stats.gunDamage * CONFIG.skills.ultimate.bulletDamageMultiplier * (crit ? this.stats.critMult : 1), crit,
+          skillSource: 'ultimate',
         })
         this.ultimateShotsLeft--
         this.ultimateShotTimer += CONFIG.skills.ultimate.bulletInterval
@@ -555,6 +628,8 @@ export class Player {
             shockwaveRadius: CONFIG.skills.ultimate.shockwaveRadius,
           }
           this.swingAnim = 0.35
+          // 여운(skill) — 재사용마다 8초로 재설정(연장 아님).
+          if (this.coreSlots.get('skill') === 'aftertaste') this.aftertasteTimer = CONFIG.traits.aftertasteDuration
         }
       }
     }

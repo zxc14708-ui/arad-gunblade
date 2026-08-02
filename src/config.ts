@@ -210,6 +210,16 @@ export const CONFIG = {
     ricochetRadius: 8,
     // 잔영(dash): 대시 무적으로 공격을 흘리면 대시 쿨타임을 즉시 초기화.
     // (수치 없음 — 즉시 0으로 리셋. 항목만 문서화 목적으로 남겨둔다.)
+
+    // ── 스킬 슬롯 특성(skill_slot_traits) ──
+    // 역행(skill): Q 종료 후 대시 입력을 받아들이는 창(초), 되돌아가기 피해 배율.
+    reverseWindowSec: 0.8,
+    reverseDamageMult: 0.7,
+    // 여운(skill): R 종료 후 지속시간(초) 동안 플레이어가 주는 모든 피해 배율.
+    aftertasteDuration: 8,
+    aftertasteDamageMult: 1.25,
+    // 순환(skill): 스킬(Q/E/R)로 처치할 때마다 나머지 두 스킬의 남은 쿨타임 감소량(초).
+    circulationCooldownReduction: 1.5,
   },
 
   // 타격감 연출 (히트스톱/화면 흔들림/피격 플래시)

@@ -316,6 +316,11 @@ export class AudioManager {
     this.noise(0.06, { type: 'highpass', freq: 3000, gain: 0.15 })
   }
 
+  /** '순환'(skill) — 스킬 기인 처치로 다른 스킬 쿨이 줄어들 때 재생하는 짧은 벨 소리 */
+  skillCirculate() {
+    this.tone(950, 0.08, { type: 'sine', gain: 0.14, slideTo: 1500 })
+  }
+
   bossDeath() {
     this.tone(120, 0.7, { type: 'sawtooth', gain: 0.3, slideTo: 30 })
     this.noise(0.6, { type: 'lowpass', freq: 800, slideTo: 100, gain: 0.3 })

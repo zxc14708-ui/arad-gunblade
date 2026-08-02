@@ -214,6 +214,13 @@ canvas.pixelated {
   box-shadow: 0 0 10px rgba(84, 178, 255, 0.35);
 }
 .skill.ultimate.ready { border-color: #f2c85b; box-shadow: 0 0 10px rgba(242, 200, 91, 0.35); }
+/* '순환'(skill) — 스킬 처치로 쿨이 줄어든 아이콘에 주는 짧은 피드백 */
+.skill.circulate-flash { animation: skillCirculateFlash 0.35s ease; }
+@keyframes skillCirculateFlash {
+  0% { box-shadow: 0 0 0 rgba(167, 243, 208, 0); border-color: #5c6278; }
+  35% { box-shadow: 0 0 14px rgba(167, 243, 208, 0.9); border-color: #a7f3d4; }
+  100% { box-shadow: 0 0 0 rgba(167, 243, 208, 0); border-color: #5c6278; }
+}
 
 /* 골드 강조 */
 .gold-stat b,

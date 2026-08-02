@@ -943,7 +943,7 @@ export class Game {
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
-      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
+      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce, b.skillSource)
     }
     if (bullets.length > 0) {
       this.audio.gunshot(this.player.gun.id)
@@ -1002,7 +1002,7 @@ export class Game {
       }
       this.effects.ultimateCross(this.player.pos)
       this.effects.playGroundFx('shockwave', this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius * 2)
-      this.aoeDamage(this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius, ultimate.shockwaveDamage, COLORS.slash)
+      this.aoeDamage(this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius, ultimate.shockwaveDamage, COLORS.slash, 'ultimate')
     }
 
     // 대시 잔상
@@ -1027,10 +1027,10 @@ export class Game {
     this.wasDashing = this.player.isDashing
     this.wasIaido = this.player.isIaido
 
-    // 조건부 핵심 슬롯 특성 발동 게이지(발도참/조준사격) — 특성이 없으면 null이라
-    // 아무것도 표시되지 않는다.
+    // 조건부 핵심 슬롯 특성 발동 게이지(발도참/조준사격/역행) — 특성이 없으면
+    // null이라 아무것도 표시되지 않는다.
     const gauge = this.player.conditionGauge()
-    if (gauge) this.effects.requestGauge(this.player.pos.x, this.player.pos.z, gauge.progress, gauge.color)
+    if (gauge) this.effects.requestGauge(this.player.pos.x, this.player.pos.z, gauge.progress, gauge.color, gauge.decreasing)
 
     // ── 룸 적 스폰 ──
     if (this.spawnQueue.length > 0 && this.entrySafeTimer <= 0) {
@@ -1114,16 +1114,22 @@ export class Game {
     if (!this.player.alive) this.gameOver()
   }
 
-  /** 광역 피해 */
-  private aoeDamage(x: number, z: number, radius: number, damage: number, color: number) {
+  /**
+   * 광역 피해 — 궁극기 충격파(skillSource:'ultimate')와 섬광강타/폭심(skillSource
+   * 없음) 모두 이 한 지점을 거친다. 여운은 출처와 무관하게 전부 적용하고("검·총·
+   * 스킬·폭심 등"), 순환의 스킬 기인 처치 통지만 skillSource가 있을 때로 제한한다.
+   */
+  private aoeDamage(x: number, z: number, radius: number, damage: number, color: number, skillSource?: 'ultimate') {
+    const dmg = this.withAftertaste(damage)
     this.effects.burst(new THREE.Vector3(x, 1, z), color, 18, 10)
     for (const e of this.enemies) {
       if (!e.alive) continue
       const d = Math.hypot(e.pos.x - x, e.pos.z - z)
       if (d <= radius + e.radius) {
-        e.takeDamage(damage)
+        e.takeDamage(dmg)
         e.knockback(x, z, 6)
-        this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), damage, false)
+        this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, false)
+        if (!e.alive && skillSource) this.applySkillKill(skillSource)
       }
     }
   }
@@ -1300,7 +1306,7 @@ export class Game {
           // '밀착사격'(shot) — 먼 거리 보너스와 정반대 축이라 동시에 성립할 수 없다
           // (gunRangeBonusDist 8 ≫ closeRangeDist 3).
           const closeRange = this.player.coreSlots.get('shot') === 'close_range' && travelDist <= CONFIG.traits.closeRangeDist
-          const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : closeRange ? b.damage * CONFIG.traits.closeRangeMult : b.damage
+          const dmg = this.withAftertaste(rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : closeRange ? b.damage * CONFIG.traits.closeRangeMult : b.damage)
           e.takeDamage(dmg, 'ranged', b.crit)
           b.hitSet.add(e.id)
           this.audio.hit()
@@ -1309,6 +1315,7 @@ export class Game {
           this.applyLifesteal(dmg)
           this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, b.crit, rangeBonus)
+          if (!e.alive && b.skillSource) this.applySkillKill(b.skillSource)
           if (b.hitSet.size > b.pierce) {
             // '도탄'(shot) — 관통 소진으로 소멸하는 시점이 기준이라 무기 고유
             // 관통과 자연스럽게 합쳐진다(관통 3인 무기는 3명 뚫은 뒤 튕긴다).
@@ -1449,7 +1456,7 @@ export class Game {
     // '일섬(一閃)' — 정확히 1명 명중 시에만 배수, 2명 이상이면 절반이라도 주는
     // 완충 없이 1.0배(작업 지시: "교환이 흐려진다" — 의도된 전부-아니면-없음).
     const ilseomActive = !opts.isUltimatePart && this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
-    const finalDamage = ilseomActive ? damage * CONFIG.traits.ilseomMult : damage
+    const finalDamage = this.withAftertaste(ilseomActive ? damage * CONFIG.traits.ilseomMult : damage)
     const fxScale = opts.halfFx ? CONFIG.traits.dualbladeSecondHitFxScale : 1
 
     // 2패스 — 확정된 배수로 피해/넉백/이펙트 적용
@@ -1464,6 +1471,7 @@ export class Game {
       this.applyLifesteal(finalDamage)
       this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
       this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), finalDamage, crit, false, ilseomActive)
+      if (!e.alive && opts.isUltimatePart) this.applySkillKill('ultimate')
       if (reflected > 0 && this.player.takeDamage(reflected)) {
         this.audio.hurt()
         this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
@@ -1473,6 +1481,23 @@ export class Game {
     // 검 적중 시 총알 장전(기본 메커니즘) — 여러 적을 맞혀도 스윙당 1회만
     if (hitAny) this.player.reloadFromSwordHit()
     return hits.length
+  }
+
+  /** 여운(skill) — 활성 중이면 플레이어가 주는 피해에 +25%. Game.ts가 enemy.takeDamage()를
+   * 호출하는 4개 지점(resolveSlash/resolveIaido/resolveBullets/aoeDamage)에서만 걸면
+   * 검·총·스킬·폭심 등 모든 출처를 한 번에 덮는다 — 전부 결국 이 4곳으로 모인다. */
+  private withAftertaste(dmg: number): number {
+    return this.player.aftertasteActive ? dmg * CONFIG.traits.aftertasteDamageMult : dmg
+  }
+
+  /** 순환(skill) — 스킬 기인 처치를 Player에 통지하고, 실제로 쿨이 줄어든 스킬만
+   * HUD 아이콘에 피드백을 준다(특성 미보유 시 Player.onSkillKill이 null을 반환). */
+  private applySkillKill(skill: 'charge' | 'doubleShot' | 'ultimate') {
+    const flashed = this.player.onSkillKill(skill)
+    if (flashed && flashed.length > 0) {
+      this.audio.skillCirculate()
+      this.hud.flashSkillIcons(flashed)
+    }
   }
 
   /** 발도 경로(시작점→실제 종료점)를 캡슐 형태로 판정해 스친 모든 적을 한 번씩 벤다. */
@@ -1520,7 +1545,7 @@ export class Game {
     }
 
     const ilseomActive = this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
-    const finalDamage = ilseomActive ? damage * CONFIG.traits.ilseomMult : damage
+    const finalDamage = this.withAftertaste(ilseomActive ? damage * CONFIG.traits.ilseomMult : damage)
 
     let hitAny = false
     for (const enemy of hits) {
@@ -1533,6 +1558,7 @@ export class Game {
       this.applyLifesteal(finalDamage)
       this.effects.hitImpact(enemy.pos.x, enemy.pos.z, crit ? 2.0 : 1.4)
       this.effects.damageNumber(new THREE.Vector3(enemy.pos.x, 1.8, enemy.pos.z), finalDamage, crit, false, ilseomActive)
+      if (!enemy.alive) this.applySkillKill('charge')
       if (reflected > 0 && this.player.takeDamage(reflected)) {
         this.audio.hurt()
         this.effects.hitImpact(this.player.pos.x, this.player.pos.z)

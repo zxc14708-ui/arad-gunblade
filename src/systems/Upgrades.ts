@@ -99,6 +99,16 @@ const RAW_POOL: Upgrade[] = [
     apply: () => { /* Player.takeDamage()의 dashBlock 이벤트를 Game.ts가 감지해 tryRefreshDashOnBlock() 호출 */ } },
   { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', slot: 'dash', maxStacks: 1,
     apply: (p) => { p.mods.dashStrike += 44; p.recompute() } },
+
+  // ── 핵심 슬롯: skill(4종, skill_slot_traits) ──
+  { id: 'reverse', name: '역행(逆行)', desc: 'Q 종료 후 0.8초 안 대시 입력 시 되돌아가며 재차 베기(70% 피해), 대시 쿨 소모 없음', icon: '↩️', slot: 'skill', maxStacks: 1,
+    apply: () => { /* Player.update()의 대시 트리거 분기에서 reverseWindowTimer 판정, Game.resolveIaido() 재사용 */ } },
+  { id: 'triple_shot', name: '삼연사', desc: 'E 더블샷이 3발로(중앙 탄환 추가), 탄약 소모는 2 그대로', icon: '🔱', slot: 'skill', maxStacks: 1,
+    apply: () => { /* Player.update()의 E 발사 분기에서 각도 배열만 확장 */ } },
+  { id: 'aftertaste', name: '여운(餘韻)', desc: 'R 사용 후 8초간 모든 피해 +25%(재사용 시 지속시간 재설정)', icon: '✨', slot: 'skill', maxStacks: 1,
+    apply: () => { /* Player.aftertasteActive를 Game.ts의 4개 피해 적용 지점(resolveSlash/resolveIaido/resolveBullets/aoeDamage)에서 참조 */ } },
+  { id: 'circulation', name: '순환(循環)', desc: '스킬(Q/E/R)로 처치할 때마다 나머지 두 스킬의 쿨타임 1.5초 감소', icon: '🔄', slot: 'skill', maxStacks: 1,
+    apply: () => { /* Game.ts가 스킬 기인 처치를 감지해 Player.onSkillKill() 호출 */ } },
 ]
 
 export const POOL: Upgrade[] = RAW_POOL

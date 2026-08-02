@@ -508,6 +508,16 @@ export class HUD {
     }
   }
 
+  /** '순환'(skill) — 쿨타임이 실제로 줄어든 스킬 아이콘에 짧게 번쩍이는 피드백을 준다. */
+  flashSkillIcons(keys: ('q' | 'e' | 'r')[]) {
+    for (const key of keys) {
+      const el = this.skillButtons[key]
+      el.classList.remove('circulate-flash')
+      void el.offsetWidth // 리플로우로 애니메이션 재시작(banner_()와 같은 기법)
+      el.classList.add('circulate-flash')
+    }
+  }
+
   banner_(text: string) {
     this.banner.textContent = text
     this.banner.classList.remove('show')

@@ -56,7 +56,7 @@ export class Effects {
   private gaugeCanvas = document.createElement('canvas')
   private gaugeCtx = this.gaugeCanvas.getContext('2d')!
   private gaugeTexture = new THREE.CanvasTexture(this.gaugeCanvas)
-  private gaugeCandidate: { x: number; z: number; progress: number; color: string } | null = null
+  private gaugeCandidate: { x: number; z: number; progress: number; color: string; decreasing: boolean } | null = null
   private gaugeWasFulfilled = false
   private gaugeFlashTimer = 0
 
@@ -255,11 +255,16 @@ export class Effects {
    * 충족 전에는 항상 옅은 흰색으로 채워진다 — 호출부가 색을 신경 쓸 필요는
    * 충족 색 하나뿐이다. 한 프레임에 여러 번 불리면 progress가 더 높은
    * 쪽만 남는다(동시 표시는 최대 1개).
+   *
+   * decreasing: 발도참·조준사격처럼 0→1로 "차오르는" 창이 아니라 역행처럼
+   * 0.8초가 "줄어드는" 창일 때 true. 채우는 중과 곧 닫히는 중이 시각적으로
+   * 구분되도록 아크를 반대 방향(12시에서 반시계)으로 그리고, 처음부터 지정
+   * 색을 그대로 쓴다(충족 개념이 없어 옅은 흰색 단계를 거치지 않는다).
    */
-  requestGauge(x: number, z: number, progress: number, color: string) {
+  requestGauge(x: number, z: number, progress: number, color: string, decreasing = false) {
     const clamped = Math.max(0, Math.min(1, progress))
     if (!this.gaugeCandidate || clamped > this.gaugeCandidate.progress) {
-      this.gaugeCandidate = { x, z, progress: clamped, color }
+      this.gaugeCandidate = { x, z, progress: clamped, color, decreasing }
     }
   }
 
@@ -274,7 +279,7 @@ export class Effects {
     return mesh
   }
 
-  private drawGauge(progress: number, color: string, flash: boolean) {
+  private drawGauge(progress: number, color: string, flash: boolean, decreasing: boolean) {
     const ctx = this.gaugeCtx
     const w = this.gaugeCanvas.width
     const h = this.gaugeCanvas.height
@@ -289,13 +294,16 @@ export class Effects {
     ctx.lineWidth = lineWidth
     ctx.strokeStyle = 'rgba(255,255,255,0.18)'
     ctx.stroke()
-    // 진행 아크 — 12시 방향에서 시계 방향으로 채운다
+    // 진행 아크 — 차오르는 쪽은 12시에서 시계 방향, 줄어드는 쪽(역행)은 12시에서
+    // 반시계 방향으로 그려 방향 자체로 "채우는 중"과 "닫히는 중"을 구분한다.
     if (progress > 0) {
       ctx.beginPath()
-      ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2)
+      if (decreasing) ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 - progress * Math.PI * 2, true)
+      else ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2)
       ctx.lineWidth = lineWidth
       ctx.lineCap = 'round'
-      ctx.strokeStyle = flash ? '#ffffff' : progress >= 1 ? color : 'rgba(255,255,255,0.7)'
+      // 줄어드는 쪽은 "충족" 개념이 없어 옅은 흰색 단계 없이 처음부터 지정 색.
+      ctx.strokeStyle = flash ? '#ffffff' : decreasing || progress >= 1 ? color : 'rgba(255,255,255,0.7)'
       ctx.stroke()
     }
     this.gaugeTexture.needsUpdate = true
@@ -315,13 +323,15 @@ export class Effects {
       this.gaugeFlashTimer = 0
       return
     }
-    const fulfilled = c.progress >= 1
+    // 줄어드는 게이지는 "충족"이 아니라 "만료"라 fulfilled 번쩍임 로직이 안
+    // 맞는다(시작부터 progress가 높아 즉시 번쩍여버린다) — 대상에서 제외한다.
+    const fulfilled = !c.decreasing && c.progress >= 1
     if (fulfilled && !this.gaugeWasFulfilled) this.gaugeFlashTimer = 0.18 // 충족 순간 한 번 번쩍
     this.gaugeWasFulfilled = fulfilled
     if (this.gaugeFlashTimer > 0) this.gaugeFlashTimer = Math.max(0, this.gaugeFlashTimer - dt)
     const mesh = this.ensureGaugeMesh()
     mesh.position.set(c.x, 0.04, c.z)
-    this.drawGauge(c.progress, c.color, this.gaugeFlashTimer > 0)
+    this.drawGauge(c.progress, c.color, this.gaugeFlashTimer > 0, c.decreasing)
   }
 
   update(dt: number, camera: THREE.Camera) {

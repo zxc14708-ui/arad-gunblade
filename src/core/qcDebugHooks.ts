@@ -41,7 +41,6 @@ interface GameInternals {
   mode: 'town' | 'dungeon'
   spawnQueue: EnemyKind[]
   curPlan: RoomPlan | null
-  enterDungeon: () => void
   resolveSlash: (
     pos: THREE.Vector3,
     angle: number,
@@ -53,7 +52,7 @@ interface GameInternals {
   ) => void
   projectiles: { bullets: Bullet[]; removeBullet: (i: number) => void }
   effects: {
-    requestGauge: (x: number, z: number, progress: number, color: string) => void
+    requestGauge: (x: number, z: number, progress: number, color: string, decreasing?: boolean) => void
     update: (dt: number, camera: THREE.Camera) => void
   }
   camera: THREE.Camera
@@ -118,9 +117,8 @@ export function installQcDebugHooks(game: Game) {
     debugClearEnemies: () => void
     debugFountainSample: (n: number) => FountainSampleResult
     debugGetDensityLog: () => DensityLog
-    debugSetGauge: (v: { progress: number; color: string } | null) => void
+    debugSetGauge: (v: { progress: number; color: string; decreasing?: boolean } | null) => void
     debugSetCoreSlot: (slot: string, id: string) => void
-    debugEnterDungeon: () => void
   }
 
   const swings: SwingDensityRecord[] = []
@@ -201,13 +199,6 @@ export function installQcDebugHooks(game: Game) {
     return { n, counts, shopMissing, restMissing, bossHasFountain, supplementUsed }
   }
 
-  // `--only` 단일 스텝 실행 지원 — 던전 모드가 필요한 스텝을 포탈 실걷기
-  // 없이 곧장 진입시킨다(tools/qc.mjs의 부트스트랩에서 사용).
-  api.debugEnterDungeon = () => {
-    const g = internals(game)
-    if (g.mode !== 'dungeon') g.enterDungeon()
-  }
-
   api.debugClearEnemies = () => {
     const g = internals(game)
     for (const e of g.enemies) g.scene.remove(e.group)
@@ -262,12 +253,12 @@ export function installQcDebugHooks(game: Game) {
   // QC 스크린샷으로 렌더링을 확인할 수 있다 — Effects.ts 소스는 건드리지
   // 않는다. null을 넘기면 강제 표시를 끈다(다음 프레임에 즉시 사라짐 확인용).
   const g1 = internals(game)
-  let forcedGauge: { progress: number; color: string } | null = null
+  let forcedGauge: { progress: number; color: string; decreasing?: boolean } | null = null
   const origEffectsUpdate = g1.effects.update.bind(g1.effects)
   g1.effects.update = (dt: number, camera: THREE.Camera) => {
     if (forcedGauge) {
       const g = internals(game)
-      g.effects.requestGauge(g.player.pos.x, g.player.pos.z, forcedGauge.progress, forcedGauge.color)
+      g.effects.requestGauge(g.player.pos.x, g.player.pos.z, forcedGauge.progress, forcedGauge.color, forcedGauge.decreasing)
     }
     origEffectsUpdate(dt, camera)
   }
