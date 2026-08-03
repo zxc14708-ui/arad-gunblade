@@ -33,7 +33,10 @@
   2. 분할 — 키잉된 알파의 가로 방향 빈 열(완전 투명한 열)을 갭으로 보고
      그 갭 사이 덩어리를 프레임으로 본다(균등 분할을 신뢰하지 않는다 —
      생성물의 포즈 간격이 균일하지 않기 때문). 검출된 덩어리 수가 --frames
-     와 다르면 경고한다(중단하지 않는다 — --split=even으로 강제할 수 있다).
+     와 다르면 산출물을 만들지 않고 실패한다(종료코드 1) — 프레임 수가
+     다른 시트가 조용히 나가면 EnemySprite.FRAMES와 어긋나 애니메이션이
+     깨지기 때문이다. --split=even으로 균등 분할을 강제하거나, 사람이
+     원인을 확인한 뒤 --force로 검출된 수 그대로 진행할 수 있다.
   3. 정렬 — 각 프레임의 알파 바운딩박스를 --cell 정사각 셀에 배치한다.
      가로는 콘텐츠 중심을 셀 중심에 맞추고, 세로는 --align 모드를 따른다.
      콘텐츠가 셀보다 크면 비율 유지한 채 NEAREST로 축소한다(업스케일 없음).
@@ -239,6 +242,7 @@ def main():
     ap.add_argument('--tolerance', type=float, default=DEFAULT_TOLERANCE, help=f'키 컬러 거리 임계값 (기본 {DEFAULT_TOLERANCE})')
     ap.add_argument('--out', required=True, help='출력 규격 시트 PNG 경로')
     ap.add_argument('--split', choices=['auto', 'even'], default='auto', help='auto=갭 검출(기본), even=--frames로 균등 분할 강제')
+    ap.add_argument('--force', action='store_true', help='auto 분할에서 검출된 덩어리 수가 --frames와 달라도 실패하지 않고 검출된 수 그대로 출력한다')
     ap.add_argument('--align', choices=['perframe', 'global'], default='global', help='perframe=프레임별 개별 하단 정렬, global=전체 최저점 기준 일괄 이동(기본)')
     ap.add_argument('--report', help='셀 경계선을 그린 검수용 이미지 경로(선택)')
     args = ap.parse_args()
@@ -278,11 +282,21 @@ def main():
             print(f'경고: 노이즈로 보이는 좁은 덩어리 {dropped}개를 버림(폭 < {MIN_BLOB_COLS}px)')
         print(f'분할: 갭 검출로 {len(blobs)}개 덩어리 발견 (기대 프레임 수 {args.frames})')
         if len(blobs) != args.frames:
-            print(
-                f'경고: 검출된 덩어리 수({len(blobs)})가 --frames({args.frames})와 다름 — '
+            msg = (
+                f'검출된 덩어리 수({len(blobs)})가 --frames({args.frames})와 다름 — '
                 f'포즈가 겹쳐 붙었거나(개수 < frames) 캐릭터가 여러 조각으로 끊겨 보였을 수 있음'
-                f'(개수 > frames). --split=even으로 강제하거나 --tolerance를 조정할 것.',
+                f'(개수 > frames). --split=even으로 강제하거나 --tolerance를 조정할 것.'
             )
+            if args.force:
+                print(f'경고: {msg} (--force로 그대로 진행)')
+            else:
+                # 프레임 수가 다른 시트를 그대로 내보내면 EnemySprite.FRAMES와
+                # 어긋나 애니메이션이 깨진다 — measure_sprites.py가 잡을 때까지
+                # 아무도 모르는 상태로 넘어가는 걸 막기 위해 산출물을 만들지
+                # 않고 실패한다. --force가 있을 때만(사람이 원인을 확인하고
+                # 의도적으로 허용할 때만) 예전처럼 진행한다.
+                print(f'실패: {msg}', file=sys.stderr)
+                sys.exit(1)
         if not blobs:
             print('오류: 프레임을 하나도 검출하지 못함 — 키 컬러/임계값을 확인할 것', file=sys.stderr)
             sys.exit(1)
@@ -306,11 +320,24 @@ def main():
 
     if args.align == 'perframe':
         factors = [scale_to_fit(cw, ch, usable) for cw, ch in content_sizes]
+        offsets_src = [0] * len(crops)
     else:
         # global: 프레임마다 다른 배율을 쓰면 상대적인 크기/높이 관계가
         # 깨진다 — 셀에 다 들어가도록 요구되는 배율 중 가장 작은 값(가장
         # 강하게 줄여야 하는 프레임 기준) 하나를 전체에 적용한다.
-        shared = min(scale_to_fit(cw, ch, usable) for cw, ch in content_sizes)
+        #
+        # 배율은 "정렬을 적용한 뒤"의 합성 바운딩박스 기준으로 정해야 한다.
+        # 콘텐츠 원본 높이만 보고 배율을 정한 뒤 상승 오프셋을 나중에 더하면,
+        # 오프셋만큼 위로 뜬 프레임이 셀 위쪽 여백을 침범할 수 있다(예: 무기를
+        # 머리 위로 든 프레임 — 원본 높이만으로는 셀에 딱 맞아도, 정렬
+        # 오프셋을 더하면 넘친다). 그래서 세로는 "콘텐츠 높이 + 전역 기준선
+        # 대비 오프셋"을 하나의 값으로 보고 배율을 정한다.
+        global_bottom_src = max(b[3] for b in bboxes)  # bbox = (left, top, right, bottom)
+        offsets_src = [global_bottom_src - b[3] for b in bboxes]
+        shared = min(
+            scale_to_fit(cw, ch + off, usable)
+            for (cw, ch), off in zip(content_sizes, offsets_src)
+        )
         factors = [shared] * len(crops)
 
     scaled = [nearest_resize(img, f) for img, f in zip(crops, factors)]
@@ -331,11 +358,9 @@ def main():
         # 배치하면(각자 다른 하단이 아니라) 점프처럼 하단이 원래 더 높이
         # 떠 있던 프레임은 셀 안에서도 그만큼 위로 떠서, 상대적인 높이차가
         # 그대로 보존된다.
-        global_bottom_src = max(b[3] for b in bboxes)  # bbox = (left, top, right, bottom)
-        for img, factor, bbox in zip(scaled, factors, bboxes):
+        for img, factor, offset_src in zip(scaled, factors, offsets_src):
             cw, ch = img.size
             px = (args.cell - cw) // 2
-            offset_src = global_bottom_src - bbox[3]  # 이 프레임이 전역 기준보다 얼마나 위에 있는지(원본 px)
             offset_scaled = round(offset_src * factor)
             py = args.cell - MIN_MARGIN - ch - offset_scaled
             placements.append((px, py))
