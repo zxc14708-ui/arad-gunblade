@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { dungeonWallTex, townFloorTex, townWallTex } from '../rendering/tiles'
-import { cloneTex, loadTex } from '../rendering/assets'
+import { ASSET, cloneTex, loadTex } from '../rendering/assets'
 import type { Direction } from './RunState'
 
 const TORCH_FRAMES = 3
@@ -141,6 +141,8 @@ export class Room {
       addDecor(fg.stoneA, -halfW + 3, -1.4, 1.5, 2)
       addDecor(fg.stoneB, halfW - 3, 1.4, 1.5, 2)
       addDecor(fg.vineTop, 0, -halfD + 1.8, 3.6, 1.8)
+    } else {
+      this.addTownVillageDecor(halfW, halfD)
     }
 
     // ── 장식: 벽면 횃불 (2프레임 애니메이션) ──
@@ -175,6 +177,57 @@ export class Room {
     }
 
     scene.add(this.group)
+  }
+
+  /** 정식 마을 원화 전까지 기존 숲 자산을 조합해 숲속 거점의 밀도와 동선을 만든다. */
+  private addTownVillageDecor(halfW: number, halfD: number) {
+    const pathMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x9f9876, transparent: true, opacity: 0.7, depthWrite: false }))
+    const addPathStone = (x: number, z: number, w: number, d: number, rot = 0) => {
+      const stone = new THREE.Mesh(new THREE.PlaneGeometry(w, d), pathMat)
+      stone.rotation.x = -Math.PI / 2
+      stone.rotation.z = rot
+      stone.position.set(x, 0.025, z)
+      this.group.add(stone)
+    }
+    for (let z = halfD - 3; z >= -halfD + 5; z -= 2.1) {
+      addPathStone(Math.sin(z * 0.7) * 0.55, z, 1.5, 0.8, Math.sin(z) * 0.12)
+    }
+    for (let x = -11; x <= 11; x += 2.2) addPathStone(x, 1.5 + Math.sin(x) * 0.35, 1.55, 0.75, Math.sin(x * 0.4) * 0.14)
+
+    const addSprite = (path: string, x: number, z: number, w: number, h: number, tint = 0xffffff) => {
+      const mat = new THREE.SpriteMaterial({ map: loadTex(path), color: tint, transparent: true, depthWrite: false })
+      const sprite = new THREE.Sprite(mat)
+      sprite.center.set(0.5, 0)
+      sprite.position.set(x, 0.06, z)
+      sprite.scale.set(w, h, 1)
+      this.group.add(sprite)
+    }
+
+    const fg = ASSET.stage1.foreground
+    const trees: Array<[number, number, string]> = [
+      [-halfW + 2.2, -halfD + 4, fg.treeA], [halfW - 2.2, -halfD + 4, fg.treeB],
+      [-halfW + 2, 2, fg.treeB], [halfW - 2, 4, fg.treeA],
+      [-halfW + 3, halfD - 2.2, fg.treeA], [halfW - 3, halfD - 2.2, fg.treeB],
+    ]
+    for (const [x, z, path] of trees) addSprite(path, x, z, 6.2, 7.8)
+    for (const [x, z, path] of [
+      [-halfW + 5, halfD - 2, fg.bushA], [halfW - 5, halfD - 2, fg.bushB],
+      [-halfW + 5, -halfD + 2.4, fg.bushB], [halfW - 5, -halfD + 2.4, fg.bushA],
+    ] as Array<[number, number, string]>) addSprite(path, x, z, 3.2, 2.1)
+
+    addSprite(fg.stoneA, -14, 6, 1.8, 2.4)
+    addSprite(fg.stoneB, 14, 7, 1.8, 2.4)
+    const fire = cloneTex(ASSET.stage1.effects.campfire)
+    fire.repeat.set(1 / 3, 1)
+    const fireMat = new THREE.SpriteMaterial({ map: fire, transparent: true, depthWrite: false })
+    const campfire = new THREE.Sprite(fireMat)
+    campfire.center.set(0.5, 0)
+    campfire.position.set(-14, 0.06, -4)
+    campfire.scale.set(2.2, 2.2, 1)
+    this.group.add(campfire)
+    const light = new THREE.PointLight(0xff8d3d, 5, 12, 2)
+    light.position.set(-14, 2, -4)
+    this.group.add(light)
   }
 
   /** 횃불 불꽃 애니메이션 */

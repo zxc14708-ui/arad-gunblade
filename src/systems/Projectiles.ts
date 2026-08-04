@@ -27,6 +27,9 @@ export interface EnemyBullet {
   speed: number
   life: number
   damage: number
+  style: 'fire' | 'ice' | 'void'
+  homing: number
+  slowDuration: number
 }
 
 /** 플레이어/적 투사체 풀 관리 */
@@ -36,16 +39,20 @@ export class Projectiles {
   enemyBullets: EnemyBullet[] = []
   private bulletMat = new THREE.SpriteMaterial({ map: bulletTex(), transparent: true, depthWrite: false })
   private critMat = new THREE.SpriteMaterial({ map: bulletTex(), color: 0xffffff, transparent: true, depthWrite: false })
-  private ebMat = this.makeEnemyBulletMaterial()
+  private ebMats = {
+    fire: this.makeEnemyBulletMaterial(0xffffff),
+    ice: this.makeEnemyBulletMaterial(0x78d8ff),
+    void: this.makeEnemyBulletMaterial(0xd178ff),
+  }
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
   }
 
-  private makeEnemyBulletMaterial() {
+  private makeEnemyBulletMaterial(color: number) {
     const map = cloneTex(ASSET.stage1.effects.fireball)
     map.repeat.set(1 / 4, 1)
-    return new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })
+    return new THREE.SpriteMaterial({ map, color, transparent: true, depthWrite: false })
   }
 
   spawnBullet(
@@ -72,17 +79,25 @@ export class Projectiles {
     })
   }
 
-  spawnEnemyBullet(pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number) {
-    const mesh = new THREE.Sprite(this.ebMat)
+  spawnEnemyBullet(
+    pos: THREE.Vector3,
+    dir: THREE.Vector3,
+    speed: number,
+    damage: number,
+    style: EnemyBullet['style'] = 'fire',
+    homing = 0,
+    slowDuration = 0,
+  ) {
+    const mesh = new THREE.Sprite(this.ebMats[style])
     mesh.position.copy(pos)
     // 화염구 고블린 투사체는 기존 표시 크기의 정확히 2배.
     mesh.scale.setScalar(1.6)
     this.scene.add(mesh)
-    this.enemyBullets.push({ mesh, pos: pos.clone(), dir: dir.clone().normalize(), speed, life: 4, damage })
+    this.enemyBullets.push({ mesh, pos: pos.clone(), dir: dir.clone().normalize(), speed, life: 4, damage, style, homing, slowDuration })
   }
 
   /** 방 경계(사각형) 밖으로 나간 투사체는 제거 */
-  update(dt: number, bounds: { minX: number; maxX: number; minZ: number; maxZ: number }) {
+  update(dt: number, bounds: { minX: number; maxX: number; minZ: number; maxZ: number }, target?: THREE.Vector3) {
     const out = (p: THREE.Vector3) =>
       p.x < bounds.minX - 1 || p.x > bounds.maxX + 1 || p.z < bounds.minZ - 1 || p.z > bounds.maxZ + 1
     for (let i = this.bullets.length - 1; i >= 0; i--) {
@@ -95,6 +110,10 @@ export class Projectiles {
     for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
       const b = this.enemyBullets[i]
       b.life -= dt
+      if (target && b.homing > 0) {
+        const desired = new THREE.Vector3(target.x - b.pos.x, 0, target.z - b.pos.z).normalize()
+        b.dir.lerp(desired, Math.min(1, b.homing * dt)).normalize()
+      }
       b.pos.addScaledVector(b.dir, b.speed * dt)
       b.mesh.position.copy(b.pos)
       if (b.life <= 0 || out(b.pos)) this.removeEnemyBullet(i)

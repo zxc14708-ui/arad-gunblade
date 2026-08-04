@@ -4,10 +4,15 @@ import { EnemySprite } from './EnemySprite'
 import { noOutline } from '../rendering/toon'
 import { ELITE_AFFIX, EliteAffix } from '../systems/EliteAffixes'
 
-export type EnemyKind = 'imp' | 'brute' | 'shooter' | 'boss'
+export type EnemyKind =
+  | 'imp' | 'brute' | 'shooter' | 'boss'
+  | 'suicide' | 'frostSuicide' | 'fireMage' | 'iceMage'
+  | 'summoner' | 'zombie' | 'voidMage' | 'charger'
 
 export type EnemyAction =
-  | { type: 'shoot'; direction: THREE.Vector3 }
+  | { type: 'shoot'; direction: THREE.Vector3; style?: 'fire' | 'ice' | 'void'; speed?: number; homing?: number; slowDuration?: number }
+  | { type: 'areaStrike'; position: THREE.Vector3; radius: number; damageMultiplier: number; style: 'fire' | 'ice' | 'void'; slowZoneDuration?: number; slowMultiplier?: number }
+  | { type: 'summon'; kind: 'suicide' | 'zombie'; artSet: string; count: number }
   | { type: 'bossGroundFx'; effect: 'warning' | 'shockwave' | 'tealMagic'; position: THREE.Vector3; radius: number; duration: number }
   | { type: 'bossSlam'; position: THREE.Vector3; radius: number; damageMultiplier: number; effectDuration: number; phaseEntry: boolean }
   | { type: 'eliteRegenFx'; position: THREE.Vector3; radius: number; duration: number }
@@ -29,6 +34,14 @@ export const DEFS: Record<EnemyKind, KindDef> = {
   brute: { hp: 4.5, speed: 0.6, damage: 2.2, xp: 3.5, radius: 1.1 },
   shooter: { hp: 1.4, speed: 0.7, damage: 1.4, xp: 2.2, radius: 0.6, ranged: true, shootCd: 2.2 },
   boss: { hp: 34, speed: 0.85, damage: 3, xp: 30, radius: 1.9, ranged: true, shootCd: 1.6 },
+  suicide: { hp: 1.1, speed: 1.2, damage: 1.2, xp: 1.7, radius: 0.65 },
+  frostSuicide: { hp: 1.25, speed: 1.12, damage: 1.15, xp: 2, radius: 0.65 },
+  fireMage: { hp: 1.8, speed: 0.62, damage: 1.55, xp: 2.8, radius: 0.7, ranged: true, shootCd: 3.2 },
+  iceMage: { hp: 1.9, speed: 0.58, damage: 1.45, xp: 3, radius: 0.7, ranged: true, shootCd: 2.8 },
+  summoner: { hp: 2.2, speed: 0.55, damage: 1.2, xp: 3.4, radius: 0.75, ranged: true, shootCd: 6 },
+  zombie: { hp: 1.8, speed: 0.55, damage: 1.25, xp: 0.7, radius: 0.65 },
+  voidMage: { hp: 2.1, speed: 0.65, damage: 1.65, xp: 3.5, radius: 0.72, ranged: true, shootCd: 2.5 },
+  charger: { hp: 3.2, speed: 0.78, damage: 1.8, xp: 4, radius: 0.95 },
 }
 
 // 보스 패턴 수치는 이후 config로 옮기기 쉽도록 이 파일 한 곳에 모아 둔다.
@@ -104,6 +117,13 @@ export class Enemy {
   private shieldHitTimer = -1
   /** '표식'(대시 핵심 슬롯 특성) — 남은 시간(초) 동안 받는 피해 +35% */
   private markTimer = 0
+  private stageTier: number
+  private specialState: 'idle' | 'fuse' | 'cast' | 'chargeWarning' | 'charge' = 'idle'
+  private specialTimer = 0
+  private specialAnchor = new THREE.Vector3()
+  private specialFacing = new THREE.Vector3(0, 0, 1)
+  private teleportTimer = 0
+  private bossSpecialCursor = 0
 
   constructor(
     kind: EnemyKind,
@@ -116,8 +136,10 @@ export class Enemy {
     xpMul = 1,
     elite = false,
     affix?: EliteAffix,
+    stageTier = 1,
   ) {
     this.kind = kind
+    this.stageTier = stageTier
     this.artSet = artSet
     this.rangedStrafeSign = this.id % 2 === 0 ? 1 : -1
     this.def = DEFS[kind]
@@ -140,6 +162,7 @@ export class Enemy {
     this.xp = CONFIG.enemy.baseXp * this.def.xp * xpMul
     this.radius = this.def.radius
     this.shootTimer = kind === 'boss' ? 0 : (this.def.shootCd ?? 0) * Math.random()
+    this.teleportTimer = CONFIG.enemy.stagePatterns.voidMage.teleportCooldown * 0.5
     if (this.elite) this.createEliteMarker()
   }
 
@@ -147,8 +170,17 @@ export class Enemy {
     return this.kind === 'boss' && this.bossState === 'charge'
   }
 
+  get isCharging() {
+    return this.isBossCharging || (this.kind === 'charger' && this.specialState === 'charge')
+  }
+
   get contactDamage() {
-    return this.damage * (this.isBossCharging ? BOSS_PATTERN.charge.contactDamageMultiplier : 1)
+    const mul = this.isBossCharging
+      ? BOSS_PATTERN.charge.contactDamageMultiplier
+      : this.kind === 'charger' && this.specialState === 'charge'
+        ? CONFIG.enemy.stagePatterns.charger.damageMultiplier
+        : 1
+    return this.damage * mul
   }
 
   /** 방 벽에 닿은 돌진 보스를 즉시 경직 상태로 전환한다. */
@@ -180,6 +212,30 @@ export class Enemy {
     } else if (this.kind === 'boss') {
       const result = this.updateBoss(dt, dir, dist)
       actions = result.actions
+      moving = result.moving
+    } else if (this.kind === 'suicide' || this.kind === 'frostSuicide') {
+      const result = this.updateSuicide(dt, dir, dist)
+      actions.push(...result.actions)
+      moving = result.moving
+    } else if (this.kind === 'fireMage') {
+      const result = this.updateFireMage(dt, dir, dist, target)
+      actions.push(...result.actions)
+      moving = result.moving
+    } else if (this.kind === 'iceMage') {
+      const result = this.updateProjectileMage(dt, dir, dist, 'ice')
+      actions.push(...result.actions)
+      moving = result.moving
+    } else if (this.kind === 'summoner') {
+      const result = this.updateSummoner(dt, dir, dist)
+      actions.push(...result.actions)
+      moving = result.moving
+    } else if (this.kind === 'voidMage') {
+      const result = this.updateProjectileMage(dt, dir, dist, 'void')
+      actions.push(...result.actions)
+      moving = result.moving
+    } else if (this.kind === 'charger') {
+      const result = this.updateCharger(dt, dir, dist)
+      actions.push(...result.actions)
       moving = result.moving
     } else if (this.def.ranged) {
       const desired = 12
@@ -222,6 +278,119 @@ export class Enemy {
     }
 
     return actions
+  }
+
+  private keepRange(dt: number, dir: THREE.Vector3, dist: number, desired: number) {
+    if (dist > desired + 1.5) this.pos.addScaledVector(dir, this.speed * dt)
+    else if (dist < desired - 2) this.pos.addScaledVector(dir, -this.speed * dt)
+    else this.pos.addScaledVector(new THREE.Vector3(-dir.z * this.rangedStrafeSign, 0, dir.x * this.rangedStrafeSign), this.speed * dt)
+    return true
+  }
+
+  private updateSuicide(dt: number, dir: THREE.Vector3, dist: number) {
+    const cfg = this.kind === 'frostSuicide' ? CONFIG.enemy.stagePatterns.frostSuicide : CONFIG.enemy.stagePatterns.suicide
+    if (this.specialState === 'fuse') {
+      this.specialTimer -= dt
+      this.sprite.playAttack(Math.max(dt, this.specialTimer))
+      if (this.specialTimer <= 0) this.alive = false
+      return { actions: [] as EnemyAction[], moving: false }
+    }
+    if (dist <= cfg.triggerRange) {
+      this.specialState = 'fuse'
+      this.specialTimer = cfg.fuse
+      this.sprite.playAttack(cfg.fuse)
+      return { actions: [] as EnemyAction[], moving: false }
+    }
+    this.pos.addScaledVector(dir, this.speed * dt)
+    return { actions: [] as EnemyAction[], moving: true }
+  }
+
+  private updateFireMage(dt: number, dir: THREE.Vector3, dist: number, target: THREE.Vector3) {
+    const cfg = CONFIG.enemy.stagePatterns.fireMage
+    if (this.specialState === 'cast') {
+      this.specialTimer -= dt
+      this.sprite.playAttack(Math.max(dt, this.specialTimer))
+      if (this.specialTimer <= 0) {
+        this.specialState = 'idle'
+        this.shootTimer = cfg.cooldown
+        return { actions: [{ type: 'areaStrike', position: this.specialAnchor.clone(), radius: cfg.radius, damageMultiplier: cfg.damageMultiplier, style: 'fire' } as EnemyAction], moving: false }
+      }
+      return { actions: [] as EnemyAction[], moving: false }
+    }
+    this.shootTimer -= dt
+    if (this.shootTimer <= 0) {
+      this.specialState = 'cast'
+      this.specialTimer = cfg.warning
+      this.specialAnchor.copy(target)
+      this.sprite.playAttack(cfg.warning)
+      return { actions: [{ type: 'bossGroundFx', effect: 'warning', position: this.specialAnchor.clone(), radius: cfg.radius, duration: cfg.warning } as EnemyAction], moving: false }
+    }
+    return { actions: [] as EnemyAction[], moving: this.keepRange(dt, dir, dist, cfg.preferredRange) }
+  }
+
+  private updateProjectileMage(dt: number, dir: THREE.Vector3, dist: number, style: 'ice' | 'void') {
+    const cfg = style === 'ice' ? CONFIG.enemy.stagePatterns.iceMage : CONFIG.enemy.stagePatterns.voidMage
+    const actions: EnemyAction[] = []
+    if (style === 'void') {
+      this.teleportTimer -= dt
+      if (this.teleportTimer <= 0) {
+        this.teleportTimer = CONFIG.enemy.stagePatterns.voidMage.teleportCooldown
+        const side = this.rangedStrafeSign
+        this.pos.x += -dir.z * side * 6
+        this.pos.z += dir.x * side * 6
+        this.rangedStrafeSign *= -1
+        actions.push({ type: 'bossGroundFx', effect: 'tealMagic', position: this.pos.clone(), radius: 2, duration: 0.45 })
+      }
+    }
+    this.shootTimer -= dt
+    if (this.shootTimer <= 0) {
+      this.shootTimer = cfg.cooldown
+      this.sprite.playAttack(0.5)
+      const slowDuration = style === 'ice' ? CONFIG.enemy.stagePatterns.iceMage.slowDuration : 0
+      actions.push({ type: 'shoot', direction: dir.clone(), style, speed: cfg.projectileSpeed, homing: cfg.homing, slowDuration })
+    }
+    return { actions, moving: this.keepRange(dt, dir, dist, cfg.preferredRange) }
+  }
+
+  private updateSummoner(dt: number, dir: THREE.Vector3, dist: number) {
+    const cfg = CONFIG.enemy.stagePatterns.summoner
+    this.shootTimer -= dt
+    const actions: EnemyAction[] = []
+    if (this.shootTimer <= 0) {
+      this.shootTimer = cfg.cooldown
+      this.sprite.playAttack(0.7)
+      actions.push({ type: 'summon', kind: 'zombie', artSet: 's6Zombie', count: cfg.maxSummons })
+    }
+    return { actions, moving: this.keepRange(dt, dir, dist, cfg.preferredRange) }
+  }
+
+  private updateCharger(dt: number, dir: THREE.Vector3, dist: number) {
+    const cfg = CONFIG.enemy.stagePatterns.charger
+    if (this.specialState === 'chargeWarning') {
+      this.specialTimer -= dt
+      this.sprite.playAttack(Math.max(dt, this.specialTimer))
+      if (this.specialTimer <= 0) {
+        this.specialState = 'charge'
+        this.specialTimer = cfg.duration
+      }
+      return { actions: [] as EnemyAction[], moving: false }
+    }
+    if (this.specialState === 'charge') {
+      this.pos.addScaledVector(this.specialFacing, this.speed * cfg.speedMultiplier * dt)
+      this.specialTimer -= dt
+      if (this.specialTimer <= 0) this.specialState = 'idle'
+      return { actions: [] as EnemyAction[], moving: true }
+    }
+    if (dist <= cfg.triggerRange && this.shootTimer <= 0) {
+      this.specialState = 'chargeWarning'
+      this.specialTimer = cfg.warning
+      this.specialFacing.copy(dir)
+      this.shootTimer = 2.2
+      return { actions: [{ type: 'bossGroundFx', effect: 'warning', position: this.pos.clone(), radius: 1.6, duration: cfg.warning } as EnemyAction], moving: false }
+    }
+    this.shootTimer -= dt
+    this.pos.addScaledVector(dir, this.speed * dt)
+    return { actions: [] as EnemyAction[], moving: true }
   }
 
   private updateBoss(dt: number, dir: THREE.Vector3, dist: number) {
@@ -284,6 +453,13 @@ export class Enemy {
   }
 
   private chooseBossPattern(dir: THREE.Vector3, dist: number): EnemyAction[] {
+    const special = this.chooseBossSpecial(dir)
+    if (special) {
+      this.shootTimer = this.def.shootCd ?? 1.6
+      this.sprite.playAttack(0.65)
+      return special
+    }
+
     let pattern: BossPattern = Math.random() < BOSS_PATTERN.shootChance
       ? 'shoot'
       : dist >= BOSS_PATTERN.range ? 'charge' : 'slam'
@@ -319,6 +495,33 @@ export class Enemy {
     this.shootTimer = this.def.shootCd ?? 0
     this.sprite.playAttack(0.5)
     return [{ type: 'shoot', direction: dir.clone() }]
+  }
+
+  /** 상위 스테이지 보스는 이전 스테이지에서 해금된 특수 패턴을 누적해서 사용한다. */
+  private chooseBossSpecial(dir: THREE.Vector3): EnemyAction[] | null {
+    if (this.stageTier < 2 || Math.random() >= CONFIG.enemy.stagePatterns.bossSpecialChance) return null
+    const unlocked: Array<'suicide' | 'fire' | 'ice' | 'zombie' | 'void'> = ['suicide']
+    if (this.stageTier >= 4) unlocked.push('fire')
+    if (this.stageTier >= 5) unlocked.push('ice')
+    if (this.stageTier >= 6) unlocked.push('zombie')
+    if (this.stageTier >= 7) unlocked.push('void')
+    const pattern = unlocked[this.bossSpecialCursor++ % unlocked.length]
+    if (pattern === 'suicide') return [{ type: 'summon', kind: 'suicide', artSet: this.stageTier === 3 ? 's3Suicide' : 's2Suicide', count: 2 }]
+    if (pattern === 'fire') {
+      const cfg = CONFIG.enemy.stagePatterns.fireMage
+      return [
+        { type: 'bossGroundFx', effect: 'warning', position: this.pos.clone(), radius: cfg.radius, duration: cfg.warning },
+        { type: 'areaStrike', position: this.pos.clone(), radius: cfg.radius, damageMultiplier: cfg.damageMultiplier, style: 'fire' },
+      ]
+    }
+    if (pattern === 'ice') {
+      const cfg = CONFIG.enemy.stagePatterns.iceMage
+      return [{ type: 'shoot', direction: dir.clone(), style: 'ice', speed: cfg.projectileSpeed, homing: cfg.homing, slowDuration: cfg.slowDuration }]
+    }
+    if (pattern === 'zombie') return [{ type: 'summon', kind: 'zombie', artSet: 's6Zombie', count: 2 }]
+    const cfg = CONFIG.enemy.stagePatterns.voidMage
+    this.pos.addScaledVector(new THREE.Vector3(-dir.z, 0, dir.x), 5)
+    return [{ type: 'shoot', direction: dir.clone(), style: 'void', speed: cfg.projectileSpeed, homing: cfg.homing }]
   }
 
   private createBossSlamAction(phaseEntry: boolean): BossSlamAction {
@@ -411,7 +614,7 @@ export class Enemy {
   createSplitChildren(): Enemy[] {
     if (this.affix !== 'split' || this.kind === 'boss') return []
     return Array.from({ length: ELITE_AFFIX.split.childCount }, () => {
-      const child = new Enemy(this.kind, this.artSet, this.pos.x, this.pos.z, 1, 1, 1)
+      const child = new Enemy(this.kind, this.artSet, this.pos.x, this.pos.z, 1, 1, 1, 1, false, undefined, this.stageTier)
       child.maxHp = this.maxHp * ELITE_AFFIX.split.hpMultiplier
       child.hp = child.maxHp
       child.speed = this.speed
@@ -421,6 +624,19 @@ export class Enemy {
       child.group.scale.setScalar(ELITE_AFFIX.split.scaleMultiplier)
       return child
     })
+  }
+
+  /** 자폭형은 근접 발화 또는 원거리 처치 어느 쪽이든 사망 지점에서 폭발한다. */
+  deathBurst(): { radius: number; damageMultiplier: number; slowZoneDuration: number; slowMultiplier: number } | null {
+    if (this.kind === 'suicide') {
+      const cfg = CONFIG.enemy.stagePatterns.suicide
+      return { radius: cfg.radius, damageMultiplier: cfg.damageMultiplier, slowZoneDuration: 0, slowMultiplier: 1 }
+    }
+    if (this.kind === 'frostSuicide') {
+      const cfg = CONFIG.enemy.stagePatterns.frostSuicide
+      return { radius: cfg.radius, damageMultiplier: cfg.damageMultiplier, slowZoneDuration: cfg.slowZoneDuration, slowMultiplier: cfg.slowMultiplier }
+    }
+    return null
   }
 
   knockback(fromX: number, fromZ: number, power: number) {

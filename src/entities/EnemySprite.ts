@@ -20,11 +20,25 @@ const FRAMES: Record<string, EnemyFrames> = {
   brute: { idle: 4, walk: 6, attack: 4 },
   shooter: { idle: 4, walk: 6, attack: 4 },
   boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
+  s2Imp: { idle: 4, walk: 6, attack: 4 }, s2Brute: { idle: 4, walk: 6, attack: 4 }, s2Shooter: { idle: 4, walk: 6, attack: 4 }, s2Suicide: { idle: 4, walk: 6, attack: 4 }, s2Boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
+  s3Imp: { idle: 4, walk: 6, attack: 4 }, s3Brute: { idle: 4, walk: 6, attack: 4 }, s3Shooter: { idle: 4, walk: 6, attack: 4 }, s3Suicide: { idle: 4, walk: 6, attack: 4 }, s3Boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
+  s4Imp: { idle: 4, walk: 6, attack: 4 }, s4Shooter: { idle: 4, walk: 6, attack: 4 }, s4FireMage: { idle: 4, walk: 6, attack: 4 }, s4Boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
+  s5Imp: { idle: 4, walk: 6, attack: 4 }, s5Shooter: { idle: 4, walk: 6, attack: 4 }, s5FrostSuicide: { idle: 4, walk: 6, attack: 4 }, s5IceMage: { idle: 4, walk: 6, attack: 4 }, s5Boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
+  s6Imp: { idle: 4, walk: 6, attack: 4 }, s6Shooter: { idle: 4, walk: 6, attack: 4 }, s6Summoner: { idle: 4, walk: 6, attack: 4 }, s6Zombie: { idle: 4, walk: 6, attack: 4 }, s6Boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
+  s7Imp: { idle: 4, walk: 6, attack: 4 }, s7Shooter: { idle: 4, walk: 6, attack: 4 }, s7VoidMage: { idle: 4, walk: 6, attack: 4 }, s7Charger: { idle: 4, walk: 6, attack: 4 }, s7Boss: { idle: 4, walk: 6, attack: 6, charge: 6 },
 }
 const FPS: Record<EnemyAnimState, number> = { idle: 5, walk: 10, attack: 12, charge: 12 }
 
 /** 셀(=캐릭터) 월드 높이 — artSet 기준 */
-const SCALE: Record<string, number> = { imp: 2.2, brute: 3.5, shooter: 2.4, boss: 5.4 }
+const SCALE: Record<string, number> = {
+  imp: 2.2, brute: 3.5, shooter: 2.4, boss: 5.4,
+  s2Imp: 2.2, s2Brute: 3.5, s2Shooter: 2.4, s2Suicide: 2.2, s2Boss: 5.4,
+  s3Imp: 2.2, s3Brute: 3.5, s3Shooter: 2.4, s3Suicide: 2.2, s3Boss: 5.4,
+  s4Imp: 2.2, s4Shooter: 2.4, s4FireMage: 2.65, s4Boss: 5.4,
+  s5Imp: 2.2, s5Shooter: 2.4, s5FrostSuicide: 2.2, s5IceMage: 2.65, s5Boss: 5.4,
+  s6Imp: 2.2, s6Shooter: 2.4, s6Summoner: 2.65, s6Zombie: 2.2, s6Boss: 5.4,
+  s7Imp: 2.2, s7Shooter: 2.4, s7VoidMage: 2.65, s7Charger: 3.5, s7Boss: 5.4,
+}
 
 /**
  * 사망 연출용 스프라이트 재료 — 대기 시트의 첫 프레임 기준.
