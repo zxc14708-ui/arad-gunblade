@@ -10,7 +10,7 @@
  *
  * 사용: node tools/verify_roll_choices.mjs [표본수=2000]
  */
-import { build } from 'esbuild'
+import { build } from 'vite'
 import { writeFileSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -20,24 +20,28 @@ const N = Number(process.argv[2] ?? 2000)
 
 const ENTRY = `export { POOL, rollChoices } from './src/systems/Upgrades'`
 const entryPath = join(ROOT, '.roll-choices-entry.ts')
-const bundlePath = join(ROOT, '.roll-choices-bundle.mjs')
+const bundleDir = join(ROOT, '.roll-choices-tmp')
+const bundlePath = join(bundleDir, 'bundle.mjs')
 
 try {
   writeFileSync(entryPath, ENTRY)
   await build({
-    entryPoints: [entryPath],
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    external: ['three'],
-    outfile: bundlePath,
+    configFile: false,
+    root: ROOT,
     logLevel: 'silent',
+    build: {
+      minify: false,
+      emptyOutDir: true,
+      outDir: bundleDir,
+      lib: { entry: entryPath, formats: ['es'], fileName: () => 'bundle.mjs' },
+      rollupOptions: { external: ['three'] },
+    },
   })
   const { POOL, rollChoices } = await import(pathToFileURL(bundlePath).href)
   run(POOL, rollChoices)
 } finally {
   rmSync(entryPath, { force: true })
-  rmSync(bundlePath, { force: true })
+  rmSync(bundleDir, { force: true, recursive: true })
 }
 
 function run(POOL, rollChoices) {

@@ -192,25 +192,23 @@ export const STAGES: StageDef[] = [
   // placeholder다.
   {
     id: 2,
-    name: '검은 숲 지하 (임시 복제 — 스테이지 2)',
+    name: '안개 습지 · 스테이지 2',
     normalRooms: 6,
     difficulty: { baseHp: 1.17, baseDmg: 1.1, baseXp: 1.15, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
-      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
-      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
-      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+      { kind: 'suicide', artSet: 's2Suicide', weight: 0.22, minDepth: 2 },
+      { kind: 'brute', artSet: 's2Brute', weight: 0.42, minDepth: 3 },
+      { kind: 'shooter', artSet: 's2Shooter', weight: 0.68, minDepth: 2 },
+      { kind: 'imp', artSet: 's2Imp', weight: 1, minDepth: 1 },
     ],
-    boss: { kind: 'boss', artSet: 'boss' },
+    boss: { kind: 'boss', artSet: 's2Boss' },
     art: {
-      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      floor: 'assets/temp/stage2/environment/floor.png',
       foreground: {
-        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
-        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
-        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
-        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
-        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
-        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
-        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+        treeA: 'assets/temp/stage2/environment/treeA.png', treeB: 'assets/temp/stage2/environment/treeB.png',
+        bushA: 'assets/temp/stage2/environment/bushA.png', bushB: 'assets/temp/stage2/environment/bushB.png',
+        stoneA: 'assets/temp/stage2/environment/stoneA.png', stoneB: 'assets/temp/stage2/environment/stoneB.png',
+        vineTop: 'assets/temp/stage2/environment/vineTop.png',
       },
       campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
     },
@@ -225,25 +223,23 @@ export const STAGES: StageDef[] = [
   },
   {
     id: 3,
-    name: '검은 숲 지하 (임시 복제 — 스테이지 3)',
+    name: '독버섯 군락 · 스테이지 3',
     normalRooms: 6,
     difficulty: { baseHp: 1.34, baseDmg: 1.2, baseXp: 1.3, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
-      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
-      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
-      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+      { kind: 'suicide', artSet: 's3Suicide', weight: 0.25, minDepth: 2 },
+      { kind: 'brute', artSet: 's3Brute', weight: 0.45, minDepth: 3 },
+      { kind: 'shooter', artSet: 's3Shooter', weight: 0.7, minDepth: 2 },
+      { kind: 'imp', artSet: 's3Imp', weight: 1, minDepth: 1 },
     ],
-    boss: { kind: 'boss', artSet: 'boss' },
+    boss: { kind: 'boss', artSet: 's3Boss' },
     art: {
-      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      floor: 'assets/temp/stage3/environment/floor.png',
       foreground: {
-        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
-        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
-        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
-        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
-        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
-        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
-        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+        treeA: 'assets/temp/stage3/environment/treeA.png', treeB: 'assets/temp/stage3/environment/treeB.png',
+        bushA: 'assets/temp/stage3/environment/bushA.png', bushB: 'assets/temp/stage3/environment/bushB.png',
+        stoneA: 'assets/temp/stage3/environment/stoneA.png', stoneB: 'assets/temp/stage3/environment/stoneB.png',
+        vineTop: 'assets/temp/stage3/environment/vineTop.png',
       },
       campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
     },
@@ -258,25 +254,22 @@ export const STAGES: StageDef[] = [
   },
   {
     id: 4,
-    name: '검은 숲 지하 (임시 복제 — 스테이지 4)',
+    name: '불타는 주둔지 · 스테이지 4',
     normalRooms: 6,
     difficulty: { baseHp: 1.51, baseDmg: 1.3, baseXp: 1.45, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
-      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
-      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
-      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+      { kind: 'fireMage', artSet: 's4FireMage', weight: 0.24, minDepth: 3 },
+      { kind: 'shooter', artSet: 's4Shooter', weight: 0.62, minDepth: 2 },
+      { kind: 'imp', artSet: 's4Imp', weight: 1, minDepth: 1 },
     ],
-    boss: { kind: 'boss', artSet: 'boss' },
+    boss: { kind: 'boss', artSet: 's4Boss' },
     art: {
-      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      floor: 'assets/temp/stage4/environment/floor.png',
       foreground: {
-        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
-        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
-        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
-        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
-        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
-        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
-        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+        treeA: 'assets/temp/stage4/environment/treeA.png', treeB: 'assets/temp/stage4/environment/treeB.png',
+        bushA: 'assets/temp/stage4/environment/bushA.png', bushB: 'assets/temp/stage4/environment/bushB.png',
+        stoneA: 'assets/temp/stage4/environment/stoneA.png', stoneB: 'assets/temp/stage4/environment/stoneB.png',
+        vineTop: 'assets/temp/stage4/environment/vineTop.png',
       },
       campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
     },
@@ -291,25 +284,23 @@ export const STAGES: StageDef[] = [
   },
   {
     id: 5,
-    name: '검은 숲 지하 (임시 복제 — 스테이지 5)',
+    name: '얼어붙은 계곡 · 스테이지 5',
     normalRooms: 6,
     difficulty: { baseHp: 1.68, baseDmg: 1.4, baseXp: 1.6, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
-      { kind: 'brute', artSet: 'brute', weight: 0.2, minDepth: 3 },
-      { kind: 'shooter', artSet: 'shooter', weight: 0.5, minDepth: 2 },
-      { kind: 'imp', artSet: 'imp', weight: 1, minDepth: 1 },
+      { kind: 'iceMage', artSet: 's5IceMage', weight: 0.2, minDepth: 3 },
+      { kind: 'frostSuicide', artSet: 's5FrostSuicide', weight: 0.4, minDepth: 2 },
+      { kind: 'shooter', artSet: 's5Shooter', weight: 0.68, minDepth: 2 },
+      { kind: 'imp', artSet: 's5Imp', weight: 1, minDepth: 1 },
     ],
-    boss: { kind: 'boss', artSet: 'boss' },
+    boss: { kind: 'boss', artSet: 's5Boss' },
     art: {
-      floor: 'assets/stage1/stage1_background/forest_floor_room.png',
+      floor: 'assets/temp/stage5/environment/floor.png',
       foreground: {
-        treeA: 'assets/stage1/stage1_forest_foreground/great_tree_a.png',
-        treeB: 'assets/stage1/stage1_forest_foreground/great_tree_b.png',
-        bushA: 'assets/stage1/stage1_forest_foreground/dark_bush_a.png',
-        bushB: 'assets/stage1/stage1_forest_foreground/dark_bush_b.png',
-        stoneA: 'assets/stage1/stage1_forest_foreground/guardian_stone_a.png',
-        stoneB: 'assets/stage1/stage1_forest_foreground/guardian_stone_b.png',
-        vineTop: 'assets/stage1/stage1_forest_foreground/root_vine_top.png',
+        treeA: 'assets/temp/stage5/environment/treeA.png', treeB: 'assets/temp/stage5/environment/treeB.png',
+        bushA: 'assets/temp/stage5/environment/bushA.png', bushB: 'assets/temp/stage5/environment/bushB.png',
+        stoneA: 'assets/temp/stage5/environment/stoneA.png', stoneB: 'assets/temp/stage5/environment/stoneB.png',
+        vineTop: 'assets/temp/stage5/environment/vineTop.png',
       },
       campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
     },
@@ -320,6 +311,55 @@ export const STAGES: StageDef[] = [
       rest: { w: 38, d: 26 },
       boss: { w: 50, d: 36 },
     },
+    reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
+  },
+  {
+    id: 6,
+    name: '망자의 숲 · 스테이지 6',
+    normalRooms: 6,
+    difficulty: { baseHp: 1.85, baseDmg: 1.5, baseXp: 1.75, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    enemies: [
+      { kind: 'summoner', artSet: 's6Summoner', weight: 0.2, minDepth: 3 },
+      { kind: 'shooter', artSet: 's6Shooter', weight: 0.62, minDepth: 2 },
+      { kind: 'imp', artSet: 's6Imp', weight: 1, minDepth: 1 },
+    ],
+    boss: { kind: 'boss', artSet: 's6Boss' },
+    art: {
+      floor: 'assets/temp/stage6/environment/floor.png',
+      foreground: {
+        treeA: 'assets/temp/stage6/environment/treeA.png', treeB: 'assets/temp/stage6/environment/treeB.png',
+        bushA: 'assets/temp/stage6/environment/bushA.png', bushB: 'assets/temp/stage6/environment/bushB.png',
+        stoneA: 'assets/temp/stage6/environment/stoneA.png', stoneB: 'assets/temp/stage6/environment/stoneB.png',
+        vineTop: 'assets/temp/stage6/environment/vineTop.png',
+      },
+      campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
+    },
+    roomSize: { combat: { w: 42, d: 30 }, treasure: { w: 34, d: 26 }, shop: { w: 38, d: 26 }, rest: { w: 38, d: 26 }, boss: { w: 50, d: 36 } },
+    reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
+  },
+  {
+    id: 7,
+    name: '차원의 문턱 · 스테이지 7',
+    normalRooms: 6,
+    difficulty: { baseHp: 2.02, baseDmg: 1.6, baseXp: 1.9, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    enemies: [
+      { kind: 'voidMage', artSet: 's7VoidMage', weight: 0.18, minDepth: 3 },
+      { kind: 'charger', artSet: 's7Charger', weight: 0.38, minDepth: 2 },
+      { kind: 'shooter', artSet: 's7Shooter', weight: 0.68, minDepth: 2 },
+      { kind: 'imp', artSet: 's7Imp', weight: 1, minDepth: 1 },
+    ],
+    boss: { kind: 'boss', artSet: 's7Boss' },
+    art: {
+      floor: 'assets/temp/stage7/environment/floor.png',
+      foreground: {
+        treeA: 'assets/temp/stage7/environment/treeA.png', treeB: 'assets/temp/stage7/environment/treeB.png',
+        bushA: 'assets/temp/stage7/environment/bushA.png', bushB: 'assets/temp/stage7/environment/bushB.png',
+        stoneA: 'assets/temp/stage7/environment/stoneA.png', stoneB: 'assets/temp/stage7/environment/stoneB.png',
+        vineTop: 'assets/temp/stage7/environment/vineTop.png',
+      },
+      campfire: 'assets/stage1/stage1_interactive_objects/campfire_3frames.png',
+    },
+    roomSize: { combat: { w: 42, d: 30 }, treasure: { w: 34, d: 26 }, shop: { w: 38, d: 26 }, rest: { w: 38, d: 26 }, boss: { w: 50, d: 36 } },
     reward: { faint: 3, decent: 1, strong: 1, tokens: 2 },
   },
 ]
@@ -416,22 +456,13 @@ export class RunState {
     return eligible[eligible.length - 1] ?? this.cfg.enemies[this.cfg.enemies.length - 1]
   }
 
-  /** kind만 정해진 고정 스폰(보스방 잡몹, 엘리트/보물방 확률표)의 외형을 찾는다
-   * — 커밋1의 enemies 표에서 같은 kind의 artSet을 읽고, 없으면(보스 kind처럼
-   * 표에 없는 경우) kind 문자열 그대로 폴백한다(스테이지 1은 artSet===kind라
-   * 폴백이 실제로 쓰이지 않는다). */
-  private artSetFor(kind: EnemyKind): string {
-    if (kind === this.cfg.boss.kind) return this.cfg.boss.artSet
-    return this.cfg.enemies.find((e) => e.kind === kind)?.artSet ?? kind
-  }
-
   private makePlan(id: string, depth: number, kind: RoomKind, x: number, y: number): RoomPlan {
     const m = this.muls(depth)
     if (kind === 'boss') {
-      const adds: EnemyKind[] = ['imp', 'imp', 'brute', 'shooter', 'shooter']
+      const adds = Array.from({ length: 5 }, () => this.enemiesFor(depth))
       const enemies: RoomEnemy[] = [
         { kind: this.cfg.boss.kind, artSet: this.cfg.boss.artSet },
-        ...adds.map((k) => ({ kind: k, artSet: this.artSetFor(k) })),
+        ...adds.map((e) => ({ kind: e.kind, artSet: e.artSet })),
       ]
       return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, ...m }
     }
@@ -442,16 +473,16 @@ export class RunState {
       const count = Math.ceil((3 + depth * 1.4) * CONFIG.spawn.roomDensity)
       const enemies: RoomEnemy[] = []
       for (let i = 0; i < count; i++) {
-        const eliteKind: EnemyKind = i === 0 || (depth >= 3 && Math.random() < 0.38) ? 'brute' : Math.random() < 0.55 ? 'shooter' : 'imp'
-        enemies.push({ kind: eliteKind, artSet: this.artSetFor(eliteKind) })
+        const e = this.enemiesFor(depth)
+        enemies.push({ kind: e.kind, artSet: e.artSet })
       }
       return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08, xpMul: m.xpMul }
     }
     if (kind === 'treasure') {
       const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))
       const enemies: RoomEnemy[] = Array.from({ length: n }, () => {
-        const treasureKind: EnemyKind = Math.random() < 0.5 ? 'imp' : 'shooter'
-        return { kind: treasureKind, artSet: this.artSetFor(treasureKind) }
+        const e = this.enemiesFor(depth)
+        return { kind: e.kind, artSet: e.artSet }
       })
       return { id, kind, enemies, chests: 2, x, y, depth, hasFountain: false, ...m }
     }

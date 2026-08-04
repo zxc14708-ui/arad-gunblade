@@ -19,7 +19,7 @@
  *   src/systems/RunState.ts STAGES
  *   src/systems/EliteAffixes.ts ELITE_AFFIXES
  */
-import { build } from 'esbuild'
+import { build } from 'vite'
 import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -40,23 +40,27 @@ export { ELITE_AFFIXES, ELITE_AFFIX } from './src/systems/EliteAffixes'
 // 번들은 반드시 저장소 안에 떨궈야 한다 — /tmp 에 두면 external 로 남긴
 // 'three' 를 node 가 저장소 node_modules 에서 찾지 못한다.
 const entryPath = join(ROOT, '.state-snapshot-entry.ts')
-const bundlePath = join(ROOT, '.state-snapshot-bundle.mjs')
+const bundleDir = join(ROOT, '.state-snapshot-tmp')
+const bundlePath = join(bundleDir, 'bundle.mjs')
 try {
   writeFileSync(entryPath, ENTRY)
   await build({
-    entryPoints: [entryPath],
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    external: ['three'],
-    outfile: bundlePath,
+    configFile: false,
+    root: ROOT,
     logLevel: 'silent',
+    build: {
+      minify: false,
+      emptyOutDir: true,
+      outDir: bundleDir,
+      lib: { entry: entryPath, formats: ['es'], fileName: () => 'bundle.mjs' },
+      rollupOptions: { external: ['three'] },
+    },
   })
   const m = await import(pathToFileURL(bundlePath).href)
   writeSnapshot(m)
 } finally {
   rmSync(entryPath, { force: true })
-  rmSync(bundlePath, { force: true })
+  rmSync(bundleDir, { force: true, recursive: true })
 }
 
 // ── 문서 생성 ─────────────────────────────────────────────────────────────

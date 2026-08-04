@@ -56,6 +56,8 @@ interface GameInternals {
     update: (dt: number, camera: THREE.Camera) => void
   }
   camera: THREE.Camera
+  run: RunState
+  loadRoom: (plan: RoomPlan) => void
 }
 
 function internals(game: Game): GameInternals {
@@ -119,6 +121,7 @@ export function installQcDebugHooks(game: Game) {
     debugGetDensityLog: () => DensityLog
     debugSetGauge: (v: { progress: number; color: string; decreasing?: boolean } | null) => void
     debugSetCoreSlot: (slot: string, id: string) => void
+    debugEnterStage: (stage: number) => boolean
   }
 
   const swings: SwingDensityRecord[] = []
@@ -211,6 +214,15 @@ export function installQcDebugHooks(game: Game) {
     g.spawnQueue.length = 0
   }
 
+  api.debugEnterStage = (stage) => {
+    if (stage < 1 || stage > 7) return false
+    const g = internals(game)
+    g.run.reset(stage)
+    const plan = g.run.enterFirst()
+    g.loadRoom.call(game, plan)
+    return g.run.stage === stage && g.curPlan?.depth === 1
+  }
+
   api.debugSpawnBoss = () => {
     const g = internals(game)
     const e = new Enemy('boss', 'boss', g.player.pos.x, g.player.pos.z - 6, 1, 1, 1, 1, false)
@@ -224,6 +236,9 @@ export function installQcDebugHooks(game: Game) {
   api.debugSpawnEnemy = (kind) => {
     const g = internals(game)
     const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 8, 1, 1, 1, 1, false)
+    // QC 전투의 처치가 레벨업 모달을 열어 이후 게임 시계를 멈추지 않게 한다.
+    // 실제 방에서 생성되는 적과 보상 수치는 전혀 바뀌지 않는다.
+    e.xp = 0
     g.enemies.push(e)
     g.scene.add(e.group)
     return e
@@ -232,6 +247,7 @@ export function installQcDebugHooks(game: Game) {
   api.debugSpawnElite = (kind, affix) => {
     const g = internals(game)
     const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 4, 1, 1, 1, 1, true, affix)
+    e.xp = 0
     g.enemies.push(e)
     g.scene.add(e.group)
     return e

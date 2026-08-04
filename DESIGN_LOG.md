@@ -3,17 +3,19 @@
 Resolved history was moved to `docs/archive/DESIGN_LOG_2026-07.md` on
 2026-07-30. Keep this file short: unresolved decisions only.
 
-## Chapter 1 stages 2–7
+## Chapter 1 stages 2–7 rewards and final art
 
-- Stage 1 is the only implemented stage.
+- Stages 1-7 and their temporary enemy mechanics are implemented. Stage themes,
+  roster and prototype boss pattern inheritance are recorded in
+  `docs/systems/stages-2-7.md`.
 - The user-approved campaign structure is Stage 1 through Stage 7 as Chapter
   1. Level, traits, equipment, gold, and current HP persist between stages.
 - Each stage ends with a boss preparation room that contains a merchant and a
   healing fountain.
 - Every boss gives a reward; higher stages add extra rewards. Exact reward
   contents and escalation are not decided.
-- Required decision before implementation: theme, room props, enemy roster,
-  boss identity, and boss reward for each Stage 2–7.
+- Still unresolved: final boss identities, final stage/monster art, and the
+  exact escalating boss reward contents for Stages 2-7.
 
 ## Persistent cloud save
 

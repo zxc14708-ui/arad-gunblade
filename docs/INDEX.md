@@ -8,7 +8,7 @@ Read the smallest set that matches the task.
 | Gameplay/balance | plus `DESIGN_LOG.md`, `docs/balance/README.md`, `docs/STATE_SNAPSHOT.md` |
 | Weapon visuals | plus `docs/systems/weapon-visuals.md`, `ART_GUIDE.md` |
 | New character/enemy/prop art | plus `ART_GUIDE.md` |
-| Stage 2–7 planning | plus `DESIGN_LOG.md` |
+| Stage 2–7 gameplay or art | plus `docs/systems/stages-2-7.md`, `DESIGN_LOG.md` |
 | Historical investigation | `docs/archive/DESIGN_LOG_2026-07.md` only when needed |
 
 `DESIGN_LOG.md` contains open decisions. `docs/archive/` is read-only history.

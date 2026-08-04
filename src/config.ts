@@ -107,6 +107,16 @@ export const CONFIG = {
     baseDamage: 10,
     baseXp: 4,
     contactCooldown: 0.6,
+    stagePatterns: {
+      suicide: { triggerRange: 2.1, radius: 4.2, damageMultiplier: 1.6, fuse: 0.65 },
+      frostSuicide: { triggerRange: 2.1, radius: 4.2, damageMultiplier: 1.35, fuse: 0.7, slowZoneDuration: 4, slowMultiplier: 0.55 },
+      fireMage: { preferredRange: 11, cooldown: 3.2, warning: 0.85, radius: 3.2, damageMultiplier: 1.45 },
+      iceMage: { preferredRange: 12, cooldown: 2.8, projectileSpeed: 9, homing: 2.6, slowDuration: 2.4 },
+      summoner: { preferredRange: 13, cooldown: 6, maxSummons: 2 },
+      voidMage: { preferredRange: 12, cooldown: 2.5, teleportCooldown: 5, projectileSpeed: 10, homing: 3.2 },
+      charger: { triggerRange: 9, warning: 0.55, duration: 0.8, speedMultiplier: 3.1, damageMultiplier: 1.45 },
+      bossSpecialChance: 0.38,
+    },
   },
 
   spawn: {

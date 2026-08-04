@@ -584,6 +584,10 @@ const STEPS = [
         const g = window.__game
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const out = {}
+        g.state = 'play'
+        g.settingsOpen = false
+        g.player.alive = true
+        g.player.hp = g.player.stats.maxHp
 
         // ── 발도참(slash) — 0.5초 이상 정지 후 첫 베기 250% ──
         g.debugClearEnemies()
@@ -595,6 +599,8 @@ const STEPS = [
         g.debugSetCoreSlot('slash', 'iaijutsu')
         const iaiTarget = g.debugSpawnEnemy('brute')
         iaiTarget.pos.set(0, 0, -3)
+        iaiTarget.speed = 0
+        iaiTarget.damage = 0
         const simT0 = g.simClock
         while (g.simClock - simT0 < 0.6) await wait(30) // 정지 상태로 0.5초 이상 대기
         const hpBefore = iaiTarget.hp
@@ -622,6 +628,8 @@ const STEPS = [
         g.debugClearEnemies()
         const e = g.debugSpawnEnemy('brute')
         e.pos.set(0, 0, -3)
+        e.speed = 0
+        e.damage = 0
         window.__qcTraitSlots = { hpBefore: e.hp, id: e.id, expected: g.player.stats.swordDamage * 2.5 }
         return true
       })
@@ -691,6 +699,12 @@ const STEPS = [
       // ── 표식(dash) — 대시로 관통한 적은 3초간 받는 피해 +35% ──
       const markResult = await p.evaluate(async () => {
         const g = window.__game
+        g.state = 'play'
+        g.settingsOpen = false
+        g.hitstopTimer = 0
+        g.player.alive = true
+        g.player.hp = g.player.stats.maxHp
+        g.player.invuln = 999
         g.debugSetCoreSlot('dash', 'mark')
         g.player.dashCdTimer = 0
         g.debugClearEnemies()
@@ -698,6 +712,8 @@ const STEPS = [
         // KeyS(moveDown) 입력은 +Z 방향 — 대시 경로(0,0,0)→(0,0,+x) 위에 적을 놓는다.
         const e = g.debugSpawnEnemy('brute')
         e.pos.set(0, 0, 1.5)
+        e.speed = 0
+        e.damage = 0
         return { spawnedId: e.id }
       })
       await p.keyboard.down('KeyS')
@@ -714,6 +730,12 @@ const STEPS = [
       // ── 급전환(dash) — 대시 종료 직후 검 쿨 절반 + 총 즉시 장전 ──
       const quickSwitch = await p.evaluate(async () => {
         const g = window.__game
+        g.state = 'play'
+        g.settingsOpen = false
+        g.hitstopTimer = 0
+        g.player.alive = true
+        g.player.hp = g.player.stats.maxHp
+        g.player.invuln = 999
         g.debugSetCoreSlot('dash', 'quick_switch')
         g.player.dashCdTimer = 0 // 직전 표식 테스트의 대시 쿨다운을 건너뛴다
         g.player.ammo = 0
@@ -1218,6 +1240,12 @@ const STEPS = [
         // 창을 놓쳤을 때의 평소 대시와 확실히 구분된다.
         const e = g.debugSpawnEnemy('brute')
         e.pos.set(0, 0, 3)
+        // 역행 자체의 캡슐 판정만 검증한다. 테스트 대기 중 AI가 경로 밖으로
+        // 걸어나가면 같은 코드가 실행돼도 결과가 흔들리므로 표적을 고정한다.
+        e.speed = 0
+        e.damage = 0
+        window.__qcReverseTargetId = e.id
+        window.__qcReverseHpBefore = e.hp
         return { hpBefore: e.hp, id: e.id, gaugeDuringWindow }
       })
       // 창이 열린 동안 대시 입력 — 평소 대시 대신 되돌아가기로 바꿔치기돼야 한다.
@@ -1229,6 +1257,12 @@ const STEPS = [
       }))
       // 왕복 참격이 끝날 때까지(다시 chargeTimer<=0) 페이지 내부 rAF로 대기.
       await waitUntilPage(p, (g) => g.player.chargeTimer <= 0, 30)
+      // rAF 콜백 순서상 QC가 timer=0을 Game.step()의 resolveIaido보다 먼저
+      // 관측할 수 있다. 벽시계 지연을 추측하지 않고 실제 HP 감소를 기다린다.
+      await waitUntilPage(p, (g) => {
+        const e = g.enemies.find((it) => it.id === window.__qcReverseTargetId)
+        return !e || e.hp < window.__qcReverseHpBefore
+      }, 10)
       await p.keyboard.up('ShiftLeft')
       const tripResult = await p.evaluate((setup) => {
         const g = window.__game
@@ -1419,15 +1453,20 @@ const STEPS = [
         e1.pos.set(0, 0, -5)
         e1.hp = 1
         e1.maxHp = 1
+        e1.speed = 0
+        e1.damage = 0
         const e2 = g.debugSpawnEnemy('brute')
         e2.pos.set(0, 0, -10)
         e2.hp = 1
         e2.maxHp = 1
+        e2.speed = 0
+        e2.damage = 0
         return { id1: e1.id, id2: e2.id }
       })
       await p.keyboard.press('KeyQ')
       await waitUntilPage(p, (g) => g.player.chargeTimer > 0, 15)
       await waitUntilPage(p, (g) => g.player.chargeTimer <= 0, 30)
+      await p.waitForTimeout(50) // timer 관측 뒤 Game.step()의 캡슐 피해/처치까지 완료
       const result = await p.evaluate((setup) => {
         const g = window.__game
         return {
@@ -1824,6 +1863,10 @@ const STEPS = [
       await p.evaluate(() => {
         const g = window.__game
         g.debugClearEnemies()
+        // 이전 전투에서 남은 경험치 구슬이 이 단계 중 레벨업 모달을 열어
+        // 시뮬레이션 시계를 멈추지 않도록 이벤트형 접두사만 격리한다.
+        g.pickups.clear()
+        g.state = 'play'
 
         // 신속 비교용 대조군 — thorns는 speed를 건드리지 않으므로 기준선으로 쓴다
         const normal = g.debugSpawnElite('imp', 'thorns')
@@ -2016,6 +2059,35 @@ const STEPS = [
       if (r.shop[0] !== 'shop-item slot-slash') return `상점 특성 아이템이 슬롯 배지가 아님 (${r.shop[0]})`
       if (r.shop[1] !== 'shop-item common') return `상점 무기 아이템의 등급 표기가 이전과 달라짐 (${r.shop[1]})`
       if (r.settings !== 'trait slot-slash') return `보유 특성 목록이 슬롯 배지로 표기되지 않음 (${r.settings})`
+      return null
+    }),
+  },
+  {
+    name: 'stage-2-7-content',
+    what: '스테이지 2~7 임시 콘텐츠 — 각 로스터가 등록되고 7스테이지 테마/몬스터가 실제 방에 로드되는가',
+    async run(p) {
+      const result = await p.evaluate(() => {
+        const expected = {
+          2: 'suicide', 3: 'suicide', 4: 'fireMage', 5: 'iceMage', 6: 'summoner', 7: 'voidMage',
+        }
+        const roster = {}
+        for (let stage = 2; stage <= 7; stage++) {
+          if (!window.__game.debugEnterStage(stage)) return { error: `${stage}스테이지 진입 훅 실패`, roster }
+          roster[stage] = window.__game.run.cfg.enemies.map((e) => e.kind)
+          if (!roster[stage].includes(expected[stage])) return { error: `${stage}스테이지 필수 적 ${expected[stage]} 누락`, roster }
+        }
+        return { error: null, roster }
+      })
+      await p.evaluate((value) => { window.__qcStageContent = value }, result)
+      await p.waitForTimeout(1200)
+    },
+    check: async (p) => p.evaluate(() => {
+      const result = window.__qcStageContent
+      if (!result) return '스테이지 검사 결과 없음'
+      if (result.error) return result.error
+      const g = window.__game
+      if (g.run.stage !== 7 || !g.run.cfg.art.floor.includes('stage7')) return '7스테이지 임시 환경이 로드되지 않음'
+      if (!g.spawnQueue.some((e) => e.artSet.startsWith('s7')) && !g.enemies.some((e) => e.artSet.startsWith('s7'))) return '7스테이지 임시 몬스터 시트가 스폰되지 않음'
       return null
     }),
   },

@@ -54,6 +54,7 @@ export class Game {
   private roomCleared = false
   /** 룸 입장 시 순차 스폰 대기열 */
   private spawnQueue: RoomEnemy[] = []
+  private slowZones: { position: THREE.Vector3; radius: number; timer: number; multiplier: number; fxTimer: number }[] = []
   private spawnTimer = 0
   /** 방 입장 직후 스폰을 미루는 유예 시간 — 문 열자마자 맞는 것을 막는다 */
   private entrySafeTimer = 0
@@ -250,6 +251,7 @@ export class Game {
     this.enemies.forEach((e) => this.scene.remove(e.group))
     this.enemies = []
     this.spawnQueue = []
+    this.slowZones = []
     this.projectiles.clear()
     this.pickups.clear()
     this.effects.clear()
@@ -304,7 +306,7 @@ export class Game {
   }
 
   /**
-   * 이어가기 런 — 챕터(5스테이지) 완주 전까지는 마을을 거치지 않고 다음
+   * 이어가기 런 — 챕터(7스테이지) 완주 전까지는 마을을 거치지 않고 다음
    * 스테이지 첫 방으로 바로 넘어간다(작업 지시
    * P2_prompt_stage_data_and_continuous_run_1 커밋4). 레벨/경험치/특성/
    * 골드/장비/스킬 쿨다운은 그대로 유지된다 — startRun()(플레이어 재생성)은
@@ -1064,7 +1066,7 @@ export class Game {
         const spawn = this.spawnQueue.shift()!
         const p = this.safeSpawnPoint()
         const plan = this.curPlan!
-        const e = new Enemy(spawn.kind, spawn.artSet, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.xpMul, plan.kind === 'elite', plan.affix)
+        const e = new Enemy(spawn.kind, spawn.artSet, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.xpMul, plan.kind === 'elite', plan.affix, this.run.stage)
         this.enemies.push(e)
         this.scene.add(e.group)
         this.effects.burst(new THREE.Vector3(p.x, 1, p.z), 0x8a4a6a, 8, 5)
@@ -1077,7 +1079,8 @@ export class Game {
 
     // ── 적 / 투사체 / 픽업 ──
     this.updateEnemies(dt)
-    this.projectiles.update(dt, this.room.bounds)
+    this.projectiles.update(dt, this.room.bounds, this.player.pos)
+    this.updateSlowZones(dt)
     this.resolveBullets()
     this.resolveEnemyBullets()
 
@@ -1178,9 +1181,9 @@ export class Game {
           e.contactTimer = CONFIG.enemy.contactCooldown
           this.audio.hurt()
           this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
-          this.effects.shake(e.isBossCharging ? CONFIG.effects.shakeBossCharge : CONFIG.effects.shakePlayerHit)
+          this.effects.shake(e.isCharging ? CONFIG.effects.shakeBossCharge : CONFIG.effects.shakePlayerHit)
         }
-        if (e.isBossCharging) this.pushPlayerAway(e.pos.x, e.pos.z, e.radius + CONFIG.player.radius)
+        if (e.isCharging) this.pushPlayerAway(e.pos.x, e.pos.z, e.radius + CONFIG.player.radius)
       }
       if (d < e.radius + CONFIG.player.radius && !this.player.isDashing && !this.player.isIaido) {
         const push = (e.radius + CONFIG.player.radius - d) * 0.5
@@ -1202,7 +1205,46 @@ export class Game {
   private resolveEnemyAction(enemy: Enemy, action: EnemyAction) {
     if (action.type === 'shoot') {
       const origin = new THREE.Vector3(enemy.pos.x, 1.2, enemy.pos.z)
-      this.projectiles.spawnEnemyBullet(origin, action.direction, 14, enemy.damage)
+      this.projectiles.spawnEnemyBullet(origin, action.direction, action.speed ?? 14, enemy.damage, action.style, action.homing, action.slowDuration)
+      return
+    }
+
+    if (action.type === 'summon') {
+      const plan = this.curPlan
+      if (!plan) return
+      for (let i = 0; i < action.count; i++) {
+        const angle = (i / action.count) * Math.PI * 2
+        const child = new Enemy(
+          action.kind,
+          action.artSet,
+          enemy.pos.x + Math.cos(angle) * 2,
+          enemy.pos.z + Math.sin(angle) * 2,
+          plan.hpMul,
+          plan.dmgMul,
+          plan.speedMul,
+          plan.xpMul,
+          false,
+          undefined,
+          this.run.stage,
+        )
+        this.room.clamp(child.pos, child.radius)
+        this.enemies.push(child)
+        this.scene.add(child.group)
+      }
+      this.effects.playGroundFx('tealMagic', enemy.pos.x, enemy.pos.z, 4, 0.65)
+      return
+    }
+
+    if (action.type === 'areaStrike') {
+      this.effects.playGroundFx(action.style === 'fire' ? 'shockwave' : 'tealMagic', action.position.x, action.position.z, action.radius * 2, 0.7)
+      const distance = Math.hypot(this.player.pos.x - action.position.x, this.player.pos.z - action.position.z)
+      if (distance <= action.radius + CONFIG.player.radius && this.player.takeDamage(enemy.damage * action.damageMultiplier)) {
+        this.audio.hurt()
+        this.effects.shake(CONFIG.effects.shakeBossSlam)
+      }
+      if (action.slowZoneDuration && action.slowMultiplier) {
+        this.slowZones.push({ position: action.position.clone(), radius: action.radius, timer: action.slowZoneDuration, multiplier: action.slowMultiplier, fxTimer: 0 })
+      }
       return
     }
 
@@ -1229,6 +1271,24 @@ export class Game {
       this.effects.shake(CONFIG.effects.shakeBossSlam)
     }
     this.pushPlayerAway(action.position.x, action.position.z, action.radius + CONFIG.player.radius)
+  }
+
+  private updateSlowZones(dt: number) {
+    for (let i = this.slowZones.length - 1; i >= 0; i--) {
+      const zone = this.slowZones[i]
+      zone.timer -= dt
+      if (zone.timer <= 0) {
+        this.slowZones.splice(i, 1)
+        continue
+      }
+      zone.fxTimer -= dt
+      if (zone.fxTimer <= 0) {
+        zone.fxTimer = 0.65
+        this.effects.playGroundFx('tealMagic', zone.position.x, zone.position.z, zone.radius * 2, 0.75)
+      }
+      const distance = Math.hypot(this.player.pos.x - zone.position.x, this.player.pos.z - zone.position.z)
+      if (distance <= zone.radius + CONFIG.player.radius) this.player.applyMovementSlow(zone.multiplier, 0.2)
+    }
   }
 
   /** 보스 돌진·슬램에 맞은 플레이어를 공격 중심의 바깥까지 밀어낸다. */
@@ -1391,6 +1451,7 @@ export class Game {
           this.effects.burst(new THREE.Vector3(this.player.pos.x, 1, this.player.pos.z), 0xff4040, 6, 4)
           this.effects.shake(CONFIG.effects.shakePlayerHit)
         }
+        if (b.slowDuration > 0) this.player.applyMovementSlow(CONFIG.enemy.stagePatterns.frostSuicide.slowMultiplier, b.slowDuration)
         this.projectiles.removeEnemyBullet(i)
       }
     }
@@ -1604,6 +1665,19 @@ export class Game {
     const death = enemyDeathArt(e.artSet)
     this.effects.deathDissolve(e.pos, death.map, death.scale)
     this.effects.playFx('death', e.pos.x, 1.0, e.pos.z, ENEMY_SCALE[e.artSet] * 1.3)
+
+    const burst = e.deathBurst()
+    if (burst) {
+      this.effects.playGroundFx(burst.slowZoneDuration > 0 ? 'tealMagic' : 'shockwave', e.pos.x, e.pos.z, burst.radius * 2, 0.8)
+      const distance = Math.hypot(this.player.pos.x - e.pos.x, this.player.pos.z - e.pos.z)
+      if (distance <= burst.radius + CONFIG.player.radius && this.player.takeDamage(e.damage * burst.damageMultiplier)) {
+        this.audio.hurt()
+        this.effects.shake(CONFIG.effects.shakePlayerHit)
+      }
+      if (burst.slowZoneDuration > 0) {
+        this.slowZones.push({ position: e.pos.clone(), radius: burst.radius, timer: burst.slowZoneDuration, multiplier: burst.slowMultiplier, fxTimer: 0 })
+      }
+    }
 
     if (e.affix === 'split') {
       for (const child of e.createSplitChildren()) {

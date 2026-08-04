@@ -1,11 +1,19 @@
 # Current Project Status
 
-Last updated: 2026-08-01
+Last updated: 2026-08-04
 
 ## Playable now
 
-- Stage 1 random connected dungeon run, elite/treasure/shop rooms, and boss
-  preparation room (merchant + healing fountain).
+- Chapter 1 now runs continuously through Stages 1-7. Each stage keeps the
+  connected-room map, elite/treasure/shop rooms, and boss preparation room.
+- Temporary Stage 2-7 environments and enemy sheets are wired. New combat
+  roles cover suicide/frost-suicide, player-position fire casting, homing ice,
+  zombie summoning, teleporting void magic, and charging. Later bosses retain
+  the Stage-1 charge/slam/shot kit and cumulatively unlock earlier-stage
+  special patterns.
+- The town keeps every existing facility and interaction, with a temporary
+  forest-village composition (stone paths, edge trees, bushes and campfire)
+  built from validated project assets.
 - Boss and elite affix systems, active skills (Q/E/R), dash, reload, loadout,
   traits, town meta progression, and keyboard rebinding.
 - Fixed 1920 x 1080 presentation with aspect-safe browser scaling.
@@ -99,7 +107,8 @@ Last updated: 2026-08-01
 
 1. Integrate per-weapon visuals only after matching final motion sheets are
    delivered, then visually QC each loadout.
-2. Define Stage 2-7 themes, enemies, bosses, and escalating boss rewards.
+2. Replace the Stage 2-7 palette placeholders with final theme-specific art
+   and name/illustrate each boss. Escalating boss reward contents remain open.
 3. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
 

@@ -172,6 +172,8 @@ export class Player {
   private reverseReturnKnockback = 0
   /** 여운(skill) — R 종료 후 남은 지속시간(초), 0이면 비활성 */
   private aftertasteTimer = 0
+  private movementSlowTimer = 0
+  private movementSlowMultiplier = 1
   private invuln = 0
   private hitFlash = 0
   private walkPhase = 0
@@ -454,6 +456,10 @@ export class Player {
     if (this.hitFlash > 0) this.hitFlash -= dt
     if (this.reverseWindowTimer > 0) this.reverseWindowTimer -= dt
     if (this.aftertasteTimer > 0) this.aftertasteTimer -= dt
+    if (this.movementSlowTimer > 0) {
+      this.movementSlowTimer -= dt
+      if (this.movementSlowTimer <= 0) this.movementSlowMultiplier = 1
+    }
 
     // 발도 이동 — 설정된 총 이동거리를 duration 동안 정확히 나눠 이동한다.
     // 이동이 끝난 프레임에 실제 시작점~현재 위치 선분을 한 번만 타격한다.
@@ -504,8 +510,8 @@ export class Player {
       if (mag > 0) {
         const nx = mv.x / mag
         const nz = mv.z / mag
-        this.pos.x += nx * this.stats.moveSpeed * dt
-        this.pos.z += nz * this.stats.moveSpeed * dt
+        this.pos.x += nx * this.stats.moveSpeed * this.movementSlowMultiplier * dt
+        this.pos.z += nz * this.stats.moveSpeed * this.movementSlowMultiplier * dt
         this.walkPhase += dt * 13 // 걷기 다리 회전
       }
       // 역행(skill) — 창이 열려 있는 동안의 대시 입력은 평소 대시 대신 되돌아가기로
@@ -719,6 +725,12 @@ export class Player {
 
     this.syncMesh(dt)
     return { bullets, slash, chargeSlash, ultimate, startedReload, reloadTriggerAttempt }
+  }
+
+  /** 빙결탄/냉기 지대의 이동 둔화. 더 강한 둔화와 더 긴 남은 시간만 유지한다. */
+  applyMovementSlow(multiplier: number, duration: number) {
+    this.movementSlowMultiplier = Math.min(this.movementSlowMultiplier, multiplier)
+    this.movementSlowTimer = Math.max(this.movementSlowTimer, duration)
   }
 
   private swingAnim = 0
