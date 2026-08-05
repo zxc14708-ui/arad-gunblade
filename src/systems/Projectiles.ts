@@ -16,8 +16,6 @@ export interface Bullet {
   hitSet: Set<number>
   /** '도탄'(shot) — 이 총알이 이미 한 번 튕겼는지(탄환당 1회만 허용) */
   ricocheted: boolean
-  /** '순환'(skill) — 이 탄환이 처치를 내면 어느 스킬 기인인지. 일반 사격은 undefined */
-  skillSource?: 'doubleShot' | 'ultimate'
 }
 
 export interface EnemyBullet {
@@ -57,7 +55,6 @@ export class Projectiles {
 
   spawnBullet(
     pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number, crit: boolean, pierce: number,
-    skillSource?: 'doubleShot' | 'ultimate',
   ) {
     const mesh = new THREE.Sprite(crit ? this.critMat : this.bulletMat)
     mesh.position.copy(pos)
@@ -75,7 +72,6 @@ export class Projectiles {
       pierce,
       hitSet: new Set(),
       ricocheted: false,
-      skillSource,
     })
   }
 

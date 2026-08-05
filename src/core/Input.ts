@@ -9,18 +9,18 @@
  */
 export type KeyAction =
   | 'moveUp' | 'moveDown' | 'moveLeft' | 'moveRight'
-  | 'dash' | 'slash' | 'reload' | 'charge' | 'doubleShot' | 'ultimate' | 'interact'
+  | 'dash' | 'slash' | 'reload' | 'interact'
 
 export type KeyBindings = Record<KeyAction, string>
 
 export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
   moveUp: '위로 이동', moveDown: '아래로 이동', moveLeft: '왼쪽 이동', moveRight: '오른쪽 이동',
-  dash: '대시', slash: '베기', reload: '장전', charge: '발도', doubleShot: '더블 샷', ultimate: '궁극기', interact: '상호작용',
+  dash: '대시', slash: '베기', reload: '장전', interact: '상호작용',
 }
 
 const DEFAULT_BINDINGS: KeyBindings = {
   moveUp: 'KeyW', moveDown: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
-  dash: 'ShiftLeft', slash: 'Space', reload: 'KeyT', charge: 'KeyQ', doubleShot: 'KeyE', ultimate: 'KeyR', interact: 'KeyE',
+  dash: 'ShiftLeft', slash: 'Space', reload: 'KeyT', interact: 'KeyE',
 }
 
 export function keyLabel(code: string) {

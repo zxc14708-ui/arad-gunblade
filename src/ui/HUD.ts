@@ -28,7 +28,6 @@ export class HUD {
   private hpLabel!: HTMLElement
   private xpFill!: HTMLElement
   private dashRing!: HTMLElement
-  private skillButtons!: Record<'q' | 'e' | 'r', HTMLElement>
   private banner!: HTMLElement
   private bossBar!: HTMLElement
   private bossFill!: HTMLElement
@@ -62,7 +61,6 @@ export class HUD {
     this.hpLabel = this.q('#hpLabel')
     this.xpFill = this.q('#xpFill')
     this.dashRing = this.q('#dashRing')
-    this.skillButtons = { q: this.q('#skillQ'), e: this.q('#skillE'), r: this.q('#skillR') }
     this.banner = this.q('#banner')
     this.bossBar = this.q('#bossBar')
     this.bossFill = this.q('#bossFill')
@@ -110,12 +108,6 @@ export class HUD {
         <div class="ammo-pips" id="ammoPips"></div>
         <div class="ammo-text" id="ammoText">7 / 7</div>
         <div class="ammo-label"><span id="gunName">M1911</span> · <kbd>T</kbd> 장전</div>
-      </div>
-
-      <div class="hud-skills" aria-label="액티브 스킬">
-        <div class="skill ready" id="skillQ"><kbd>Q</kbd><span>발도</span><i></i></div>
-        <div class="skill ready" id="skillE"><kbd>E</kbd><span>더블 샷</span><i></i></div>
-        <div class="skill ready ultimate" id="skillR"><kbd>R</kbd><span>폭렬 난무</span><i></i></div>
       </div>
 
       <div class="hud-dash">
@@ -275,7 +267,7 @@ export class HUD {
   private renderKeybinds(bindings: KeyBindings) {
     const box = this.q('#keybinds')
     box.innerHTML = ''
-    const order: KeyAction[] = ['moveUp', 'moveDown', 'moveLeft', 'moveRight', 'dash', 'slash', 'reload', 'charge', 'doubleShot', 'ultimate', 'interact']
+    const order: KeyAction[] = ['moveUp', 'moveDown', 'moveLeft', 'moveRight', 'dash', 'slash', 'reload', 'interact']
     for (const action of order) {
       const row = document.createElement('div')
       row.className = 'keybind-row'
@@ -296,7 +288,7 @@ export class HUD {
       row.append(label, button)
       box.appendChild(row)
     }
-    this.setSkillKeys(bindings)
+    this.setReloadKey(bindings)
   }
 
   private captureKeybind(e: KeyboardEvent) {
@@ -316,20 +308,16 @@ export class HUD {
       if (button) button.textContent = keyLabel(e.code)
       this.q('#keybindNote').textContent = `${KEY_ACTION_LABELS[action]}: ${keyLabel(e.code)}로 변경했습니다.`
       const bindings = Object.fromEntries([...box.querySelectorAll<HTMLButtonElement>('.keybind-btn')].map((button) => [button.dataset.action!, button.textContent!])) as Partial<KeyBindings>
-      this.setSkillKeys({
+      this.setReloadKey({
         moveUp: bindings.moveUp ?? 'W', moveDown: bindings.moveDown ?? 'S', moveLeft: bindings.moveLeft ?? 'A', moveRight: bindings.moveRight ?? 'D',
-        dash: bindings.dash ?? 'Left Shift', slash: bindings.slash ?? 'Space', reload: bindings.reload ?? 'T', charge: bindings.charge ?? 'Q',
-        doubleShot: bindings.doubleShot ?? 'E', ultimate: bindings.ultimate ?? 'R', interact: bindings.interact ?? 'E',
+        dash: bindings.dash ?? 'Left Shift', slash: bindings.slash ?? 'Space', reload: bindings.reload ?? 'T', interact: bindings.interact ?? 'E',
       })
     } else {
       this.q('#keybindNote').textContent = '이미 다른 조작에 쓰는 키입니다. 다른 키를 선택하세요.'
     }
   }
 
-  private setSkillKeys(bindings: KeyBindings) {
-    ;(this.skillButtons.q.querySelector('kbd') as HTMLElement).textContent = keyLabel(bindings.charge)
-    ;(this.skillButtons.e.querySelector('kbd') as HTMLElement).textContent = keyLabel(bindings.doubleShot)
-    ;(this.skillButtons.r.querySelector('kbd') as HTMLElement).textContent = keyLabel(bindings.ultimate)
+  private setReloadKey(bindings: KeyBindings) {
     const ammoKey = this.q('#ammoBox .ammo-label kbd')
     if (ammoKey) ammoKey.textContent = keyLabel(bindings.reload)
   }
@@ -493,29 +481,6 @@ export class HUD {
   setDash(ratio: number, ready: boolean) {
     this.dashRing.style.setProperty('--p', Math.round(ratio * 100) + '%')
     this.dashRing.classList.toggle('ready', ready)
-  }
-
-  setActiveSkills(cooldowns: { charge: number; doubleShot: number; ultimate: number }, chargeReady: boolean, doubleShotReady: boolean, ultimateReady: boolean) {
-    const states: [keyof typeof this.skillButtons, number, boolean][] = [
-      ['q', cooldowns.charge, chargeReady],
-      ['e', cooldowns.doubleShot, doubleShotReady],
-      ['r', cooldowns.ultimate, ultimateReady],
-    ]
-    for (const [key, cooldown, ready] of states) {
-      const el = this.skillButtons[key]
-      el.classList.toggle('ready', ready)
-      el.style.setProperty('--cd', `${Math.round(Math.min(1, cooldown) * 100)}%`)
-    }
-  }
-
-  /** '순환'(skill) — 쿨타임이 실제로 줄어든 스킬 아이콘에 짧게 번쩍이는 피드백을 준다. */
-  flashSkillIcons(keys: ('q' | 'e' | 'r')[]) {
-    for (const key of keys) {
-      const el = this.skillButtons[key]
-      el.classList.remove('circulate-flash')
-      void el.offsetWidth // 리플로우로 애니메이션 재시작(banner_()와 같은 기법)
-      el.classList.add('circulate-flash')
-    }
   }
 
   banner_(text: string) {

@@ -74,7 +74,7 @@ const RAW_POOL: Upgrade[] = [
   { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'slash', maxStacks: 1,
     apply: () => { /* 발동 로직은 Player.update()의 slash 판정에서 stillTimer로 처리 — 상시 배수가 아니라 조건부라 apply는 상태만 등록한다(coreSlots에 이미 기록됨) */ } },
   { id: 'ilseom', name: '일섬(一閃)', desc: '베기가 정확히 1명만 맞혔을 때 피해 +100% (2명 이상은 배수 없음)', icon: '💫', slot: 'slash', maxStacks: 1,
-    apply: () => { /* Game.resolveSlash()/resolveIaido()에서 명중 수 1일 때만 판정 */ } },
+    apply: () => { /* Game.resolveSlash()에서 명중 수 1일 때만 판정 */ } },
   { id: 'dualblade', name: '이도류(二刀流)', desc: '베기가 2연타(각 60%, 합계 120%), 온힛 효과 각 타마다 발동', icon: '⚔️', slot: 'slash', maxStacks: 1,
     apply: () => { /* Game.ts pendingSlashes 대기열에서 0.12초 뒤 두 번째 타격 처리 */ } },
   { id: 'parry', name: '흘리기', desc: '베기 부채꼴 안 적 탄환을 반사(검 피해의 60%, 역방향) — 근접 적에겐 무효', icon: '🛡️', slot: 'slash', maxStacks: 1,
@@ -100,15 +100,9 @@ const RAW_POOL: Upgrade[] = [
   { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', slot: 'dash', maxStacks: 1,
     apply: (p) => { p.mods.dashStrike += 44; p.recompute() } },
 
-  // ── 핵심 슬롯: skill(4종, skill_slot_traits) ──
-  { id: 'reverse', name: '역행(逆行)', desc: 'Q 종료 후 0.8초 안 대시 입력 시 되돌아가며 재차 베기(70% 피해), 대시 쿨 소모 없음', icon: '↩️', slot: 'skill', maxStacks: 1,
-    apply: () => { /* Player.update()의 대시 트리거 분기에서 reverseWindowTimer 판정, Game.resolveIaido() 재사용 */ } },
-  { id: 'triple_shot', name: '삼연사', desc: 'E 더블샷이 3발로(중앙 탄환 추가), 탄약 소모는 2 그대로', icon: '🔱', slot: 'skill', maxStacks: 1,
-    apply: () => { /* Player.update()의 E 발사 분기에서 각도 배열만 확장 */ } },
-  { id: 'aftertaste', name: '여운(餘韻)', desc: 'R 사용 후 8초간 모든 피해 +25%(재사용 시 지속시간 재설정)', icon: '✨', slot: 'skill', maxStacks: 1,
-    apply: () => { /* Player.aftertasteActive를 Game.ts의 4개 피해 적용 지점(resolveSlash/resolveIaido/resolveBullets/aoeDamage)에서 참조 */ } },
-  { id: 'circulation', name: '순환(循環)', desc: '스킬(Q/E/R)로 처치할 때마다 나머지 두 스킬의 쿨타임 1.5초 감소', icon: '🔄', slot: 'skill', maxStacks: 1,
-    apply: () => { /* Game.ts가 스킬 기인 처치를 감지해 Player.onSkillKill() 호출 */ } },
+  // skill 슬롯 특성 4종(역행/삼연사/여운/순환)은 액티브 스킬(Q/E/R) 전면
+  // 폐지와 함께 제거했다(작업 지시 P6 커밋2) — 24종 → 20종. skill 슬롯
+  // 자체(CORE_SLOTS)는 커밋4에서 3축으로 재편하기 전까지 빈 채로 둔다.
 ]
 
 export const POOL: Upgrade[] = RAW_POOL

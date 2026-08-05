@@ -82,7 +82,6 @@ export class Game {
   /** '이도류'(slash) 두 번째 타격 대기열 — playerDt 누적으로 소진(step()에서 처리,
    * 히트스톱 영향 없음 — 작업 지시 P6 커밋1-1) */
   private pendingSlashes: { timer: number; arc: number; range: number; damage: number; crit: boolean; knockback: number }[] = []
-  private wasIaido = false
   private ghostTimer = 0
   private settingsOpen = false
   private acquired = new Map<string, { upgrade: Upgrade; count: number }>()
@@ -239,7 +238,6 @@ export class Game {
     this.acquired.clear()
     this.startingTraitTaken = false
     this.traitForgeUsed = false
-    this.wasIaido = false
     this.wasDashing = false
     this.ghostTimer = 0
     this.shopRooms.clear()
@@ -985,18 +983,14 @@ export class Game {
     this.entrySafeTimer = Math.max(0, this.entrySafeTimer - worldDt)
 
     // ── 플레이어 ──
-    // 상호작용 키 E와 충돌하지 않도록 액티브 스킬은 적이 살아 있는 전투 중에만 쓴다.
-    // 방 정리 후, 상점/분수/문 앞에서는 E가 언제나 상호작용으로 동작한다.
-    const activeSkillsEnabled = this.mode === 'dungeon' && this.enemies.some((enemy) => enemy.alive)
-    const { bullets, slash, chargeSlash, ultimate, startedReload, reloadTriggerAttempt } = this.player.update(playerDt, this.input, this.aimGround, activeSkillsEnabled)
+    const { bullets, slash, startedReload, reloadTriggerAttempt } = this.player.update(playerDt, this.input, this.aimGround)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
-      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce, b.skillSource)
+      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
     }
     if (bullets.length > 0) {
       this.audio.gunshot(this.player.gun.id)
-      // More than one projectile (double shot / ultimate) needs a muzzle flash in each real firing direction.
       for (const bullet of bullets) this.effects.muzzleFlash(this.player.pos, Math.atan2(bullet.dir.x, bullet.dir.z))
     }
     if (startedReload) this.audio.reload(this.player.gun.id)
@@ -1039,34 +1033,17 @@ export class Game {
         this.resolveSlash(pos, angle, q.arc, q.range, q.damage, q.crit, q.knockback, { halfFx: true })
       }
     }
-    if (chargeSlash) {
-      this.audio.iaido(this.player.sword.id)
-      this.effects.iaido(chargeSlash.start, this.player.pos)
-      this.resolveIaido(chargeSlash.start, this.player.pos, chargeSlash.damage, chargeSlash.crit, chargeSlash.knockback)
-    }
-    if (ultimate) {
-      this.audio.slash(this.player.sword.id)
-      for (const slashPart of ultimate.slashes) {
-        this.effects.slash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range)
-        this.resolveSlash(slashPart.pos, slashPart.angle, slashPart.arc, slashPart.range, slashPart.damage, slashPart.crit, slashPart.knockback, { isUltimatePart: true })
-      }
-      this.effects.ultimateCross(this.player.pos)
-      this.effects.playGroundFx('shockwave', this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius * 2)
-      this.aoeDamage(this.player.pos.x, this.player.pos.z, ultimate.shockwaveRadius, ultimate.shockwaveDamage, COLORS.slash, 'ultimate')
-    }
-
     // 대시 잔상
-    if (this.player.isDashing || this.player.isIaido) {
+    if (this.player.isDashing) {
       this.ghostTimer -= playerDt
       if (this.ghostTimer <= 0) {
-        this.ghostTimer = this.player.isIaido ? 0.03 : 0.045
+        this.ghostTimer = 0.045
         this.effects.ghost(this.player.ghostParams(), this.player.pos)
       }
     } else {
       this.ghostTimer = 0
     }
     if (this.player.isDashing && !this.wasDashing) this.audio.dash()
-    if (this.player.isIaido && !this.wasIaido) this.audio.iaidoStart()
     if (!this.player.isDashing && this.wasDashing && this.player.mods.dashStrike > 0) {
       this.aoeDamage(this.player.pos.x, this.player.pos.z, 4.5, this.player.mods.dashStrike, COLORS.slash)
     }
@@ -1075,7 +1052,6 @@ export class Game {
       if (this.player.coreSlots.get('dash') === 'mark') this.resolveDashMark(this.player.dashStart, this.player.pos)
     }
     this.wasDashing = this.player.isDashing
-    this.wasIaido = this.player.isIaido
 
     // 조건부 핵심 슬롯 특성 발동 게이지(발도참/조준사격/역행) — 특성이 없으면
     // null이라 아무것도 표시되지 않는다.
@@ -1136,12 +1112,6 @@ export class Game {
     // ── HUD ──
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     this.hud.setDash(this.player.dashCooldownRatio, this.player.dashReady)
-    this.hud.setActiveSkills(
-      this.player.activeSkillCooldowns,
-      activeSkillsEnabled && this.player.chargeReady,
-      activeSkillsEnabled && this.player.doubleShotReady,
-      activeSkillsEnabled && this.player.ultimateReady,
-    )
     this.hud.setAmmo(
       this.player.ammo,
       this.player.magSize,
@@ -1168,22 +1138,16 @@ export class Game {
     if (!this.player.alive) this.gameOver()
   }
 
-  /**
-   * 광역 피해 — 궁극기 충격파(skillSource:'ultimate')와 섬광강타/폭심(skillSource
-   * 없음) 모두 이 한 지점을 거친다. 여운은 출처와 무관하게 전부 적용하고("검·총·
-   * 스킬·폭심 등"), 순환의 스킬 기인 처치 통지만 skillSource가 있을 때로 제한한다.
-   */
-  private aoeDamage(x: number, z: number, radius: number, damage: number, color: number, skillSource?: 'ultimate') {
-    const dmg = this.withAftertaste(damage)
+  /** 광역 피해 — 섬광강타(dashStrike)/폭심(explodeOnKill)이 이 한 지점을 거친다. */
+  private aoeDamage(x: number, z: number, radius: number, damage: number, color: number) {
     this.effects.burst(new THREE.Vector3(x, 1, z), color, 18, 10)
     for (const e of this.enemies) {
       if (!e.alive) continue
       const d = Math.hypot(e.pos.x - x, e.pos.z - z)
       if (d <= radius + e.radius) {
-        e.takeDamage(dmg)
+        e.takeDamage(damage)
         e.knockback(x, z, 6)
-        this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, false)
-        if (!e.alive && skillSource) this.applySkillKill(skillSource)
+        this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), damage, false)
       }
     }
   }
@@ -1225,7 +1189,7 @@ export class Game {
         }
         if (e.isCharging) this.pushPlayerAway(e.pos.x, e.pos.z, e.radius + CONFIG.player.radius)
       }
-      if (d < e.radius + CONFIG.player.radius && !this.player.isDashing && !this.player.isIaido) {
+      if (d < e.radius + CONFIG.player.radius && !this.player.isDashing) {
         const push = (e.radius + CONFIG.player.radius - d) * 0.5
         if (d > 0.01) {
           e.pos.x += (dx / d) * push
@@ -1457,7 +1421,7 @@ export class Game {
           // '밀착사격'(shot) — 먼 거리 보너스와 정반대 축이라 동시에 성립할 수 없다
           // (gunRangeBonusDist 8 ≫ closeRangeDist 3).
           const closeRange = this.player.coreSlots.get('shot') === 'close_range' && travelDist <= CONFIG.traits.closeRangeDist
-          const dmg = this.withAftertaste(rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : closeRange ? b.damage * CONFIG.traits.closeRangeMult : b.damage)
+          const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : closeRange ? b.damage * CONFIG.traits.closeRangeMult : b.damage
           e.takeDamage(dmg, 'ranged', b.crit)
           b.hitSet.add(e.id)
           this.audio.hit()
@@ -1466,7 +1430,6 @@ export class Game {
           this.applyLifesteal(dmg)
           this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, b.crit, rangeBonus)
-          if (!e.alive && b.skillSource) this.applySkillKill(b.skillSource)
           if (b.hitSet.size > b.pierce) {
             // '도탄'(shot) — 관통 소진으로 소멸하는 시점이 기준이라 무기 고유
             // 관통과 자연스럽게 합쳐진다(관통 3인 무기는 3명 뚫은 뒤 튕긴다).
@@ -1588,8 +1551,6 @@ export class Game {
    * 전원 풀 데미지, 스윙당 검 장전 1회)은 그대로다 — 명중 수와 무관하게
    * 전원이 맞고, 일섬 조건이 아니면 배수는 항상 1.0이다.
    *
-   * opts.isUltimatePart: 궁극기(R) 다단 참격 — 일섬을 적용하지 않는다(각 참격을
-   * 개별 스윙으로 세면 의도치 않게 발동하므로 제외 지시).
    * opts.halfFx: 이도류 두 번째 타격 — 히트스톱/화면 흔들림을 절반으로 줄인다.
    */
   private resolveSlash(
@@ -1600,15 +1561,15 @@ export class Game {
     damage: number,
     crit: boolean,
     knockback: number,
-    opts: { isUltimatePart?: boolean; halfFx?: boolean } = {},
+    opts: { halfFx?: boolean } = {},
   ) {
     // 1패스 — 판정만, 피해 계산/적용 없음
     const hits = this.enemiesInArc(pos, angle, arc, range)
 
     // '일섬(一閃)' — 정확히 1명 명중 시에만 배수, 2명 이상이면 절반이라도 주는
     // 완충 없이 1.0배(작업 지시: "교환이 흐려진다" — 의도된 전부-아니면-없음).
-    const ilseomActive = !opts.isUltimatePart && this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
-    const finalDamage = this.withAftertaste(ilseomActive ? damage * CONFIG.traits.ilseomMult : damage)
+    const ilseomActive = this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
+    const finalDamage = ilseomActive ? damage * CONFIG.traits.ilseomMult : damage
     const fxScale = opts.halfFx ? CONFIG.traits.dualbladeSecondHitFxScale : 1
 
     // 2패스 — 확정된 배수로 피해/넉백/이펙트 적용
@@ -1623,7 +1584,6 @@ export class Game {
       this.applyLifesteal(finalDamage)
       this.effects.hitImpact(e.pos.x, e.pos.z, crit ? 2.0 : 1.4)
       this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.8, e.pos.z), finalDamage, crit, false, ilseomActive)
-      if (!e.alive && opts.isUltimatePart) this.applySkillKill('ultimate')
       if (reflected > 0 && this.player.takeDamage(reflected)) {
         this.audio.hurt()
         this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
@@ -1635,29 +1595,9 @@ export class Game {
     return hits.length
   }
 
-  /** 여운(skill) — 활성 중이면 플레이어가 주는 피해에 +25%. Game.ts가 enemy.takeDamage()를
-   * 호출하는 4개 지점(resolveSlash/resolveIaido/resolveBullets/aoeDamage)에서만 걸면
-   * 검·총·스킬·폭심 등 모든 출처를 한 번에 덮는다 — 전부 결국 이 4곳으로 모인다. */
-  private withAftertaste(dmg: number): number {
-    return this.player.aftertasteActive ? dmg * CONFIG.traits.aftertasteDamageMult : dmg
-  }
-
-  /** 순환(skill) — 스킬 기인 처치를 Player에 통지하고, 실제로 쿨이 줄어든 스킬만
-   * HUD 아이콘에 피드백을 준다(특성 미보유 시 Player.onSkillKill이 null을 반환). */
-  private applySkillKill(skill: 'charge' | 'doubleShot' | 'ultimate') {
-    const flashed = this.player.onSkillKill(skill)
-    if (flashed && flashed.length > 0) {
-      this.audio.skillCirculate()
-      this.hud.flashSkillIcons(flashed)
-    }
-  }
-
-  /** 발도 경로(시작점→실제 종료점)를 캡슐 형태로 판정해 스친 모든 적을 한 번씩 벤다. */
-  /**
-   * '표식'(dash) — 대시 시작~끝 선분으로 관통한 적을 표식한다(피해는 주지
-   * 않는다, resolveIaido와 판정 방식만 공유). 표식된 적은 markDuration초
-   * 동안 받는 피해가 늘어난다(Enemy.takeDamage에서 처리).
-   */
+  /** '표식'(dash) — 대시 시작~끝 선분으로 관통한 적을 표식한다(피해는 주지
+   * 않는다). 표식된 적은 markDuration초 동안 받는 피해가 늘어난다
+   * (Enemy.takeDamage에서 처리). */
   private resolveDashMark(start: THREE.Vector3, end: THREE.Vector3) {
     const abx = end.x - start.x
     const abz = end.z - start.z
@@ -1673,51 +1613,6 @@ export class Game {
       if (distance > enemy.radius + CONFIG.player.radius) continue
       enemy.mark(CONFIG.traits.markDuration)
     }
-  }
-
-  /**
-   * 발도(Q) 참격 — resolveSlash와 같은 2패스 구조. '일섬'은 경로 판정이지만
-   * "한 명만 벴다"는 조건이 동일하게 성립해 여기도 적용한다(작업 지시).
-   */
-  private resolveIaido(start: THREE.Vector3, end: THREE.Vector3, damage: number, crit: boolean, knockback: number) {
-    const abx = end.x - start.x
-    const abz = end.z - start.z
-    const lenSq = abx * abx + abz * abz
-    const hits: Enemy[] = []
-    for (const enemy of this.enemies) {
-      if (!enemy.alive) continue
-      const apx = enemy.pos.x - start.x
-      const apz = enemy.pos.z - start.z
-      const t = lenSq > 0.0001 ? Math.max(0, Math.min(1, (apx * abx + apz * abz) / lenSq)) : 0
-      const closestX = start.x + abx * t
-      const closestZ = start.z + abz * t
-      const distance = Math.hypot(enemy.pos.x - closestX, enemy.pos.z - closestZ)
-      if (distance > enemy.radius + CONFIG.player.radius) continue
-      hits.push(enemy)
-    }
-
-    const ilseomActive = this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
-    const finalDamage = this.withAftertaste(ilseomActive ? damage * CONFIG.traits.ilseomMult : damage)
-
-    let hitAny = false
-    for (const enemy of hits) {
-      hitAny = true
-      const reflected = enemy.takeDamage(finalDamage, 'melee', crit)
-      enemy.knockback(start.x, start.z, knockback)
-      this.audio.hit(true)
-      this.triggerHitstop(crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
-      this.effects.shake(crit ? CONFIG.effects.shakeCrit : CONFIG.effects.shakeSwordHit)
-      this.applyLifesteal(finalDamage)
-      this.effects.hitImpact(enemy.pos.x, enemy.pos.z, crit ? 2.0 : 1.4)
-      this.effects.damageNumber(new THREE.Vector3(enemy.pos.x, 1.8, enemy.pos.z), finalDamage, crit, false, ilseomActive)
-      if (!enemy.alive) this.applySkillKill('charge')
-      if (reflected > 0 && this.player.takeDamage(reflected)) {
-        this.audio.hurt()
-        this.effects.hitImpact(this.player.pos.x, this.player.pos.z)
-        this.effects.shake(CONFIG.effects.shakePlayerHit)
-      }
-    }
-    if (hitAny) this.player.reloadFromSwordHit()
   }
 
   private applyLifesteal(damage: number) {

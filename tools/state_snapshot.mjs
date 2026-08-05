@@ -160,7 +160,6 @@ function writeSnapshot(m) {
   L.push('## 플레이어')
   L.push('')
   L.push(`이동 ${p.speed} · 최대 HP ${p.maxHp} · 대시 지속 ${p.dashDuration}s / 무적 ${p.dashIFrames}s / 쿨 ${p.dashCooldown}s`)
-  L.push(`액티브 스킬 쿨: 돌진 ${CONFIG.skills.charge.cooldown}s · 더블샷 ${CONFIG.skills.doubleShot.cooldown}s · 궁극기 ${CONFIG.skills.ultimate.cooldown}s`)
   L.push('')
 
   const text = L.join('\n') + '\n'

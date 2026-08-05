@@ -160,68 +160,6 @@ canvas.pixelated {
   opacity: 0.7;
 }
 
-.hud-skills {
-  position: absolute;
-  left: 20px;
-  /* Place skills directly above health/XP rather than on the same bottom-left anchor. */
-  bottom: 92px;
-  display: flex;
-  gap: 8px;
-}
-.skill {
-  --cd: 0%;
-  position: relative;
-  width: 72px;
-  height: 56px;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  align-items: center;
-  gap: 3px;
-  padding: 0 7px;
-  border: 1px solid #5c6278;
-  border-radius: 7px;
-  background: rgba(16, 20, 33, 0.88);
-  color: #bfc7d8;
-  font-size: 10px;
-  text-shadow: 0 1px 2px #000;
-}
-.skill::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(4, 6, 12, 0.72);
-  transform: translateY(calc(-100% + var(--cd)));
-  pointer-events: none;
-  transition: transform 0.1s linear;
-}
-.skill kbd, .skill span { position: relative; z-index: 1; }
-.skill kbd {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid #7c8498;
-  border-radius: 4px;
-  color: #fff;
-  font-weight: bold;
-}
-.skill span { white-space: nowrap; }
-.skill i { display: none; }
-.skill.ready {
-  border-color: #78c9ff;
-  color: #eaf7ff;
-  box-shadow: 0 0 10px rgba(84, 178, 255, 0.35);
-}
-.skill.ultimate.ready { border-color: #f2c85b; box-shadow: 0 0 10px rgba(242, 200, 91, 0.35); }
-/* '순환'(skill) — 스킬 처치로 쿨이 줄어든 아이콘에 주는 짧은 피드백 */
-.skill.circulate-flash { animation: skillCirculateFlash 0.35s ease; }
-@keyframes skillCirculateFlash {
-  0% { box-shadow: 0 0 0 rgba(167, 243, 208, 0); border-color: #5c6278; }
-  35% { box-shadow: 0 0 14px rgba(167, 243, 208, 0.9); border-color: #a7f3d4; }
-  100% { box-shadow: 0 0 0 rgba(167, 243, 208, 0); border-color: #5c6278; }
-}
-
 /* 골드 강조 */
 .gold-stat b,
 .gold-stat span {
@@ -1106,28 +1044,6 @@ canvas.pixelated {
 #xpBar,
 #xpFill {
   height: 16px;
-}
-
-.hud-skills {
-  left: 32px;
-  bottom: 116px;
-  gap: 12px;
-}
-.skill {
-  width: 108px;
-  height: 76px;
-  grid-template-columns: 32px 1fr;
-  gap: 6px;
-  padding: 0 10px;
-  border-width: 2px;
-  border-radius: 10px;
-  font-size: 15px;
-}
-.skill kbd {
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  font-size: 16px;
 }
 
 .hud-dash {

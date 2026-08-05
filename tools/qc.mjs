@@ -461,118 +461,101 @@ const STEPS = [
   // 결정적으로 재현할 수 없다. qcDebugHooks.ts(QC_DEBUG=1 빌드에만 포함)로
   // 현재 방에 직접 스폰해 상태머신 타이밍·접두사 효과를 검증한다.
   {
-    name: 'active-skills',
+    // 작업 지시 P6 커밋2 — 액티브 스킬(Q/E/R) 전면 폐지. 이전에는 이 자리에
+    // 'active-skills'/'iaido' 두 스텝이 있었다(발도 이동/무적/피해 배율,
+    // 더블 샷 탄약 소비, 폭렬 난무 충격파 검증). 스킬 자체가 사라졌으므로
+    // 검증 대상도 사라졌고, 대신 스킬 없이도 기본 전투(사격/베기/대시/장전)가
+    // 정상 동작하는지, 그리고 이제 아무 바인딩도 없는 Q/E 입력이 조용히
+    // 무시되는지를 검증한다.
+    name: 'combat-no-skills',
     needs: 'dungeon',
-    what: 'Q 발도 · E 더블 샷 · R 폭렬 난무 — 경로 이동/무적/탄약/쿨다운/마무리 충격파',
+    what: '스킬 폐지 이후 기본 전투(사격/베기/대시/장전) — Q/E 입력은 아무 효과 없이 무시되는가',
     async run(p) {
       await dismissLevelUp(p)
-      await aim(p, 400)
       await p.evaluate(() => {
         const g = window.__game
-        // 전투방 중앙에서는 E를 상호작용에 빼앗기지 않는다.
+        g.debugClearEnemies()
         g.player.pos.set(0, 0, 0)
         g.player.ammo = g.player.magSize
         g.player.reloading = false
-        g.debugClearEnemies()
-        g.debugSpawnBoss()
-        window.__qcSkills = { x: g.player.pos.x, z: g.player.pos.z, ammo: g.player.ammo }
-      })
-      await p.keyboard.press('KeyQ')
-      await waitGame(p, 0.1) // 발도 이동 중 — check()가 movedDistance/무적 여부를 봄
-      await p.evaluate(() => {
-        window.__qcSkills.qInvulnerable = window.__game.player.invulnerable
-      })
-      await waitGame(p, 0.12) // 발도 잔여 이동
-      await p.keyboard.press('KeyE')
-      await waitGame(p, 0.09) // 더블 샷 탄약 소비
-      await p.keyboard.press('KeyR')
-      await waitGame(p, 0.9) // 폭렬 난무 다단 사격 + 마무리 충격파 생성까지
-    },
-    check: async (p) => p.evaluate(() => {
-      const g = window.__game
-      const before = window.__qcSkills
-      const movedDistance = Math.hypot(g.player.pos.x - before.x, g.player.pos.z - before.z)
-      const eAmmo = before.ammo - g.player.ammo >= 2
-      const cds = g.player.activeSkillCooldowns
-      const shockwave = g.effects.groundFx?.some((fx) => fx.duration > 0) ?? false
-      const buttons = ['skillQ', 'skillE', 'skillR'].every((id) => document.querySelector(`#${id}`))
-      if (movedDistance < 12) return `Q 발도 이동거리가 짧음 (${movedDistance.toFixed(1)})`
-      if (!before.qInvulnerable) return 'Q 발도 이동 중 무적이 적용되지 않음'
-      if (!eAmmo) return 'E 더블 샷이 탄약 2발을 소비하지 않음'
-      if (!(cds.charge > 0 && cds.doubleShot > 0 && cds.ultimate > 0)) return '스킬 쿨다운이 시작되지 않음'
-      if (!shockwave) return 'R 마무리 충격파가 생성되지 않음'
-      return buttons ? null : '스킬 HUD가 없음'
-    }),
-  },
-  {
-    name: 'iaido',
-    needs: 'dungeon',
-    what: '발도 — 적을 관통해 검 공격력 비례 피해를 주고 이동 중 무적·종료 직후 보호가 적용되는가',
-    async run(p) {
-      await p.evaluate(() => {
-        const g = window.__game
-        g.debugClearEnemies()
-        g.player.pos.set(0, 0, 0)
-        g.player.chargeCdTimer = 0
         g.player.stats.critChance = 0
-        const first = g.debugSpawnEnemy('brute')
-        const second = g.debugSpawnEnemy('brute')
-        const outside = g.debugSpawnEnemy('brute')
-        first.pos.set(5, 0, 0)
-        second.pos.set(10, 0, 0)
-        outside.pos.set(7, 0, 3)
-        for (const target of [first, second, outside]) {
-          target.hp = 9999
-          target.maxHp = 9999
-        }
-        window.__qcIaido = {
+        // 이전 스텝(전투/조준 밀도)에서 남은 피격 무적/대시 무적이 있으면
+        // "바인딩 없는 Q가 무적을 적용함"으로 오판되므로 명시적으로 정리한다.
+        g.player.invuln = 0
+        g.player.dashInvulnerable = false
+        const target = g.debugSpawnEnemy('brute')
+        target.pos.set(5, 0, 0)
+        target.hp = 9999
+        target.maxHp = 9999
+        window.__qcNoSkills = {
           x: g.player.pos.x,
           z: g.player.pos.z,
-          expectedDamage: g.player.stats.swordDamage * 1.5,
-          hp: 9999,
-          targetIds: [first.id, second.id],
-          outsideId: outside.id,
+          ammo: g.player.ammo,
+          targetId: target.id,
+          targetHp: target.hp,
         }
-        // 원본 검광은 오른쪽을 향한다. +Z(화면 아래) 진행은 -90도로 보여야 한다.
-        const probeStart = g.player.pos.clone()
-        const probeEnd = probeStart.clone()
-        probeEnd.z += 5
-        g.effects.iaido(probeStart, probeEnd)
-        window.__qcIaido.southEffectRotation = g.effects.fx.at(-1)?.sp.material.rotation
       })
-      await aim(p, 400)
+      // Q/E는 이제 아무 바인딩도 없다 — 눌러도 예외 없이 무시되고 플레이어가
+      // 움직이거나 무적이 되지 않아야 한다.
       await p.keyboard.press('KeyQ')
-      await waitGame(p, 0.1) // 발도 이동 중 — 무적 프레임 창 안
+      await waitGame(p, 0.1)
       await p.evaluate(() => {
-        window.__qcIaido.duringInvulnerable = window.__game.player.invulnerable
+        window.__qcNoSkills.afterQ = { x: window.__game.player.pos.x, z: window.__game.player.pos.z, invulnerable: window.__game.player.invulnerable }
       })
-      await waitGame(p, 0.17) // 발도 종료 직후 보호 구간까지
+      // 사격 — 탄약 소비
+      await aim(p, 400)
+      await p.mouse.down()
+      await p.waitForTimeout(140)
+      await p.mouse.up()
+      await waitGame(p, 0.1)
       await p.evaluate(() => {
-        window.__qcIaido.afterInvulnerable = window.__game.player.invulnerable
+        window.__qcNoSkills.ammoAfterShoot = window.__game.player.ammo
       })
+      // 베기 — 대상에게 피해
+      await aimAtPoint(p, 5, 0)
+      await p.mouse.down({ button: 'right' })
+      await p.waitForTimeout(130)
+      await p.mouse.up({ button: 'right' })
+      await waitGame(p, 0.2)
+      // 대시 — 이동
+      await p.keyboard.down('KeyD')
+      await p.keyboard.down('ShiftLeft')
+      await p.waitForTimeout(130)
+      await p.keyboard.up('ShiftLeft')
+      await p.keyboard.up('KeyD')
+      await waitGame(p, 0.1)
+      await p.evaluate(() => {
+        window.__qcNoSkills.afterDash = { x: window.__game.player.pos.x, z: window.__game.player.pos.z }
+      })
+      // 장전 — R은 아직 커밋3 전이므로 기존 바인딩(T)으로 검증
+      await p.keyboard.press('KeyT')
+      await waitGame(p, 1.4)
     },
-    check: async (p) => p.evaluate(() => {
-      const g = window.__game
-      const before = window.__qcIaido
-      const targets = before.targetIds.map((id) => g.enemies.find((enemy) => enemy.id === id))
-      const outside = g.enemies.find((enemy) => enemy.id === before.outsideId)
-      const movedDistance = Math.hypot(g.player.pos.x - before.x, g.player.pos.z - before.z)
-      if (Math.abs(before.southEffectRotation + Math.PI / 2) > 0.01) {
-        return `발도 검광이 진행 방향과 어긋남 (회전 ${before.southEffectRotation})`
-      }
-      if (movedDistance < 12) return `발도 이동거리가 짧음 (${movedDistance.toFixed(1)})`
-      if (!before.duringInvulnerable) return '발도 이동 중 무적이 적용되지 않음'
-      if (!before.afterInvulnerable) return '발도 종료 직후 보호가 적용되지 않음'
-      if (targets.some((target) => !target)) return '발도 경로의 복수 적을 유지하지 못함'
-      for (const target of targets) {
-        const dealt = before.hp - target.hp
-        if (Math.abs(dealt - before.expectedDamage) > 0.01) {
-          return `발도 피해 배율이 150%가 아님 (${dealt.toFixed(2)} / ${before.expectedDamage.toFixed(2)})`
+    check: async (p) => {
+      const r = await p.evaluate(() => {
+        const g = window.__game
+        const before = window.__qcNoSkills
+        const target = g.enemies.find((enemy) => enemy.id === before.targetId)
+        return {
+          qMoved: Math.hypot(before.afterQ.x - before.x, before.afterQ.z - before.z),
+          qInvulnerable: before.afterQ.invulnerable,
+          shotAmmo: before.ammo - before.ammoAfterShoot,
+          targetHp: target ? target.hp : null,
+          dashMoved: Math.hypot(before.afterDash.x - before.x, before.afterDash.z - before.z),
+          ammo: g.player.ammo,
+          magSize: g.player.magSize,
         }
-      }
-      if (!outside || outside.hp !== before.hp) return '발도 경로 밖의 적까지 피해를 받음'
-      return null
-    }),
+      })
+      if (r.qMoved > 0.05) return `바인딩 없는 Q가 플레이어를 이동시킴 (${r.qMoved.toFixed(2)})`
+      if (r.qInvulnerable) return '바인딩 없는 Q가 무적을 적용함'
+      if (r.shotAmmo < 1) return `사격이 탄약을 소비하지 않음 (${r.shotAmmo})`
+      if (r.targetHp === null) return '베기 대상이 사라짐'
+      if (r.targetHp >= 9999) return '베기가 피해를 주지 않음'
+      if (r.dashMoved < 1) return `대시 이동거리가 짧음 (${r.dashMoved.toFixed(2)})`
+      if (r.ammo !== r.magSize) return `장전 후 탄약이 가득 차지 않음 (${r.ammo}/${r.magSize})`
+      const buttons = await p.evaluate(() => !document.querySelector('.hud-skills'))
+      return buttons ? null : '폐지된 스킬 HUD가 여전히 존재함'
+    },
   },
   {
     name: 'trait-slots',
@@ -1201,366 +1184,10 @@ const STEPS = [
       })
     },
   },
-  {
-    name: 'skill-reverse',
-    needs: 'dungeon',
-    what: '역행(작업 지시 skill_slot_traits) — Q 종료 후 0.8초 안 대시 입력 시 되돌아가며 70% 피해 + 대시 쿨 미소모, 창 만료 후엔 평소 대시',
-    async run(p) {
-      await dismissLevelUp(p)
-      await aim(p, 0)
-      // Q 정방향 다리를 실제로 캐스팅하는 대신, "방금 끝나 되돌아가기 창이 열린"
-      // 상태를 직접 재현한다 — 정방향 캡슐 판정은 기존 iaido 스텝이 이미
-      // 검증하고 있고, 여기서는 창-소비(대시 입력 가로채기)와 되돌아가기
-      // 판정 재사용만 결정적으로 확인하면 된다.
-      const setup = await p.evaluate(() => {
-        const g = window.__game
-        g.debugEquipWeapons('m1911', 'katana')
-        g.debugSetCoreSlot('skill', 'reverse')
-        g.debugClearEnemies()
-        g.player.pos.set(0, 0, 0)
-        g.player.invuln = 0
-        g.player.mods.critChance = -0.1
-        g.player.recompute()
-        g.player.chargeCdTimer = 4
-        g.player.chargeTimer = 0
-        g.player.dashCdTimer = 3 // 왕복이 이 값을 건드리지 않아야 한다(대시 쿨 미소모 검증 기준값)
-        const back = g.player.pos.clone(); back.set(0, 0, 1) // 정방향(-Z)의 반대(+Z)
-        g.player.reverseWindowTimer = 0.8
-        g.player.reverseReturnDir = back
-        // 실제 무장 시점(Player.ts의 chargeTimer<=0 분기)은 reverseReturnDamage를
-        // chargeDamage*0.7로 미리 계산해 저장한다 — 여기서 그 결과를 직접
-        // 재현한다(무장 자체가 아니라 그 이후의 트리거·판정 재사용을 검증 대상으로
-        // 좁히려는 것). 그래서 기대값은 100이 아니라 100*0.7=70이어야 한다.
-        const forwardDamage = 100
-        g.player.reverseReturnDamage = forwardDamage * 0.7
-        g.player.reverseReturnCrit = false
-        g.player.reverseReturnKnockback = 5
-        const gaugeDuringWindow = g.player.conditionGauge()
-        // 되돌아가기 경로(+Z) 위에 적 배치 — 정방향 경로(-Z)에는 아무도 없어
-        // 창을 놓쳤을 때의 평소 대시와 확실히 구분된다.
-        const e = g.debugSpawnEnemy('brute')
-        e.pos.set(0, 0, 3)
-        // 역행 자체의 캡슐 판정만 검증한다. 테스트 대기 중 AI가 경로 밖으로
-        // 걸어나가면 같은 코드가 실행돼도 결과가 흔들리므로 표적을 고정한다.
-        e.speed = 0
-        e.damage = 0
-        window.__qcReverseTargetId = e.id
-        window.__qcReverseHpBefore = e.hp
-        return { hpBefore: e.hp, id: e.id, gaugeDuringWindow }
-      })
-      // 창이 열린 동안 대시 입력 — 평소 대시 대신 되돌아가기로 바꿔치기돼야 한다.
-      await p.keyboard.down('ShiftLeft')
-      await waitUntilPage(p, (g) => g.player.reverseWindowTimer <= 0 && g.player.chargeTimer > 0, 30)
-      const afterTrigger = await p.evaluate(() => ({
-        isDashing: window.__game.player.isDashing,
-        chargeTimer: window.__game.player.chargeTimer,
-      }))
-      // 왕복 참격이 끝날 때까지(다시 chargeTimer<=0) 페이지 내부 rAF로 대기.
-      await waitUntilPage(p, (g) => g.player.chargeTimer <= 0, 30)
-      // rAF 콜백 순서상 QC가 timer=0을 Game.step()의 resolveIaido보다 먼저
-      // 관측할 수 있다. 벽시계 지연을 추측하지 않고 실제 HP 감소를 기다린다.
-      await waitUntilPage(p, (g) => {
-        const e = g.enemies.find((it) => it.id === window.__qcReverseTargetId)
-        return !e || e.hp < window.__qcReverseHpBefore
-      }, 10)
-      await p.keyboard.up('ShiftLeft')
-      const tripResult = await p.evaluate((setup) => {
-        const g = window.__game
-        const e = g.enemies.find((it) => it.id === setup.id)
-        return {
-          dealt: e ? setup.hpBefore - e.hp : null,
-          dashCdTimerAfter: g.player.dashCdTimer,
-        }
-      }, setup)
-
-      // ── 창을 놓친 경우 — 평소 대시로 폴스루 ──
-      await p.evaluate(() => {
-        const g = window.__game
-        g.player.reverseWindowTimer = 0 // 창 만료를 직접 재현
-        g.player.dashCdTimer = 0
-        g.player.pos.set(0, 0, 0)
-      })
-      await p.keyboard.down('KeyD')
-      await p.keyboard.down('ShiftLeft')
-      await waitUntilPage(p, (g) => g.player.isDashing, 30)
-      const missedWindowResult = await p.evaluate(() => ({
-        isDashing: window.__game.player.isDashing,
-        chargeTimer: window.__game.player.chargeTimer,
-      }))
-      await p.keyboard.up('ShiftLeft')
-      await p.keyboard.up('KeyD')
-
-      await p.evaluate((result) => {
-        window.__qcReverseResult = result
-      }, { setup, afterTrigger, tripResult, missedWindowResult })
-    },
-    check: async (p) => p.evaluate(() => {
-      const r = window.__qcReverseResult
-      if (!r) return '결과 없음'
-      if (!r.setup.gaugeDuringWindow || !r.setup.gaugeDuringWindow.decreasing) {
-        return '역행 창이 열린 동안 발밑 게이지가 감소 방향으로 표시되지 않음'
-      }
-      if (Math.abs(r.setup.gaugeDuringWindow.progress - 1) > 0.05) {
-        return `역행 게이지 초기 진행률이 1에 가깝지 않음 (${r.setup.gaugeDuringWindow.progress})`
-      }
-      if (r.afterTrigger.isDashing) return '역행 발동인데 평소 대시(isDashing)로 처리됨'
-      if (!(r.afterTrigger.chargeTimer > 0)) return '역행 발동 시 발도 이동(chargeTimer)이 시작되지 않음 — 캡슐 판정 재사용 실패'
-      const expected = 70 // 100 * 0.7
-      if (r.tripResult.dealt == null || Math.abs(r.tripResult.dealt - expected) > expected * 0.05) {
-        return `역행 되돌아가기 피해가 70%가 아님 (${r.tripResult.dealt} / 기대 ${expected})`
-      }
-      if (r.tripResult.dashCdTimerAfter < 2.5) {
-        return `역행이 대시 쿨타임을 소모함 (${r.tripResult.dashCdTimerAfter} — 3에서 자연 감소보다 많이 줄어듦)`
-      }
-      if (!r.missedWindowResult.isDashing) return '역행 창을 놓쳤는데 평소 대시가 발동하지 않음'
-      if (r.missedWindowResult.chargeTimer > 0) return '역행 창을 놓쳤는데도 발도 이동(chargeTimer)이 시작됨'
-      return null
-    }),
-    async after(p) {
-      await p.evaluate(() => {
-        const g = window.__game
-        g.debugClearEnemies()
-        g.player.coreSlots.clear()
-        g.player.reverseWindowTimer = 0
-        g.player.dashCdTimer = 0
-        g.player.chargeTimer = 0
-        g.debugEquipWeapons('m1911', 'katana')
-      })
-    },
-  },
-  {
-    name: 'skill-triple-aftertaste',
-    needs: 'dungeon',
-    what: '삼연사(작업 지시 skill_slot_traits) — E 3발 + 탄약 2 유지 / 여운 — R 종료 후 8초간 전체 피해 +25%, 재사용 시 재설정(연장 아님)',
-    async run(p) {
-      await dismissLevelUp(p)
-      await aim(p, 400)
-      const tripleSetup = await p.evaluate(() => {
-        const g = window.__game
-        g.debugEquipWeapons('m1911', 'katana')
-        g.debugSetCoreSlot('skill', 'triple_shot')
-        g.player.pos.set(0, 0, 0)
-        g.player.ammo = g.player.magSize
-        g.player.reloading = false
-        g.player.doubleShotCdTimer = 0
-        g.debugClearEnemies()
-        g.projectiles.clear()
-        // 액티브 스킬(Q/E/R)은 mode==='dungeon' && 살아있는 적이 1명 이상일 때만
-        // 켜진다(Game.ts activeSkillsEnabled) — 발사 방향과 무관한 먼 더미를 하나
-        // 세워둔다.
-        const dummy = g.debugSpawnEnemy('brute')
-        dummy.pos.set(100, 0, 100)
-        return { ammoBefore: g.player.ammo }
-      })
-      await p.keyboard.press('KeyE')
-      await waitUntilPage(p, (g) => g.projectiles.bullets.length >= 3, 30)
-      const tripleResult = await p.evaluate((setup) => {
-        const g = window.__game
-        const bullets = g.projectiles.bullets
-        return {
-          bulletCount: bullets.length,
-          ammoDealt: setup.ammoBefore - g.player.ammo,
-          distinctDirs: new Set(bullets.map((b) => b.dir.x.toFixed(4))).size,
-        }
-      }, tripleSetup)
-
-      // ── 여운 — 검 피해 배율 실측(직접 상태 주입, R 배럿지 대기 불필요) ──
-      const aftertasteSetup = await p.evaluate(() => {
-        const g = window.__game
-        g.debugSetCoreSlot('skill', 'aftertaste')
-        g.debugClearEnemies()
-        g.player.swordTimer = 0
-        g.player.invuln = 5
-        const e = g.debugSpawnEnemy('brute')
-        e.pos.set(0, 0, -3)
-        return { hpBefore: e.hp, id: e.id, swordDamage: g.player.stats.swordDamage }
-      })
-      await p.evaluate(() => { window.__game.player.aftertasteTimer = 8 })
-      await aimAtPoint(p, 0, -3)
-      await p.mouse.down({ button: 'right' })
-      await waitUntilPage(p, (g) => g.player.swordTimer > 0, 15) // 스윙 판정이 이 프레임에 이미 적용됨
-      await p.mouse.up({ button: 'right' })
-      const aftertasteResult = await p.evaluate((setup) => {
-        const g = window.__game
-        const e = g.enemies.find((it) => it.id === setup.id)
-        return { dealt: e ? setup.hpBefore - e.hp : null, swordDamage: setup.swordDamage }
-      }, aftertasteSetup)
-
-      // ── 여운 — 재사용 시 재설정(연장 아님) — 실제 R 캐스팅으로 검증 ──
-      await p.evaluate(() => {
-        const g = window.__game
-        g.player.aftertasteTimer = 2 // 낮은 잔여값 — 연장이면 2+8=10 근처로, 재설정이면 8 근처로 나온다
-        g.player.ultimateCdTimer = 0
-        g.player.ammo = g.player.magSize
-        g.player.reloading = false
-        g.debugClearEnemies()
-        const dummy = g.debugSpawnEnemy('brute') // activeSkillsEnabled에 필요(위와 동일한 이유)
-        dummy.pos.set(100, 0, 100)
-      })
-      await p.keyboard.press('KeyR')
-      await waitGame(p, 0.9) // 기존 active-skills 스텝과 동일한 여유 — 다단 사격 + 마무리까지
-      const resetResult = await p.evaluate(() => ({ aftertasteTimer: window.__game.player.aftertasteTimer }))
-
-      await p.evaluate((result) => {
-        window.__qcTripleAftertasteResult = result
-      }, { tripleResult, aftertasteResult, resetResult })
-    },
-    check: async (p) => p.evaluate(() => {
-      const r = window.__qcTripleAftertasteResult
-      if (!r) return '결과 없음'
-      if (r.tripleResult.bulletCount !== 3) return `삼연사가 3발이 아님 (${r.tripleResult.bulletCount})`
-      if (r.tripleResult.ammoDealt !== 2) return `삼연사 탄약 소모가 2가 아님 (${r.tripleResult.ammoDealt})`
-      if (r.tripleResult.distinctDirs !== 3) return '삼연사 3발의 각도가 서로 구분되지 않음(중앙 탄환 누락 의심)'
-      const dmgExpected = r.aftertasteResult.swordDamage * 1.25
-      if (r.aftertasteResult.dealt == null || Math.abs(r.aftertasteResult.dealt - dmgExpected) > dmgExpected * 0.05) {
-        return `여운 활성 중 검 피해가 +25%가 아님 (${r.aftertasteResult.dealt} / 기대 ${dmgExpected.toFixed(1)})`
-      }
-      if (Math.abs(r.resetResult.aftertasteTimer - 8) > 0.5) {
-        return `여운 재사용 시 지속시간이 8초로 재설정되지 않음(연장 의심) (${r.resetResult.aftertasteTimer})`
-      }
-      return null
-    }),
-    async after(p) {
-      await p.evaluate(() => {
-        const g = window.__game
-        g.debugClearEnemies()
-        g.projectiles.clear()
-        g.player.coreSlots.clear()
-        g.player.aftertasteTimer = 0
-        g.debugEquipWeapons('m1911', 'katana')
-      })
-    },
-  },
-  {
-    name: 'skill-circulation',
-    needs: 'dungeon',
-    what: '순환(작업 지시 skill_slot_traits) — 스킬(Q) 처치 시 나머지 두 스킬(E/R) 쿨 각 1.5초 감소, 처치 1건당 1회(광역 2킬 = 2회)',
-    async run(p) {
-      await dismissLevelUp(p)
-      await aim(p, 0)
-      const setup = await p.evaluate(() => {
-        const g = window.__game
-        g.debugEquipWeapons('m1911', 'katana')
-        g.debugSetCoreSlot('skill', 'circulation')
-        g.debugClearEnemies()
-        g.player.pos.set(0, 0, 0)
-        g.player.invuln = 5
-        g.player.chargeCdTimer = 0 // Q 준비
-        g.player.doubleShotCdTimer = 10 // 감소량(1.5×2)을 정밀하게 재려고 크게 잡음
-        g.player.ultimateCdTimer = 10
-        // Q 발도 경로(-Z) 위에 최소 체력 적 2명 — 한 스윙으로 광역 2킬을 낸다.
-        const e1 = g.debugSpawnEnemy('brute')
-        e1.pos.set(0, 0, -5)
-        e1.hp = 1
-        e1.maxHp = 1
-        e1.speed = 0
-        e1.damage = 0
-        const e2 = g.debugSpawnEnemy('brute')
-        e2.pos.set(0, 0, -10)
-        e2.hp = 1
-        e2.maxHp = 1
-        e2.speed = 0
-        e2.damage = 0
-        return { id1: e1.id, id2: e2.id }
-      })
-      await p.keyboard.press('KeyQ')
-      await waitUntilPage(p, (g) => g.player.chargeTimer > 0, 15)
-      await waitUntilPage(p, (g) => g.player.chargeTimer <= 0, 30)
-      await p.waitForTimeout(50) // timer 관측 뒤 Game.step()의 캡슐 피해/처치까지 완료
-      const result = await p.evaluate((setup) => {
-        const g = window.__game
-        return {
-          e1Dead: !g.enemies.find((it) => it.id === setup.id1),
-          e2Dead: !g.enemies.find((it) => it.id === setup.id2),
-          chargeCdTimer: g.player.chargeCdTimer,
-          doubleShotCdTimer: g.player.doubleShotCdTimer,
-          ultimateCdTimer: g.player.ultimateCdTimer,
-        }
-      }, setup)
-      // Q 단계에서 브루트 2마리를 죽여 XP를 얻는다 — 레벨업 모달이 뜨면
-      // state!=='play'라 게임 루프가 멈춰 바로 다음 E 단계의 키 입력이 통째로
-      //씹힌다(오늘 이 세션에서 도탄 서브테스트 때 같은 패턴으로 겪은 문제).
-      // E 단계를 시작하기 전에 반드시 닫는다.
-      await dismissLevelUp(p)
-      // ── E(더블샷 탄환) 기인 처치도 같은 경로로 순환을 발동시키는지 —
-      // resolveIaido(캡슐)와는 별개인 resolveBullets(총알) 코드 경로를 검증한다.
-      // Q 단계에서 발도 이동으로 플레이어가 원점에서 최대 14.8유닛 밀려나
-      // 있을 수 있어 — 적 좌표(0,0,-5)는 절대 월드 좌표이므로 위치를 다시
-      // 원점으로 되돌리지 않으면 총알 사거리(life 1.1초)를 넘길 수 있다.
-      await p.evaluate(() => {
-        const g = window.__game
-        g.debugClearEnemies()
-        g.player.pos.set(0, 0, 0)
-        g.player.invuln = 5
-        g.player.doubleShotCdTimer = 0
-        g.player.chargeCdTimer = 10
-        g.player.ultimateCdTimer = 10
-        g.player.ammo = g.player.magSize
-        g.player.reloading = false
-        const e = g.debugSpawnEnemy('brute')
-        e.pos.set(0, 0, -5)
-        e.hp = 1
-        e.maxHp = 1
-        window.__qcCirculationEId = e.id
-      })
-      await aimAtPoint(p, 0, -5)
-      await p.keyboard.press('KeyE')
-      await waitUntilPage(p, (g) => !g.enemies.find((it) => it.id === window.__qcCirculationEId), 90)
-      const bulletResult = await p.evaluate(() => ({
-        chargeCdTimer: window.__game.player.chargeCdTimer,
-        ultimateCdTimer: window.__game.player.ultimateCdTimer,
-      }))
-      // E 단계도 처치로 XP를 준다 — 다음 스텝이 레벨업 모달을 안 닫고 시작하면
-      // 같은 방식으로 얼어붙는다. 여기서 닫아 다음 스텝에 넘기지 않는다.
-      await dismissLevelUp(p)
-
-      await p.evaluate((result) => { window.__qcCirculationResult = result }, { ...result, bulletResult })
-    },
-    check: async (p) => p.evaluate(() => {
-      const r = window.__qcCirculationResult
-      if (!r) return '결과 없음'
-      if (!r.e1Dead || !r.e2Dead) return `순환 테스트 전제 실패 — 광역 2킬이 나지 않음 (e1Dead=${r.e1Dead}, e2Dead=${r.e2Dead})`
-      // Q(처치에 쓰인 스킬) 자신의 쿨은 순환의 영향을 받지 않아야 한다 — 방금
-      // 발동한 정상 쿨(4초, 자연 감소분 제외) 근처여야 하고, 만약 실수로
-      // 자기 자신도 1.5×2 감소를 받았다면 4-3=1 근처까지 떨어져 뚜렷이 구분된다.
-      if (r.chargeCdTimer < 3.4) return `순환이 처치에 쓰인 스킬(Q) 자신의 쿨까지 줄임 (${r.chargeCdTimer})`
-      // E/R은 각각 2킬 × 1.5초 = 3초 감소(자연 감소분 포함 오차 허용).
-      const expected = 10 - 3
-      if (Math.abs(r.doubleShotCdTimer - expected) > 0.5) {
-        return `순환 — E 쿨 감소량이 기대(2킬×1.5초)와 다름 (${r.doubleShotCdTimer} / 기대 ${expected})`
-      }
-      if (Math.abs(r.ultimateCdTimer - expected) > 0.5) {
-        return `순환 — R 쿨 감소량이 기대(2킬×1.5초)와 다름 (${r.ultimateCdTimer} / 기대 ${expected})`
-      }
-      // E 탄환 기인 처치(총알 코드 경로) — Q/R 쿨이 각각 1.5초 줄어야 한다.
-      if (Math.abs(r.bulletResult.chargeCdTimer - 8.5) > 0.5) {
-        return `순환 — E 탄환 처치인데 Q 쿨이 안 줄어듦(총알 경로 skillSource 누락 의심) (${r.bulletResult.chargeCdTimer})`
-      }
-      if (Math.abs(r.bulletResult.ultimateCdTimer - 8.5) > 0.5) {
-        return `순환 — E 탄환 처치인데 R 쿨이 안 줄어듦(총알 경로 skillSource 누락 의심) (${r.bulletResult.ultimateCdTimer})`
-      }
-      return null
-    }),
-    async after(p) {
-      // 세 번 dismissLevelUp을 불렀는데도 다음 스텝(fire-goblin)에서 여전히
-      // "게임 시계 정지"가 났다 — 원인은 debugClearEnemies()가 enemies만
-      // 지우고 pickups(XP 오브)는 안 지운다는 것이었다. 처치 순간 바로 XP가
-      // 들어오는 게 아니라 오브가 자석 범위로 들어와야 들어오는 방식이라,
-      // 이 스텝이 끝난 뒤에도 남은 오브가 계속 플레이어 쪽으로 날아가다가
-      // 다음 스텝(fire-goblin) 도중 뒤늦게 레벨업 모달을 띄운 것이다.
-      // pickups.clear()로 오브 자체를 없애 이 지연 트리거를 원천 차단한다.
-      await dismissLevelUp(p)
-      await p.evaluate(() => {
-        const g = window.__game
-        g.debugClearEnemies()
-        g.pickups.clear()
-        g.player.coreSlots.clear()
-        g.player.invuln = 0
-        g.state = 'play'
-        g.debugEquipWeapons('m1911', 'katana')
-      })
-    },
-  },
+  // 작업 지시 P6 커밋2 — 역행(reverse)/여운(aftertaste)/순환(circulation) 스킬
+  // 슬롯 특성 3종은 Q/E/R 액티브 스킬과 함께 전면 폐지됐다. 이 자리에 있던
+  // 'skill-reverse'/'skill-triple-aftertaste'/'skill-circulation' 세 스텝도
+  // 함께 제거한다 — 대체 커버리지는 위의 'combat-no-skills' 스텝을 참고.
   {
     name: 'fire-goblin',
     needs: 'dungeon',

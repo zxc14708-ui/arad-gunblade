@@ -272,20 +272,6 @@ export class AudioManager {
     })
   }
 
-  /** 발도 시작의 짧은 칼집 마찰음 — 실 녹음 샘플이 준비되면 그걸 쓴다. */
-  iaidoStart() {
-    if (this.playSample(AudioManager.IAIDO_START_URL)) return
-    this.noise(0.09, { type: 'highpass', freq: 2800, slideTo: 6200, gain: 0.22, q: 3 })
-    this.tone(980, 0.08, { type: 'triangle', gain: 0.1, slideTo: 1500 })
-  }
-
-  /** 발도 경로 타격음 — 기본 검 소리보다 짧고 강한 번개 파열을 겹친다. */
-  iaido(weaponId = 'katana') {
-    this.slash(weaponId)
-    this.noise(0.16, { type: 'bandpass', freq: 900, slideTo: 6400, gain: 0.3, q: 2.8 })
-    this.tone(1200, 0.12, { type: 'square', gain: 0.12, slideTo: 260 })
-  }
-
   /**
    * 피격음 — 근접·원거리 공용. melee=true면 실 녹음 샘플(근접 전용으로
    * 받은 파일)을 우선 쓰고, 원거리는 그런 샘플이 없어 항상 합성음이다.

@@ -184,34 +184,6 @@ export class Effects {
     this.playFx('slash', x, 1.1, z, range * 1.5, angle)
   }
 
-  /** 궁극기 마무리용 임시 십자 베기 시트. 캐릭터 높이(3.7)의 정확히 두 배로 표시한다. */
-  ultimateCross(pos: THREE.Vector3) {
-    this.playFx('ultimateCross', pos.x, 1.35, pos.z, 7.4)
-  }
-
-  /** 발도 이동 경로 전체에 임시 픽셀 번개 검광을 표시한다. */
-  iaido(start: THREE.Vector3, end: THREE.Vector3) {
-    const dx = end.x - start.x
-    const dz = end.z - start.z
-    const distance = Math.max(1, Math.hypot(dx, dz))
-    const angle = Math.atan2(dx, dz)
-    const frames = frameTextures(ASSET.fx.iaido.path, ASSET.fx.iaido.frames)
-    const mat = new THREE.SpriteMaterial({ map: frames[0], transparent: true, depthWrite: false })
-    // 스프라이트 원본은 오른쪽을 향한다. 화면에서 +Z 이동은 아래쪽이므로
-    // 월드 진행 각도의 상하 부호를 뒤집지 않고 오른쪽 기준만 보정한다.
-    mat.rotation = angle - Math.PI / 2
-    const sp = new THREE.Sprite(mat)
-    sp.position.set((start.x + end.x) / 2, 1.2, (start.z + end.z) / 2)
-    // 경로 길이에 맞춰 가로를 늘리는 의도는 유지하되, 세로는 셀 종횡비
-    // (cell.h / cell.w)로 유도한다 — 가로/세로를 독립적으로 정하면 4:1
-    // 원본 시트가 찌그러진다.
-    const width = distance * 1.2
-    const { w: cellW, h: cellH } = ASSET.fx.iaido.cell
-    sp.scale.set(width, width * (cellH / cellW), 1)
-    this.scene.add(sp)
-    this.fx.push({ sp, kind: 'iaido', time: 0, frames, fps: FX_FPS.iaido })
-  }
-
   /** 총구 화염 (총구 앞쪽에 배치) — 높이는 gunblader_gun_m1911.png 발사 프레임의
    * 실제 총구 픽셀 위치를 월드 단위로 환산한 값(CharacterSprite.ts GUN_SHOOT_FIX 참고) */
   muzzleFlash(pos: THREE.Vector3, angle: number) {
