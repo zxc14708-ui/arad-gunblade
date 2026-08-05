@@ -18,6 +18,15 @@ changing enemy AI.
 | 6 | Forest of the dead | melee, ranged, zombie-summoning mage |
 | 7 | Dimensional threshold | melee, ranged, teleporting homing void mage, charging brute |
 
+## Stage 2 temporary illustrated set
+
+Stage 2 replaces its generated palette variants with the user-approved
+illustrated temporary sheets: shield swordsman (`s2Imp`), bow archer
+(`s2Shooter`), gas suicide goblin (`s2Suicide`), armored brute (`s2Brute`),
+and horned hammer boss (`s2Boss`). These keep the existing asset keys and AI.
+All states share one 32-color palette per monster and preserve the validated
+4/6/4 frame contract; the boss preserves 4/6/6/6 including charge.
+
 ## Boss inheritance
 
 Every boss retains the Stage-1 charge, self-centred slam and shot patterns.

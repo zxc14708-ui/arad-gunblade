@@ -1,11 +1,16 @@
 # Current Project Status
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 ## Playable now
 
 - Chapter 1 now runs continuously through Stages 1-7. Each stage keeps the
   connected-room map, elite/treasure/shop rooms, and boss preparation room.
+- Stage 2 now uses the user-approved illustrated temporary enemy set: shield
+  swordsman, bow archer, gas suicide goblin, armored brute, and horned hammer
+  boss. The source boards were normalized to the existing 4/6/4 and boss
+  4/6/6/6 contracts, bottom-anchored, transparency-keyed and quantized to one
+  shared 32-color palette per monster. Stages 3-7 retain palette placeholders.
 - Temporary Stage 2-7 environments and enemy sheets are wired. New combat
   roles cover suicide/frost-suicide, player-position fire casting, homing ice,
   zombie summoning, teleporting void magic, and charging. Later bosses retain
