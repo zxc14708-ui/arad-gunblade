@@ -18,6 +18,7 @@ import { ELITE_AFFIX } from '../systems/EliteAffixes'
 import { MetaProgression } from '../systems/MetaProgression'
 import { weaponById } from '../systems/Weapons'
 import { preloadAssets } from '../rendering/assets'
+import { noOutline } from '../rendering/toon'
 import { DISPLAY, fitStage } from '../rendering/viewport'
 import { HUD } from '../ui/HUD'
 
@@ -54,7 +55,7 @@ export class Game {
   private roomCleared = false
   /** 룸 입장 시 순차 스폰 대기열 */
   private spawnQueue: RoomEnemy[] = []
-  private slowZones: { position: THREE.Vector3; radius: number; timer: number; multiplier: number; fxTimer: number }[] = []
+  private slowZones: { position: THREE.Vector3; radius: number; timer: number; multiplier: number; ring: THREE.Mesh }[] = []
   private spawnTimer = 0
   /** 방 입장 직후 스폰을 미루는 유예 시간 — 문 열자마자 맞는 것을 막는다 */
   private entrySafeTimer = 0
@@ -64,15 +65,22 @@ export class Game {
   private boss: Enemy | null = null
   /** 히트스톱 잔여 시간 — 겹치면 더하지 않고 더 긴 쪽으로 갱신(triggerHitstop) */
   private hitstopTimer = 0
+  /** 재발동 최소 간격 남은 시간 — 이게 0보다 크면 triggerHitstop() 요청을
+   * 무시한다(연속 명중이 히트스톱을 계속 채워 끊기지 않는 것을 막는다).
+   * 히트스톱 스케일과 무관하게 실제 경과 시간(rawDt)으로 감소시킨다. */
+  private hitstopCooldown = 0
   /**
-   * 시뮬레이션 누적 시간(초) — step(dt)가 실제로 쓰는 것과 같은(히트스톱
-   * 스케일 적용된) dt를 그대로 더한다. 모달이 열려 있거나 state !== 'play'
-   * 이면 step()이 안 불려 이 값도 멈춘다 — QC가 "정지"와 "느림"을 구분하는
-   * 근거가 이 필드다. 리셋하지 않는다: 소비 측(QC)이 두 샘플의 차이만 본다.
+   * 시뮬레이션 누적 시간(초) — 플레이어 기준 dt(rawDt, 히트스톱 영향을 받지
+   * 않음)를 더한다(작업 지시 P6 커밋1 — 이전에는 히트스톱 스케일이 적용된
+   * dt를 더해 QC 대기가 플레이어 체감 시간과 어긋났다). 모달이 열려 있거나
+   * state !== 'play'이면 step()이 안 불려 이 값도 멈춘다 — QC가 "정지"와
+   * "느림"을 구분하는 근거가 이 필드다. 리셋하지 않는다: 소비 측(QC)이 두
+   * 샘플의 차이만 본다.
    */
   private simClock = 0
   private wasDashing = false
-  /** '이도류'(slash) 두 번째 타격 대기열 — dt 누적으로 소진(step()에서 처리) */
+  /** '이도류'(slash) 두 번째 타격 대기열 — playerDt 누적으로 소진(step()에서 처리,
+   * 히트스톱 영향 없음 — 작업 지시 P6 커밋1-1) */
   private pendingSlashes: { timer: number; arc: number; range: number; damage: number; crit: boolean; knockback: number }[] = []
   private wasIaido = false
   private ghostTimer = 0
@@ -251,6 +259,10 @@ export class Game {
     this.enemies.forEach((e) => this.scene.remove(e.group))
     this.enemies = []
     this.spawnQueue = []
+    this.slowZones.forEach((z) => {
+      this.scene.remove(z.ring)
+      z.ring.geometry.dispose()
+    })
     this.slowZones = []
     this.projectiles.clear()
     this.pickups.clear()
@@ -922,9 +934,12 @@ export class Game {
 
   // ══════════════════ 메인 루프 ══════════════════
 
-  /** 히트스톱 요청 — 겹치면 합산하지 않고 더 긴 지속시간으로 갱신한다. */
+  /** 히트스톱 요청 — 재발동 최소 간격 안이면 무시하고, 지속시간은 누적
+   * 상한을 넘지 않는다(작업 지시 P6 커밋1). */
   private triggerHitstop(duration: number) {
-    this.hitstopTimer = Math.max(this.hitstopTimer, duration)
+    if (this.hitstopCooldown > 0) return
+    this.hitstopTimer = Math.min(CONFIG.effects.hitstopMaxDuration, Math.max(this.hitstopTimer, duration))
+    this.hitstopCooldown = CONFIG.effects.hitstopRetriggerInterval
   }
 
   private loop = () => {
@@ -933,11 +948,14 @@ export class Game {
     // 히트스톱 타이머는 실제 경과 시간으로 감소시킨다 — 늦춰진 dt로 감소시키면
     // 스스로를 거의 끝내지 못한다.
     if (this.hitstopTimer > 0) this.hitstopTimer = Math.max(0, this.hitstopTimer - rawDt)
-    const dt = this.hitstopTimer > 0 ? rawDt * CONFIG.effects.hitstopScale : rawDt
+    if (this.hitstopCooldown > 0) this.hitstopCooldown = Math.max(0, this.hitstopCooldown - rawDt)
+    // 히트스톱은 "세계"만 늦춘다 — 플레이어는 항상 rawDt(정상 속도)로 갱신한다
+    // (작업 지시 P6 커밋1-1: 이동·조준·대시·쿨타임이 같이 느려지던 문제).
+    const worldDt = this.hitstopTimer > 0 ? rawDt * CONFIG.effects.hitstopScale : rawDt
     this.input.update()
 
     const running = this.state === 'play' && !this.settingsOpen
-    if (running) this.step(dt)
+    if (running) this.step(rawDt, worldDt)
 
     if (this.player && this.room) {
       const t = this.camTarget()
@@ -951,21 +969,26 @@ export class Game {
       this.camera.lookAt(look)
     }
 
-    this.effects.update(running ? dt : 0, this.camera)
+    this.effects.update(running ? worldDt : 0, this.camera)
 
     this.outline.render(this.scene, this.camera)
   }
 
-  private step(dt: number) {
-    this.simClock += dt
+  /**
+   * playerDt(rawDt, 히트스톱 무관)는 플레이어 입력·이동·대시·쿨타임에만 쓴다.
+   * worldDt(히트스톱이 적용될 수 있음)는 적·적 투사체·이펙트·바닥 장판 등
+   * "세계" 쪽 갱신에 쓴다(작업 지시 P6 커밋1-1).
+   */
+  private step(playerDt: number, worldDt: number) {
+    this.simClock += playerDt
     this.updateAim()
-    this.entrySafeTimer = Math.max(0, this.entrySafeTimer - dt)
+    this.entrySafeTimer = Math.max(0, this.entrySafeTimer - worldDt)
 
     // ── 플레이어 ──
     // 상호작용 키 E와 충돌하지 않도록 액티브 스킬은 적이 살아 있는 전투 중에만 쓴다.
     // 방 정리 후, 상점/분수/문 앞에서는 E가 언제나 상호작용으로 동작한다.
     const activeSkillsEnabled = this.mode === 'dungeon' && this.enemies.some((enemy) => enemy.alive)
-    const { bullets, slash, chargeSlash, ultimate, startedReload, reloadTriggerAttempt } = this.player.update(dt, this.input, this.aimGround, activeSkillsEnabled)
+    const { bullets, slash, chargeSlash, ultimate, startedReload, reloadTriggerAttempt } = this.player.update(playerDt, this.input, this.aimGround, activeSkillsEnabled)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
@@ -984,7 +1007,7 @@ export class Game {
       if (this.player.coreSlots.get('slash') === 'dualblade') {
         // '이도류' — 2연타, 각 타 60%(합계 120%). 첫 타는 즉시, 두 번째 타는
         // 0.12초 뒤 그 시점의 플레이어 위치/각도로 다시 판정한다(대기열 방식,
-        // Game.step()에서 dt 누적으로 소진 — 히트스톱 중에도 자연히 느려진다).
+        // Game.step()에서 playerDt 누적으로 소진 — 히트스톱 영향 없음).
         const hitDmg = slash.damage * CONFIG.traits.dualbladeHitMult
         this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, hitDmg, slash.crit, slash.knockback)
         this.pendingSlashes.push({
@@ -1002,10 +1025,11 @@ export class Game {
         }
       }
     }
-    // '이도류' 두 번째 타격 대기열 — dt 누적(simClock 아님)이라 히트스톱 중엔 같이 느려진다.
+    // '이도류' 두 번째 타격 대기열 — 플레이어 자신의 공격 후속 타이밍이라
+    // playerDt로 소진한다(히트스톱에 영향받지 않음 — 작업 지시 P6 커밋1-1).
     for (let i = this.pendingSlashes.length - 1; i >= 0; i--) {
       const q = this.pendingSlashes[i]
-      q.timer -= dt
+      q.timer -= playerDt
       if (q.timer <= 0) {
         this.pendingSlashes.splice(i, 1)
         const pos = this.player.pos.clone()
@@ -1033,7 +1057,7 @@ export class Game {
 
     // 대시 잔상
     if (this.player.isDashing || this.player.isIaido) {
-      this.ghostTimer -= dt
+      this.ghostTimer -= playerDt
       if (this.ghostTimer <= 0) {
         this.ghostTimer = this.player.isIaido ? 0.03 : 0.045
         this.effects.ghost(this.player.ghostParams(), this.player.pos)
@@ -1060,7 +1084,7 @@ export class Game {
 
     // ── 룸 적 스폰 ──
     if (this.spawnQueue.length > 0 && this.entrySafeTimer <= 0) {
-      this.spawnTimer -= dt
+      this.spawnTimer -= worldDt
       if (this.spawnTimer <= 0) {
         this.spawnTimer = 0.14
         const spawn = this.spawnQueue.shift()!
@@ -1078,19 +1102,22 @@ export class Game {
     }
 
     // ── 적 / 투사체 / 픽업 ──
-    this.updateEnemies(dt)
-    this.projectiles.update(dt, this.room.bounds, this.player.pos)
-    this.updateSlowZones(dt)
+    this.assignSurroundSlots()
+    this.updateEnemies(worldDt)
+    // 플레이어 총알은 playerDt(항상 정상 속도), 적 총알은 worldDt(히트스톱
+    // 대상)로 각각 갱신한다 — 작업 지시 P6 커밋1-1/1-3.
+    this.projectiles.update(playerDt, worldDt, this.room.bounds, this.player.pos)
+    this.updateSlowZones(worldDt)
     this.resolveBullets()
     this.resolveEnemyBullets()
 
-    const got = this.pickups.update(dt, this.player.pos, this.player.stats.magnetRange, CONFIG.xp.orbSpeed)
+    const got = this.pickups.update(worldDt, this.player.pos, this.player.stats.magnetRange, CONFIG.xp.orbSpeed)
     if (got.xp > 0) this.gainXp(got.xp * this.player.stats.xpGain)
     if (got.gold > 0) this.run.addGold(got.gold)
 
     // ── 방 장식 / 상호작용 오브젝트 ──
-    this.room.update(dt)
-    for (const o of this.interactables) o.update(dt)
+    this.room.update(worldDt)
+    for (const o of this.interactables) o.update(worldDt)
     this.handleInteract()
 
     // ── 방 클리어 판정 ──
@@ -1159,6 +1186,19 @@ export class Game {
         if (!e.alive && skillSource) this.applySkillKill(skillSource)
       }
     }
+  }
+
+  /**
+   * 원거리 적(shooter/fireMage/iceMage/summoner/voidMage — boss 제외)에게
+   * 플레이어를 중심으로 균등한 각도 슬롯을 배정한다(작업 지시 P6 커밋1-2).
+   * 매 프레임 살아있는 대상만 다시 나열해 인덱스를 매기므로, 죽거나 새로
+   * 스폰될 때 자동으로 "재배정"된다 — 별도의 스폰/사망 이벤트 훅이 필요
+   * 없다. id 순으로 안정 정렬해 프레임마다 순서가 흔들리지 않게 한다.
+   */
+  private assignSurroundSlots() {
+    const ranged = this.enemies.filter((e) => e.alive && e.wantsSurroundSlot).sort((a, b) => a.id - b.id)
+    const n = ranged.length
+    for (let i = 0; i < n; i++) ranged[i].surroundAngle = (i / n) * Math.PI * 2
   }
 
   private updateEnemies(dt: number) {
@@ -1243,7 +1283,7 @@ export class Game {
         this.effects.shake(CONFIG.effects.shakeBossSlam)
       }
       if (action.slowZoneDuration && action.slowMultiplier) {
-        this.slowZones.push({ position: action.position.clone(), radius: action.radius, timer: action.slowZoneDuration, multiplier: action.slowMultiplier, fxTimer: 0 })
+        this.spawnSlowZone(action.position, action.radius, action.slowZoneDuration, action.slowMultiplier)
       }
       return
     }
@@ -1273,21 +1313,48 @@ export class Game {
     this.pushPlayerAway(action.position.x, action.position.z, action.radius + CONFIG.player.radius)
   }
 
+  /**
+   * 효과 영역(이동속도 감소) 하나를 등록한다 — 생성 주체(적 사망/지형/보스
+   * 패턴)와 무관하게 이 메서드만 호출하면 된다(작업 지시 P6 커밋1-4, "slowZones
+   * 를 범용 효과 영역으로 일반화"). 상시 경계 표시로 링 메시를 지속시간 동안
+   * 그대로 띄운다 — 기존엔 0.65초마다 이펙트를 재생하는 점멸 방식이라
+   * 경계가 흐릿했다.
+   */
+  private spawnSlowZone(position: THREE.Vector3, radius: number, duration: number, multiplier: number) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius - 0.18, radius, 40),
+      noOutline(new THREE.MeshBasicMaterial({ color: 0x78d8ff, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })),
+    )
+    ring.rotation.x = -Math.PI / 2
+    ring.position.set(position.x, 0.04, position.z)
+    this.scene.add(ring)
+    this.slowZones.push({ position: position.clone(), radius, timer: duration, multiplier, ring })
+  }
+
+  /**
+   * 효과 영역은 플레이어뿐 아니라 적에게도 적용한다 — 적도 느려지면 장판으로
+   * 유인하는 전술이 생긴다(승인된 설계 결정, 작업 지시 P6 커밋1-4). 중첩 규칙:
+   * 여러 존이 겹쳐도 배율을 곱해 누적하지 않는다 — Enemy/Player.applyMovementSlow()
+   * 가 Math.min()으로 "가장 강한(배율이 작은) 감속 하나만" 유지한다. 장판을
+   * 여러 겹 깔아도 무한히 느려지지 않게 하려는 의도적 규칙이다.
+   */
   private updateSlowZones(dt: number) {
     for (let i = this.slowZones.length - 1; i >= 0; i--) {
       const zone = this.slowZones[i]
       zone.timer -= dt
       if (zone.timer <= 0) {
+        this.scene.remove(zone.ring)
+        zone.ring.geometry.dispose()
         this.slowZones.splice(i, 1)
         continue
       }
-      zone.fxTimer -= dt
-      if (zone.fxTimer <= 0) {
-        zone.fxTimer = 0.65
-        this.effects.playGroundFx('tealMagic', zone.position.x, zone.position.z, zone.radius * 2, 0.75)
+      const playerDist = Math.hypot(this.player.pos.x - zone.position.x, this.player.pos.z - zone.position.z)
+      if (playerDist <= zone.radius + CONFIG.player.radius) this.player.applyMovementSlow(zone.multiplier, 0.2)
+      for (const e of this.enemies) {
+        if (!e.alive) continue
+        const enemyDist = Math.hypot(e.pos.x - zone.position.x, e.pos.z - zone.position.z)
+        if (enemyDist <= zone.radius + e.radius) e.applyMovementSlow(zone.multiplier, 0.2)
       }
-      const distance = Math.hypot(this.player.pos.x - zone.position.x, this.player.pos.z - zone.position.z)
-      if (distance <= zone.radius + CONFIG.player.radius) this.player.applyMovementSlow(zone.multiplier, 0.2)
     }
   }
 
@@ -1675,7 +1742,7 @@ export class Game {
         this.effects.shake(CONFIG.effects.shakePlayerHit)
       }
       if (burst.slowZoneDuration > 0) {
-        this.slowZones.push({ position: e.pos.clone(), radius: burst.radius, timer: burst.slowZoneDuration, multiplier: burst.slowMultiplier, fxTimer: 0 })
+        this.spawnSlowZone(e.pos, burst.radius, burst.slowZoneDuration, burst.slowMultiplier)
       }
     }
 

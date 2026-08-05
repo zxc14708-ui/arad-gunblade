@@ -1564,7 +1564,7 @@ const STEPS = [
   {
     name: 'fire-goblin',
     needs: 'dungeon',
-    what: '화염구 고블린 — 적정 거리에서 측면 이동하고 2배 크기 화염구를 발사하는가',
+    what: '화염구 고블린 — 적정 거리에서 측면 이동하고 커진 화염구(2.2배)를 발사하는가',
     async run(p) {
       // XP는 처치 즉시가 아니라 오브가 자석 범위 안으로 들어와야 들어온다 —
       // 앞선 스텝의 처치로 얻은 XP가 이 스텝 도중 늦게 레벨업 모달을 띄우면
@@ -1610,7 +1610,180 @@ const STEPS = [
       if (minDistance < 0.45) return `화염구 고블린이 여전히 한곳에 뭉침 (${minDistance.toFixed(2)})`
       const bulletScale = window.__qcFireGoblin.bulletScale
       if (bulletScale == null) return '화염구를 발사하지 않음'
-      if (Math.abs(bulletScale - 1.6) > 0.01) return `화염구 크기가 2배가 아님 (${bulletScale})`
+      // 2.2배(작업 지시 P6 커밋1-3 — 적 투사체 시인성 강화로 크기를 키움).
+      if (Math.abs(bulletScale - 2.2) > 0.01) return `화염구 크기가 2.2배가 아님 (${bulletScale})`
+      return null
+    }),
+  },
+  {
+    name: 'hitstop-surround-slowzone',
+    needs: 'dungeon',
+    what: '히트스톱 대상 분리(플레이어 정상 속도/적 감속) · 원거리 적 각도 슬롯 포위 · 효과 영역이 적에게도 적용되는가(작업 지시 P6 커밋1)',
+    async run(p) {
+      await dismissLevelUp(p)
+
+      // ── 1. 히트스톱 중 플레이어는 정상 속도, 적은 느려지는가 ──
+      // hitstopTimer를 실제 대기(500ms)보다 넉넉히 크게 강제해 그 구간 내내
+      // 히트스톱이 유지되게 한다(자연 감소는 rawDt 기준이라 500ms 안엔 안 끝남).
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0)
+        g.player.invuln = 999
+        // 적 10마리 이상 난전 상황을 재현한다 — 측정 대상은 그중 하나(e)만
+        // 추적하고 나머지는 순수 부하/혼잡 재현용.
+        const others = Array.from({ length: 9 }, (_, i) => {
+          const o = g.debugSpawnEnemy('imp')
+          o.pos.set((i - 4) * 1.5, 0, -6)
+          return o
+        })
+        const e = g.debugSpawnEnemy('imp')
+        e.pos.set(0, 0, 10) // 플레이어 뒤(+Z)에 둬 KeyW(-Z) 이동과 겹치지 않게
+        g.hitstopTimer = 3
+        window.__qcHitstop = {
+          enemyId: e.id,
+          enemyCount: others.length + 1,
+          playerStart: { x: g.player.pos.x, z: g.player.pos.z },
+          enemyStart: { x: e.pos.x, z: e.pos.z },
+          wallStart: performance.now(),
+        }
+      })
+      await p.keyboard.down('KeyW')
+      // 실제 wall-clock 1.5초 대기 — simClock/waitGame이 아니라 진짜 경과시간이
+      // 필요하다. 이 샌드박스는 게임-시계 배속(clockRate, town-idle 프리플라이트
+      // 실측)이 실제 벽시계보다 훨씬 느려(~0.25~0.29배) rawDt 합산량이 벽시계
+      // 경과시간보다 훨씬 작다 — 기대 이동거리도 clockRate로 보정해야 한다.
+      await p.waitForTimeout(1500)
+      await p.keyboard.up('KeyW')
+      const speedCheck = await p.evaluate(() => {
+        const g = window.__game
+        const e = g.enemies.find((it) => it.id === window.__qcHitstop.enemyId)
+        const wallElapsed = (performance.now() - window.__qcHitstop.wallStart) / 1000
+        const playerMoved = Math.hypot(
+          g.player.pos.x - window.__qcHitstop.playerStart.x,
+          g.player.pos.z - window.__qcHitstop.playerStart.z,
+        )
+        const enemyMoved = e
+          ? Math.hypot(e.pos.x - window.__qcHitstop.enemyStart.x, e.pos.z - window.__qcHitstop.enemyStart.z)
+          : null
+        return {
+          wallElapsed,
+          playerMoved,
+          enemyMoved,
+          moveSpeed: g.player.stats.moveSpeed,
+          hitstopStillActive: g.hitstopTimer > 0,
+        }
+      })
+      // enemy.speed 기준값(baseSpeed*speedMul, debugSpawnEnemy는 speedMul=1) — imp의 speedMul.
+      const enemyBaseSpeed = 4.2
+      const rate = clockRate ?? 1
+      const result = {
+        ...speedCheck,
+        expectedPlayerMoved: speedCheck.moveSpeed * speedCheck.wallElapsed * rate,
+        expectedEnemyMovedUnslowed: enemyBaseSpeed * speedCheck.wallElapsed * rate,
+      }
+      await p.evaluate((data) => { window.__qcHitstopResult = data }, result)
+
+      // ── 2. 연속 명중으로 히트스톱이 무한 연장되지 않는가 ──
+      // 최소 재발동 간격보다 훨씬 촘촘하게(프레임마다) triggerHitstop을 강제
+      // 호출해도 누적 상한을 넘지 않는지 확인한다.
+      const hitstopCapCheck = await p.evaluate(async () => {
+        const g = window.__game
+        g.hitstopTimer = 0
+        g.hitstopCooldown = 0
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        let maxSeen = 0
+        for (let i = 0; i < 60; i++) {
+          g.triggerHitstop(0.3) // 개별 요청은 hitstopMaxDuration(0.35)보다 작다
+          maxSeen = Math.max(maxSeen, g.hitstopTimer)
+          await wait(8) // 재발동 최소 간격(0.08s)보다 촘촘하게 반복 호출
+        }
+        return { maxSeen, maxDuration: window.CONFIG?.effects?.hitstopMaxDuration ?? null }
+      })
+
+      // ── 3. 원거리 적 4마리 이상 — 서로 다른 각도 슬롯에 배정되는가 ──
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0)
+        const shooters = Array.from({ length: 5 }, () => {
+          const s = g.debugSpawnEnemy('shooter')
+          s.pos.set(0.01, 0, -0.01) // 전부 같은 자리에서 시작 — 슬롯 배정 전
+          return s
+        })
+        window.__qcSurroundIds = shooters.map((s) => s.id)
+      })
+      await waitGame(p, 0.1) // assignSurroundSlots()가 몇 프레임 돌 시간
+      const surroundCheck = await p.evaluate(() => {
+        const g = window.__game
+        const angles = window.__qcSurroundIds.map((id) => g.enemies.find((e) => e.id === id)?.surroundAngle ?? null)
+        return { angles }
+      })
+
+      // ── 4. 효과 영역이 적에게도 적용되는가 ──
+      const slowZoneSetup = await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const e = g.debugSpawnEnemy('imp')
+        // 방 경계 밖(예: 아주 먼 좌표)에 두면 room.clamp()가 매 프레임 방 안으로
+        // 되돌리면서 존 중심에서 순간 이동하듯 벗어나 버린다 — 방 안쪽 좌표를 쓴다.
+        e.pos.set(8, 0, 8)
+        e.speed = 0 // 플레이어를 향해 걸어 나가 존 반경(5) 밖으로 벗어나지 않게 고정
+        g.spawnSlowZone(e.pos.clone(), 5, 3, 0.3)
+        return { id: e.id, baseSpeed: e.speed, zoneCount: g.slowZones.length }
+      })
+      await waitGame(p, 0.25) // updateSlowZones()가 몇 프레임 돌 시간
+      const slowZoneCheck = await p.evaluate((setup) => {
+        const g = window.__game
+        const e = g.enemies.find((it) => it.id === setup.id)
+        return { multiplier: e ? e.movementSlowMultiplier : null }
+      }, slowZoneSetup)
+
+      await p.evaluate((data) => { window.__qcHitstopSurroundResult = data }, { hitstopCapCheck, surroundCheck, slowZoneSetup, slowZoneCheck })
+
+      // 이 스텝이 강제로 켠 상태(장시간 무적·히트스톱)가 이후 스텝(보스 피해
+      // 검증 등)으로 새지 않게 원상복구한다.
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.invuln = 0
+        g.hitstopTimer = 0
+        g.hitstopCooldown = 0
+      })
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcHitstopResult
+      const r2 = window.__qcHitstopSurroundResult
+      if (!r || !r2) return '결과를 수집하지 못함'
+
+      // 1. 히트스톱 중 플레이어 속도 — clockRate로 보정한 정상 이동 거리의 60%
+      // 이상이면 통과(clockRate 자체가 프리플라이트 1회 실측이라 여유를 넉넉히 둠).
+      if (!r.hitstopStillActive) return '히트스톱이 검증 도중 끝나버림 — 표본 무효'
+      if (r.playerMoved < r.expectedPlayerMoved * 0.6) {
+        return `히트스톱 중 플레이어 이동이 정상 속도보다 느림 (이동 ${r.playerMoved.toFixed(2)}, 기대 ${r.expectedPlayerMoved.toFixed(2)})`
+      }
+      // 적은 hitstopScale(0.05)만큼 느려져야 한다 — clockRate 보정한 "안 느려졌을 때
+      // 기대 이동량"의 35% 미만이면 통과(참 목표는 5%대, 여유를 크게 둔 상한).
+      if (r.enemyMoved == null) return '히트스톱 검증용 적이 사라짐'
+      if (r.enemyMoved > r.expectedEnemyMovedUnslowed * 0.35) {
+        return `히트스톱 중 적이 정상 속도로 움직임 (이동 ${r.enemyMoved.toFixed(2)}, 안 느려졌을 때 기대 ${r.expectedEnemyMovedUnslowed.toFixed(2)})`
+      }
+
+      // 2. 히트스톱 누적 상한 — 반복 재발동에도 hitstopMaxDuration을 넘지 않아야 한다
+      if (r2.hitstopCapCheck.maxSeen > 0.351) {
+        return `히트스톱이 누적 상한을 넘음 (${r2.hitstopCapCheck.maxSeen})`
+      }
+
+      // 3. 각도 슬롯 — 5마리 전부 다른 각도(반올림 기준)에 배정돼야 한다
+      const angles = r2.surroundCheck.angles
+      if (angles.some((a) => a == null)) return '일부 원거리 적에게 각도 슬롯이 배정되지 않음'
+      const rounded = new Set(angles.map((a) => Math.round(a * 1000)))
+      if (rounded.size !== angles.length) return `원거리 적 각도 슬롯이 겹침 (${angles.join(', ')})`
+
+      // 4. 효과 영역 — 적의 이동속도 배율이 존 배율(0.3) 근처까지 내려가야 한다
+      if (r2.slowZoneSetup.zoneCount < 1) return '효과 영역이 등록되지 않음'
+      if (r2.slowZoneCheck.multiplier == null || r2.slowZoneCheck.multiplier > 0.31) {
+        return `효과 영역이 적에게 적용되지 않음 (multiplier=${r2.slowZoneCheck.multiplier})`
+      }
       return null
     }),
   },

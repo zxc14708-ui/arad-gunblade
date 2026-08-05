@@ -117,6 +117,14 @@ export class Enemy {
   private shieldHitTimer = -1
   /** '표식'(대시 핵심 슬롯 특성) — 남은 시간(초) 동안 받는 피해 +35% */
   private markTimer = 0
+  /** 효과 영역(슬로우 존)의 이동속도 배율 — 여러 존이 겹치면 가장 강한(값이
+   * 작은) 쪽을 유지한다(Game.updateSlowZones 참고, 작업 지시 P6 커밋1). */
+  private movementSlowMultiplier = 1
+  private movementSlowTimer = 0
+  /** Game이 매 프레임 배정하는 원거리 포위 각도(라디안). null이면(포위 대상이
+   * 아니거나 아직 배정 전) keepRange()가 옛 거리유지+좌우 스트레이프로 대체
+   * 동작한다(작업 지시 P6 커밋1-2 — 각도 슬롯 포위). */
+  surroundAngle: number | null = null
   private stageTier: number
   private specialState: 'idle' | 'fuse' | 'cast' | 'chargeWarning' | 'charge' = 'idle'
   private specialTimer = 0
@@ -174,6 +182,23 @@ export class Enemy {
     return this.isBossCharging || (this.kind === 'charger' && this.specialState === 'charge')
   }
 
+  /** 거리 유지 원거리 AI(keepRange 사용) 대상인지 — 각도 슬롯 포위 배정 후보를
+   * Game이 이걸로 고른다. boss는 ranged=true지만 자체 상태머신을 쓰므로 제외. */
+  get wantsSurroundSlot() {
+    return this.def.ranged === true && this.kind !== 'boss'
+  }
+
+  private get effectiveSpeed() {
+    return this.speed * this.movementSlowMultiplier
+  }
+
+  /** 효과 영역(슬로우 존) 등에서 호출 — 가장 강한 감속을 유지하고 지속시간을
+   * 갱신한다. 매 프레임 안에 있는 동안 계속 호출되는 방식(Game.updateSlowZones). */
+  applyMovementSlow(multiplier: number, duration: number) {
+    this.movementSlowMultiplier = Math.min(this.movementSlowMultiplier, multiplier)
+    this.movementSlowTimer = Math.max(this.movementSlowTimer, duration)
+  }
+
   get contactDamage() {
     const mul = this.isBossCharging
       ? BOSS_PATTERN.charge.contactDamageMultiplier
@@ -194,6 +219,10 @@ export class Enemy {
     if (this.hitFlash > 0) this.hitFlash -= dt
     if (this.contactTimer > 0) this.contactTimer -= dt
     if (this.markTimer > 0) this.markTimer -= dt
+    if (this.movementSlowTimer > 0) {
+      this.movementSlowTimer -= dt
+      if (this.movementSlowTimer <= 0) this.movementSlowMultiplier = 1
+    }
 
     const dir = new THREE.Vector3(target.x - this.pos.x, 0, target.z - this.pos.z)
     const dist = dir.length()
@@ -222,15 +251,15 @@ export class Enemy {
       actions.push(...result.actions)
       moving = result.moving
     } else if (this.kind === 'iceMage') {
-      const result = this.updateProjectileMage(dt, dir, dist, 'ice')
+      const result = this.updateProjectileMage(dt, dir, dist, target, 'ice')
       actions.push(...result.actions)
       moving = result.moving
     } else if (this.kind === 'summoner') {
-      const result = this.updateSummoner(dt, dir, dist)
+      const result = this.updateSummoner(dt, dir, dist, target)
       actions.push(...result.actions)
       moving = result.moving
     } else if (this.kind === 'voidMage') {
-      const result = this.updateProjectileMage(dt, dir, dist, 'void')
+      const result = this.updateProjectileMage(dt, dir, dist, target, 'void')
       actions.push(...result.actions)
       moving = result.moving
     } else if (this.kind === 'charger') {
@@ -238,20 +267,10 @@ export class Enemy {
       actions.push(...result.actions)
       moving = result.moving
     } else if (this.def.ranged) {
-      const desired = 12
-      if (dist > desired + 1.5) {
-        this.pos.addScaledVector(dir, this.speed * dt)
-        moving = true
-      } else if (dist < desired - 2) {
-        this.pos.addScaledVector(dir, -this.speed * dt)
-        moving = true
-      } else {
-        // 적정 사거리에서는 정지하지 않고 플레이어 둘레를 좌/우로 공전한다.
-        // 개체별 방향이 갈려 화염 고블린이 한 점에 포개지는 현상을 줄인다.
-        const strafe = new THREE.Vector3(-dir.z * this.rangedStrafeSign, 0, dir.x * this.rangedStrafeSign)
-        this.pos.addScaledVector(strafe, this.speed * dt)
-        moving = true
-      }
+      // shooter(스테이지1 기본 원거리)도 다른 원거리 kind와 같은 keepRange()로
+      // 통일했다 — 각도 슬롯 포위가 전 스테이지(모든 원거리 종류)에 적용돼야
+      // 한다(작업 지시 P6 커밋1-2).
+      moving = this.keepRange(dt, dir, dist, CONFIG.enemy.stagePatterns.shooter.preferredRange, target)
       this.shootTimer -= dt
       if (this.shootTimer <= 0) {
         this.shootTimer = this.def.shootCd ?? 2
@@ -259,7 +278,7 @@ export class Enemy {
         this.sprite.playAttack(0.5)
       }
     } else {
-      this.pos.addScaledVector(dir, this.speed * dt)
+      this.pos.addScaledVector(dir, this.effectiveSpeed * dt)
       moving = true
       if (dist < this.radius + 1.4) this.sprite.playAttack(0.4)
     }
@@ -280,10 +299,26 @@ export class Enemy {
     return actions
   }
 
-  private keepRange(dt: number, dir: THREE.Vector3, dist: number, desired: number) {
-    if (dist > desired + 1.5) this.pos.addScaledVector(dir, this.speed * dt)
-    else if (dist < desired - 2) this.pos.addScaledVector(dir, -this.speed * dt)
-    else this.pos.addScaledVector(new THREE.Vector3(-dir.z * this.rangedStrafeSign, 0, dir.x * this.rangedStrafeSign), this.speed * dt)
+  /** 목표(target)와 desired 거리를 유지하며 이동한다. surroundAngle이
+   * Game으로부터 배정돼 있으면(원거리 종류는 매 프레임 배정된다 — 작업 지시
+   * P6 커밋1-2) 그 각도의 목표 지점을 향해 직접 걸어가 포위 대형을 만든다.
+   * 배정이 없으면(보스 특수패턴 등 슬롯 대상이 아닌 경우) 기존의 거리
+   * 유지+좌우 스트레이프로 대체 동작한다. */
+  private keepRange(dt: number, dir: THREE.Vector3, dist: number, desired: number, target: THREE.Vector3) {
+    if (this.surroundAngle !== null) {
+      const slotX = target.x + Math.sin(this.surroundAngle) * desired
+      const slotZ = target.z + Math.cos(this.surroundAngle) * desired
+      const toSlotX = slotX - this.pos.x
+      const toSlotZ = slotZ - this.pos.z
+      const slotDist = Math.hypot(toSlotX, toSlotZ)
+      if (slotDist < 0.6) return false
+      this.pos.x += (toSlotX / slotDist) * this.effectiveSpeed * dt
+      this.pos.z += (toSlotZ / slotDist) * this.effectiveSpeed * dt
+      return true
+    }
+    if (dist > desired + 1.5) this.pos.addScaledVector(dir, this.effectiveSpeed * dt)
+    else if (dist < desired - 2) this.pos.addScaledVector(dir, -this.effectiveSpeed * dt)
+    else this.pos.addScaledVector(new THREE.Vector3(-dir.z * this.rangedStrafeSign, 0, dir.x * this.rangedStrafeSign), this.effectiveSpeed * dt)
     return true
   }
 
@@ -301,7 +336,7 @@ export class Enemy {
       this.sprite.playAttack(cfg.fuse)
       return { actions: [] as EnemyAction[], moving: false }
     }
-    this.pos.addScaledVector(dir, this.speed * dt)
+    this.pos.addScaledVector(dir, this.effectiveSpeed * dt)
     return { actions: [] as EnemyAction[], moving: true }
   }
 
@@ -325,10 +360,10 @@ export class Enemy {
       this.sprite.playAttack(cfg.warning)
       return { actions: [{ type: 'bossGroundFx', effect: 'warning', position: this.specialAnchor.clone(), radius: cfg.radius, duration: cfg.warning } as EnemyAction], moving: false }
     }
-    return { actions: [] as EnemyAction[], moving: this.keepRange(dt, dir, dist, cfg.preferredRange) }
+    return { actions: [] as EnemyAction[], moving: this.keepRange(dt, dir, dist, cfg.preferredRange, target) }
   }
 
-  private updateProjectileMage(dt: number, dir: THREE.Vector3, dist: number, style: 'ice' | 'void') {
+  private updateProjectileMage(dt: number, dir: THREE.Vector3, dist: number, target: THREE.Vector3, style: 'ice' | 'void') {
     const cfg = style === 'ice' ? CONFIG.enemy.stagePatterns.iceMage : CONFIG.enemy.stagePatterns.voidMage
     const actions: EnemyAction[] = []
     if (style === 'void') {
@@ -349,10 +384,10 @@ export class Enemy {
       const slowDuration = style === 'ice' ? CONFIG.enemy.stagePatterns.iceMage.slowDuration : 0
       actions.push({ type: 'shoot', direction: dir.clone(), style, speed: cfg.projectileSpeed, homing: cfg.homing, slowDuration })
     }
-    return { actions, moving: this.keepRange(dt, dir, dist, cfg.preferredRange) }
+    return { actions, moving: this.keepRange(dt, dir, dist, cfg.preferredRange, target) }
   }
 
-  private updateSummoner(dt: number, dir: THREE.Vector3, dist: number) {
+  private updateSummoner(dt: number, dir: THREE.Vector3, dist: number, target: THREE.Vector3) {
     const cfg = CONFIG.enemy.stagePatterns.summoner
     this.shootTimer -= dt
     const actions: EnemyAction[] = []
@@ -361,7 +396,7 @@ export class Enemy {
       this.sprite.playAttack(0.7)
       actions.push({ type: 'summon', kind: 'zombie', artSet: 's6Zombie', count: cfg.maxSummons })
     }
-    return { actions, moving: this.keepRange(dt, dir, dist, cfg.preferredRange) }
+    return { actions, moving: this.keepRange(dt, dir, dist, cfg.preferredRange, target) }
   }
 
   private updateCharger(dt: number, dir: THREE.Vector3, dist: number) {
@@ -376,7 +411,7 @@ export class Enemy {
       return { actions: [] as EnemyAction[], moving: false }
     }
     if (this.specialState === 'charge') {
-      this.pos.addScaledVector(this.specialFacing, this.speed * cfg.speedMultiplier * dt)
+      this.pos.addScaledVector(this.specialFacing, this.effectiveSpeed * cfg.speedMultiplier * dt)
       this.specialTimer -= dt
       if (this.specialTimer <= 0) this.specialState = 'idle'
       return { actions: [] as EnemyAction[], moving: true }
@@ -389,7 +424,7 @@ export class Enemy {
       return { actions: [{ type: 'bossGroundFx', effect: 'warning', position: this.pos.clone(), radius: 1.6, duration: cfg.warning } as EnemyAction], moving: false }
     }
     this.shootTimer -= dt
-    this.pos.addScaledVector(dir, this.speed * dt)
+    this.pos.addScaledVector(dir, this.effectiveSpeed * dt)
     return { actions: [] as EnemyAction[], moving: true }
   }
 
@@ -426,7 +461,7 @@ export class Enemy {
         }
         break
       case 'charge':
-        this.pos.addScaledVector(this.bossFacing, this.speed * BOSS_PATTERN.charge.speedMultiplier * dt)
+        this.pos.addScaledVector(this.bossFacing, this.effectiveSpeed * BOSS_PATTERN.charge.speedMultiplier * dt)
         moving = true
         this.bossTimer -= dt
         this.sprite.playCharge(Math.max(this.bossTimer, dt))

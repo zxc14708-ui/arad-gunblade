@@ -90,31 +90,39 @@ export class Projectiles {
   ) {
     const mesh = new THREE.Sprite(this.ebMats[style])
     mesh.position.copy(pos)
-    // 화염구 고블린 투사체는 기존 표시 크기의 정확히 2배.
-    mesh.scale.setScalar(1.6)
+    // 플레이어 총알(0.6~0.9)보다 뚜렷하게 크게 — 플레이 검증에서 시인성이
+    // 부족하다고 지적됐다(작업 지시 P6 커밋1-3). style별 색(fire=흰/ice=하늘/
+    // void=보라)과 텍스처(fireball 스프라이트, 플레이어 총알과 다른 모양)로
+    // 이미 구분되므로 크기만 키운다.
+    mesh.scale.setScalar(2.2)
     this.scene.add(mesh)
     this.enemyBullets.push({ mesh, pos: pos.clone(), dir: dir.clone().normalize(), speed, life: 4, damage, style, homing, slowDuration })
   }
 
-  /** 방 경계(사각형) 밖으로 나간 투사체는 제거 */
-  update(dt: number, bounds: { minX: number; maxX: number; minZ: number; maxZ: number }, target?: THREE.Vector3) {
+  /**
+   * 방 경계(사각형) 밖으로 나간 투사체는 제거. 플레이어 총알(bullets)은
+   * playerDt(항상 정상 속도), 적 총알(enemyBullets)은 enemyDt(히트스톱 대상)로
+   * 각각 갱신한다 — 히트스톱이 "세계"만 늦추고 플레이어 쪽은 그대로 둬야
+   * 하기 때문이다(작업 지시 P6 커밋1-1).
+   */
+  update(playerDt: number, enemyDt: number, bounds: { minX: number; maxX: number; minZ: number; maxZ: number }, target?: THREE.Vector3) {
     const out = (p: THREE.Vector3) =>
       p.x < bounds.minX - 1 || p.x > bounds.maxX + 1 || p.z < bounds.minZ - 1 || p.z > bounds.maxZ + 1
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i]
-      b.life -= dt
-      b.pos.addScaledVector(b.dir, b.speed * dt)
+      b.life -= playerDt
+      b.pos.addScaledVector(b.dir, b.speed * playerDt)
       b.mesh.position.copy(b.pos)
       if (b.life <= 0 || out(b.pos)) this.removeBullet(i)
     }
     for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
       const b = this.enemyBullets[i]
-      b.life -= dt
+      b.life -= enemyDt
       if (target && b.homing > 0) {
         const desired = new THREE.Vector3(target.x - b.pos.x, 0, target.z - b.pos.z).normalize()
-        b.dir.lerp(desired, Math.min(1, b.homing * dt)).normalize()
+        b.dir.lerp(desired, Math.min(1, b.homing * enemyDt)).normalize()
       }
-      b.pos.addScaledVector(b.dir, b.speed * dt)
+      b.pos.addScaledVector(b.dir, b.speed * enemyDt)
       b.mesh.position.copy(b.pos)
       if (b.life <= 0 || out(b.pos)) this.removeEnemyBullet(i)
     }

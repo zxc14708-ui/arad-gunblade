@@ -108,6 +108,10 @@ export const CONFIG = {
     baseXp: 4,
     contactCooldown: 0.6,
     stagePatterns: {
+      // shooter는 스테이지1부터 쓰는 기본 원거리 종류라 다른 kind처럼 전용
+      // 패턴 블록이 없었다 — 유지 거리(preferredRange)만 하드코딩돼 있던 것을
+      // 여기로 옮겼다(작업 지시 P6 커밋1 — 수치는 config.ts에 둔다).
+      shooter: { preferredRange: 12 },
       suicide: { triggerRange: 2.1, radius: 4.2, damageMultiplier: 1.6, fuse: 0.65 },
       frostSuicide: { triggerRange: 2.1, radius: 4.2, damageMultiplier: 1.35, fuse: 0.7, slowZoneDuration: 4, slowMultiplier: 0.55 },
       fireMage: { preferredRange: 11, cooldown: 3.2, warning: 0.85, radius: 3.2, damageMultiplier: 1.45 },
@@ -242,6 +246,11 @@ export const CONFIG = {
     hitstopCrit: 0.07,
     hitstopKill: 0.1,
     hitstopBossKill: 0.35,
+    // 재발동 최소 간격: 이 시간 안에 새 히트스톱 요청이 오면 무시한다(연속 명중이
+    // 타이머를 계속 채워 끊기지 않는 것을 막는다). 누적 상한: 한 프레임에 여러
+    // 적을 때려도(광역기 등) 히트스톱 지속시간이 이 값을 넘지 않는다.
+    hitstopRetriggerInterval: 0.08,
+    hitstopMaxDuration: 0.35,
 
     // 화면 흔들림: 강도(카메라 오프셋 크기)와 지속(초, 지수 감쇠 — 시작이 강하고
     // 빠르게 잦아든다). shakeMax는 여러 흔들림이 겹칠 때의 합산 상한.
