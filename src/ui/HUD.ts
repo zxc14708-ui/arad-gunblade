@@ -107,7 +107,7 @@ export class HUD {
       <div class="hud-ammo" id="ammoBox">
         <div class="ammo-pips" id="ammoPips"></div>
         <div class="ammo-text" id="ammoText">7 / 7</div>
-        <div class="ammo-label"><span id="gunName">M1911</span> · <kbd>T</kbd> 장전</div>
+        <div class="ammo-label"><span id="gunName">M1911</span> · <kbd>R</kbd> 장전</div>
       </div>
 
       <div class="hud-dash">
@@ -122,8 +122,7 @@ export class HUD {
         <div class="subtitle">던전앤파이터 팬 게임 · 총검사</div>
         <div class="helptext">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp; <kbd>마우스</kbd> 조준<br/>
-          <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>T</kbd> 장전 &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
-          <kbd>Q</kbd> 발도 &nbsp;·&nbsp; <kbd>E</kbd> 더블 샷 &nbsp;·&nbsp; <kbd>R</kbd> 폭렬 난무<br/>
+          <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>R</kbd> 장전(리듬 성공 시 즉시 완료+보너스) &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
           <kbd>Shift</kbd> 대시 (무적) &nbsp;·&nbsp; <kbd>E</kbd> 상호작용 &nbsp;·&nbsp; <kbd>Tab</kbd> 설정<br/><br/>
           마을의 <b style="color:#c8b0ff">포탈</b>로 던전에 입장하라.<br/>
           방을 클리어하고 <b style="color:#ffd070">문</b>을 골라 전진 —
@@ -310,7 +309,7 @@ export class HUD {
       const bindings = Object.fromEntries([...box.querySelectorAll<HTMLButtonElement>('.keybind-btn')].map((button) => [button.dataset.action!, button.textContent!])) as Partial<KeyBindings>
       this.setReloadKey({
         moveUp: bindings.moveUp ?? 'W', moveDown: bindings.moveDown ?? 'S', moveLeft: bindings.moveLeft ?? 'A', moveRight: bindings.moveRight ?? 'D',
-        dash: bindings.dash ?? 'Left Shift', slash: bindings.slash ?? 'Space', reload: bindings.reload ?? 'T', interact: bindings.interact ?? 'E',
+        dash: bindings.dash ?? 'Left Shift', slash: bindings.slash ?? 'Space', reload: bindings.reload ?? 'R', interact: bindings.interact ?? 'E',
       })
     } else {
       this.q('#keybindNote').textContent = '이미 다른 조작에 쓰는 키입니다. 다른 키를 선택하세요.'

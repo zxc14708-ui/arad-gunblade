@@ -247,6 +247,18 @@ export class AudioManager {
     this.playSample(AudioManager.M1911_RELOAD_TRIGGER_URL, 0.8)
   }
 
+  /** R 리듬 장전(작업 지시 P6 커밋3) 성공 — 상승 2음, 밝은 톤. */
+  reloadRhythmSuccess() {
+    this.tone(760, 0.08, { type: 'sine', gain: 0.16, slideTo: 1180 })
+    this.tone(980, 0.1, { type: 'sine', gain: 0.14, delay: 0.05, slideTo: 1400 })
+  }
+
+  /** R 리듬 장전 실패(구간 밖 입력) — 짧고 낮은 경고음, 지연 페널티를 알린다. */
+  reloadRhythmFail() {
+    this.tone(220, 0.09, { type: 'square', gain: 0.14, slideTo: 140 })
+    this.noise(0.05, { type: 'lowpass', freq: 900, gain: 0.12 })
+  }
+
   /** 탄창이 비어 방아쇠를 당겼을 때의 빈 클릭 */
   emptyClick() {
     const t = this.now()

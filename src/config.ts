@@ -51,6 +51,23 @@ export const CONFIG = {
     dashCooldown: 0.7,
     dashIFrames: 0.22,
     invulnAfterHit: 0.6,
+
+    // R 리듬 장전(작업 지시 P6 커밋3) — 장전 진행 중 R을 한 번 더 누르면
+    // 성공 구간에서는 즉시 완료 + 다음 몇 발 피해 보너스, 구간 밖이면 약간의
+    // 지연 페널티. 위치(windowCenterRatio)는 무기와 무관하게 고정 — 학습
+    // 가능해야 한다. 폭(windowWidth*)만 무기별 reloadTime에 비례해 늘어난다
+    // (장전이 긴 무기일수록 여유 있게). 발도장전(검격 적중 시 장전)은 이
+    // 리듬 로직과 완전히 분리돼 있어 보너스를 받지 않는다 — Player.ts 참고.
+    reloadRhythm: {
+      windowCenterRatio: 0.7,
+      windowWidthBase: 0.12,
+      windowWidthPerSecond: 0.03,
+      windowWidthMax: 0.3,
+      successBonusMult: 0.3,
+      successBonusShots: 3,
+      failDelay: 0.25,
+      flashDuration: 0.35,
+    },
   },
 
   gun: {

@@ -150,6 +150,14 @@ export class Player {
   reloading = false
   private reloadTimer = 0
   private swordReloadBurstShotsLeft = 0
+  // R 리듬 장전(작업 지시 P6 커밋3) — 장전 시작 시점의 reloadTime 기준으로
+  // 성공 구간을 고정한다(장전 도중 무기를 바꿔도 이번 장전의 판정은 흔들리지
+  // 않는다). rhythmBonusShotsLeft는 swordReloadBurstShotsLeft와 완전히
+  // 분리된 변수다 — 발도장전은 리듬 보너스를 받지 않는다는 요구사항 때문에
+  // 두 보너스가 서로의 카운터를 건드리면 안 된다.
+  private rhythmWindowStart = 0
+  private rhythmWindowEnd = 0
+  private rhythmBonusShotsLeft = 0
 
   constructor(meta: MetaBonuses = { gunDamageMultiplier: 1, swordDamageMultiplier: 1, maxHpFlat: 0, revives: 0, wardReady: false }) {
     this.meta = meta
@@ -316,10 +324,20 @@ export class Player {
   get reloadRatio() {
     return this.reloading ? 1 - this.reloadTimer / this.stats.reloadTime : 1
   }
+  /** 리듬 장전 성공 구간(0..1 진행도 기준) — 장전 중이 아니면 의미 없다. HUD 바 표시용. */
+  get reloadWindow() {
+    return { start: this.rhythmWindowStart, end: this.rhythmWindowEnd }
+  }
   private startReload() {
     if (this.reloading || this.ammo >= this.magSize) return false
     this.reloading = true
     this.reloadTimer = this.stats.reloadTime
+    // 성공 구간 폭은 이 무기의 장전 시간에 비례해 늘어난다(장전이 긴 무기일수록
+    // 여유롭게) — 위치(중심)는 무기와 무관하게 항상 고정이라 학습 가능하다.
+    const cfg = CONFIG.player.reloadRhythm
+    const width = Math.min(cfg.windowWidthMax, cfg.windowWidthBase + this.stats.reloadTime * cfg.windowWidthPerSecond)
+    this.rhythmWindowStart = Math.max(0, cfg.windowCenterRatio - width / 2)
+    this.rhythmWindowEnd = Math.min(1, cfg.windowCenterRatio + width / 2)
     return true
   }
 
@@ -353,11 +371,13 @@ export class Player {
     slash: SlashSpec | null
     startedReload: boolean
     reloadTriggerAttempt: boolean
+    reloadRhythm: 'success' | 'fail' | null
   } {
     const bullets: BulletSpec[] = []
     let slash: SlashSpec | null = null
     let startedReload = false
     let reloadTriggerAttempt = false
+    let reloadRhythm: 'success' | 'fail' | null = null
 
     // 조준: 마우스 지면 좌표 방향 — 검 스윙 커밋 중엔 방향 전환 차단
     if (this.swingCommitTimer <= 0) {
@@ -424,15 +444,30 @@ export class Player {
     // '급전환' 버프 지속시간
     if (this.quickSwitchTimer > 0) this.quickSwitchTimer -= dt
 
-    // M1911 장전 처리
+    // M1911 장전 처리 — R 리듬 장전(작업 지시 P6 커밋3)
     if (this.reloading) {
       this.reloadTimer -= dt
-      if (this.reloadTimer <= 0) {
+      if (input.consumeAction('reload')) {
+        // 장전 도중 R을 한 번 더 — 고정된 성공 구간 안이면 즉시 완료 +
+        // 다음 몇 발 피해 보너스, 밖이면 소폭 지연 페널티(근접전에서
+        // 스트레스가 되지 않을 정도로 작게). 아무 입력도 없으면 정상 완료.
+        const progress = 1 - this.reloadTimer / this.stats.reloadTime
+        const cfg = CONFIG.player.reloadRhythm
+        if (progress >= this.rhythmWindowStart && progress <= this.rhythmWindowEnd) {
+          this.reloading = false
+          this.ammo = this.magSize
+          this.rhythmBonusShotsLeft = cfg.successBonusShots
+          reloadRhythm = 'success'
+        } else {
+          this.reloadTimer += cfg.failDelay
+          reloadRhythm = 'fail'
+        }
+      } else if (this.reloadTimer <= 0) {
         this.reloading = false
         this.ammo = this.magSize
       }
     } else if (input.consumeAction('reload')) {
-      // 수동 장전 (R)
+      // 수동 장전 시작 (R)
       startedReload = this.startReload()
     }
 
@@ -466,6 +501,12 @@ export class Player {
           if (this.swordReloadBurstShotsLeft > 0) {
             dmg *= 1 + this.mods.swordReloadBurstBonus
             this.swordReloadBurstShotsLeft--
+          }
+          // R 리듬 장전 성공 보너스 — 발도장전과 완전히 별개의 카운터라
+          // 발도장전(검격 적중 시 장전)에는 적용되지 않는다.
+          if (this.rhythmBonusShotsLeft > 0) {
+            dmg *= 1 + CONFIG.player.reloadRhythm.successBonusMult
+            this.rhythmBonusShotsLeft--
           }
           if (this.coreSlots.get('shot') === 'last_bullet' && isLastBullet) dmg *= CONFIG.traits.lastBulletMult
           bullets.push({
@@ -521,7 +562,7 @@ export class Player {
     }
 
     this.syncMesh(dt)
-    return { bullets, slash, startedReload, reloadTriggerAttempt }
+    return { bullets, slash, startedReload, reloadTriggerAttempt, reloadRhythm }
   }
 
   /** 빙결탄/냉기 지대의 이동 둔화. 더 강한 둔화와 더 긴 남은 시간만 유지한다. */

@@ -163,9 +163,9 @@ const STEPS = [
   },
   {
     name: 'reload',
-    what: '장전 — 탄창 UI 가 7/7 로 복귀하는가',
+    what: '장전 — 탄창 UI 가 7/7 로 복귀하는가 (R, 리듬 입력 없이 무입력 완료)',
     async run(p) {
-      await p.keyboard.press('KeyT')
+      await p.keyboard.press('KeyR')
       await waitGame(p, 1.4) // 장전 시간(인게임) — reloadTime 이 dt로 카운트다운된다
     },
     check: async (p) => {
@@ -527,8 +527,8 @@ const STEPS = [
       await p.evaluate(() => {
         window.__qcNoSkills.afterDash = { x: window.__game.player.pos.x, z: window.__game.player.pos.z }
       })
-      // 장전 — R은 아직 커밋3 전이므로 기존 바인딩(T)으로 검증
-      await p.keyboard.press('KeyT')
+      // 장전 (R) — 리듬 입력 없이 무입력 완료 경로만 검증(리듬 성공/실패는 별도 스텝)
+      await p.keyboard.press('KeyR')
       await waitGame(p, 1.4)
     },
     check: async (p) => {
@@ -556,6 +556,138 @@ const STEPS = [
       const buttons = await p.evaluate(() => !document.querySelector('.hud-skills'))
       return buttons ? null : '폐지된 스킬 HUD가 여전히 존재함'
     },
+  },
+  {
+    // 작업 지시 P6 커밋3 — R 리듬 장전. 성공 구간 안에서 두 번째 R을 누르면
+    // 즉시 완료 + 다음 3발 피해 +30%, 구간 밖이면 소폭 지연(즉시 완료되지
+    // 않고 원래 예정 시각을 넘긴다), 아무 입력도 없는 정상 완료는 위의
+    // 'reload' 스텝이 이미 검증한다.
+    name: 'reload-rhythm',
+    needs: 'dungeon',
+    what: 'R 리듬 장전 — 성공 구간 즉시완료+다음3발 30% 가산, 구간 밖 입력은 완료를 지연시키는가',
+    async run(p) {
+      await dismissLevelUp(p)
+      const reloadTime = await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0)
+        g.player.coreSlots.clear()
+        g.player.stats.critChance = 0
+        g.player.reloading = false
+        g.player.ammo = 0
+        // 이전 스텝의 검격이 남겨둔 발도장전 보너스(swordReloadBurstShotsLeft,
+        // 기본 메커니즘이라 항상 활성)가 리듬 보너스와 같은 발에 겹쳐 적용되면
+        // 피해가 1.3×1.3배로 부풀어 성공 보너스 단독 측정이 깨진다 — 리셋한다.
+        g.player.swordReloadBurstShotsLeft = 0
+        const target = g.debugSpawnEnemy('brute')
+        target.pos.set(5, 0, 0)
+        target.hp = 9999
+        target.maxHp = 9999
+        // 장전 사이클 여러 번 도는 동안 오래 대기한다 — speed=0으로 고정하지
+        // 않으면 다가와서 접촉 피해로 플레이어를 죽여 게임을 gameover로
+        // 만든다(다른 더미 적 스텝들의 관례, qc.mjs 686/715/799/1459줄 참고).
+        target.speed = 0
+        window.__qcReloadRhythm = {
+          gunDamage: g.player.stats.gunDamage,
+          targetId: target.id,
+          targetHp: target.hp,
+        }
+        return g.player.stats.reloadTime
+      })
+      await aimAtPoint(p, 5, 0)
+
+      // ── 성공 구간: 창 중앙에서 두 번째 R ──
+      // 성공 구간 폭(~0.15~0.2게임초)이 이 샌드박스의 Node↔브라우저 왕복
+      // 지연보다 좁아, waitGame()으로 창 중앙까지 기다린 뒤 별도로
+      // p.keyboard.press()를 보내면 그사이 실제 시간이 흘러 창을 이미
+      // 지나쳐버린다(page.evaluate 왕복 수백ms가 왕복마다 쌓인다 — 실측
+      // ratio가 목표 0.70 대신 0.87까지 밀림). '이도류/잔영'과 같은 이유로,
+      // 판정과 입력 디스패치를 모두 페이지 내부 rAF 콜백 안에서 동기적으로
+      // 처리해 왕복 지연을 없앤다(왕복이 없으면 오차가 프레임 하나의 dt로
+      // 묶인다 — waitUntilPage()의 문서화된 근거와 동일).
+      await p.keyboard.press('KeyR')
+      await p.evaluate(() => new Promise((resolve) => {
+        const g = window.__game
+        const tick = () => {
+          const win = g.player.reloadWindow
+          const ratio = g.player.reloadRatio
+          if (g.player.reloading && ratio >= win.start && ratio <= win.end) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR', bubbles: true }))
+            window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyR', bubbles: true }))
+            resolve()
+            return
+          }
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }))
+      await waitGame(p, 0.05)
+      await p.evaluate(() => {
+        const g = window.__game
+        window.__qcReloadRhythm.successReloading = g.player.reloading
+        window.__qcReloadRhythm.successAmmo = g.player.ammo
+        window.__qcReloadRhythm.successMagSize = g.player.magSize
+        window.__qcReloadRhythm.successBonusShotsLeft = g.player.rhythmBonusShotsLeft
+      })
+      // 보너스가 실제 피해에 반영되는지 한 발 쏴서 확인
+      await p.mouse.down()
+      await p.waitForTimeout(90)
+      await p.mouse.up()
+      await waitGame(p, 0.6)
+      await p.evaluate(() => {
+        const g = window.__game
+        const before = window.__qcReloadRhythm
+        const target = g.enemies.find((e) => e.id === before.targetId)
+        before.dealtDamage = target ? before.targetHp - target.hp : null
+      })
+
+      // ── 실패(구간 밖): 창 시작보다 한참 이른 시점에 두 번째 R ──
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.reloading = false
+        g.player.ammo = 0
+        // 성공 구간 검증에서 한 발만 쏘고 남은 보너스(2발)가 실패 구간
+        // 검증으로 새어 들어가지 않게 리셋한다 — 게임 로직이 아니라 이
+        // 스텝의 두 단계가 같은 카운터를 공유해서 생기는 테스트 설계 문제.
+        g.player.rhythmBonusShotsLeft = 0
+      })
+      await p.keyboard.press('KeyR')
+      await waitGame(p, Math.max(0.03, reloadTime * 0.05)) // 창(대략 0.55~0.85 구간)보다 한참 이름
+      await p.keyboard.press('KeyR')
+      await p.evaluate(() => {
+        window.__qcReloadRhythm.failStillReloadingRightAfter = window.__game.player.reloading
+      })
+      // 실패 페널티가 없었다면 이 시점(원래 예정 완료 시각 근방)에 이미 끝나 있어야 한다
+      await waitGame(p, Math.max(0, reloadTime - reloadTime * 0.05 - 0.15))
+      await p.evaluate(() => {
+        window.__qcReloadRhythm.failStillReloadingNearOriginalDeadline = window.__game.player.reloading
+      })
+      // 지연분까지 넉넉히 기다리면 결국 정상 완료된다
+      await waitGame(p, 0.6)
+      await p.evaluate(() => {
+        const g = window.__game
+        window.__qcReloadRhythm.failEventuallyReloading = g.player.reloading
+        window.__qcReloadRhythm.failEventuallyAmmo = g.player.ammo
+        window.__qcReloadRhythm.failBonusShotsLeft = g.player.rhythmBonusShotsLeft
+      })
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcReloadRhythm
+      if (r.successReloading) return '성공 구간 입력이 장전을 즉시 완료시키지 않음'
+      if (r.successAmmo !== r.successMagSize) return `성공 구간 입력 후 탄약이 가득 차지 않음 (${r.successAmmo}/${r.successMagSize})`
+      if (r.successBonusShotsLeft !== 3) return `성공 직후 보너스 발수가 3발이 아님 (${r.successBonusShotsLeft})`
+      if (r.dealtDamage === null) return '보너스 확인용 사격이 대상에 명중하지 않음'
+      const expected = r.gunDamage * 1.3
+      if (Math.abs(r.dealtDamage - expected) > expected * 0.05) {
+        return `성공 보너스(+30%)가 피해에 반영되지 않음 (${r.dealtDamage.toFixed(1)} / 기대 ${expected.toFixed(1)})`
+      }
+      if (!r.failStillReloadingRightAfter) return '구간 밖 입력이 장전을 즉시 끝내버림(지연 페널티 없음)'
+      if (!r.failStillReloadingNearOriginalDeadline) return '구간 밖 입력에 지연 페널티가 적용되지 않음(원래 완료 시각에 이미 끝남)'
+      if (r.failEventuallyReloading) return '지연 페널티 이후에도 장전이 끝내 완료되지 않음'
+      if (r.failEventuallyAmmo !== 7) return `지연 완료 후 탄약이 가득 차지 않음 (${r.failEventuallyAmmo})`
+      if (r.failBonusShotsLeft !== 0) return `구간 밖 입력인데도 보너스가 지급됨 (${r.failBonusShotsLeft})`
+      return null
+    }),
   },
   {
     name: 'trait-slots',

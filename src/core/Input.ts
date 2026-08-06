@@ -20,7 +20,7 @@ export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
 
 const DEFAULT_BINDINGS: KeyBindings = {
   moveUp: 'KeyW', moveDown: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
-  dash: 'ShiftLeft', slash: 'Space', reload: 'KeyT', interact: 'KeyE',
+  dash: 'ShiftLeft', slash: 'Space', reload: 'KeyR', interact: 'KeyE',
 }
 
 export function keyLabel(code: string) {

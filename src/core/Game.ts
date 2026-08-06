@@ -983,7 +983,7 @@ export class Game {
     this.entrySafeTimer = Math.max(0, this.entrySafeTimer - worldDt)
 
     // ── 플레이어 ──
-    const { bullets, slash, startedReload, reloadTriggerAttempt } = this.player.update(playerDt, this.input, this.aimGround)
+    const { bullets, slash, startedReload, reloadTriggerAttempt, reloadRhythm } = this.player.update(playerDt, this.input, this.aimGround)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
@@ -995,6 +995,22 @@ export class Game {
     }
     if (startedReload) this.audio.reload(this.player.gun.id)
     if (reloadTriggerAttempt) this.audio.reloadTriggerAttempt()
+    // R 리듬 장전(작업 지시 P6 커밋3) — 월드공간 바(발밑 원호 게이지와 겹치지
+    // 않게 살짝 남쪽으로 띄운다)는 장전 중엔 매 프레임, 성공/실패 순간엔
+    // 색+소리로 즉시 피드백한다.
+    if (this.player.reloading) {
+      const w = this.player.reloadWindow
+      this.effects.showReloadBar(this.player.pos.x, this.player.pos.z, this.player.reloadRatio, w.start, w.end)
+    } else {
+      this.effects.hideReloadBar()
+    }
+    if (reloadRhythm === 'success') {
+      this.effects.flashReloadBarResult(this.player.pos.x, this.player.pos.z, true)
+      this.audio.reloadRhythmSuccess()
+    } else if (reloadRhythm === 'fail') {
+      this.effects.flashReloadBarResult(this.player.pos.x, this.player.pos.z, false)
+      this.audio.reloadRhythmFail()
+    }
     if (slash) {
       this.audio.slash(this.player.sword.id)
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
