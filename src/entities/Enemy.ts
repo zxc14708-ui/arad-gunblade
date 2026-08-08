@@ -23,25 +23,24 @@ interface KindDef {
   hp: number
   speed: number
   damage: number
-  xp: number
   radius: number
   ranged?: boolean
   shootCd?: number
 }
 
 export const DEFS: Record<EnemyKind, KindDef> = {
-  imp: { hp: 1, speed: 1, damage: 1, xp: 1, radius: 0.6 },
-  brute: { hp: 4.5, speed: 0.6, damage: 2.2, xp: 3.5, radius: 1.1 },
-  shooter: { hp: 1.4, speed: 0.7, damage: 1.4, xp: 2.2, radius: 0.6, ranged: true, shootCd: 2.2 },
-  boss: { hp: 34, speed: 0.85, damage: 3, xp: 30, radius: 1.9, ranged: true, shootCd: 1.6 },
-  suicide: { hp: 1.1, speed: 1.2, damage: 1.2, xp: 1.7, radius: 0.65 },
-  frostSuicide: { hp: 1.25, speed: 1.12, damage: 1.15, xp: 2, radius: 0.65 },
-  fireMage: { hp: 1.8, speed: 0.62, damage: 1.55, xp: 2.8, radius: 0.7, ranged: true, shootCd: 3.2 },
-  iceMage: { hp: 1.9, speed: 0.58, damage: 1.45, xp: 3, radius: 0.7, ranged: true, shootCd: 2.8 },
-  summoner: { hp: 2.2, speed: 0.55, damage: 1.2, xp: 3.4, radius: 0.75, ranged: true, shootCd: 6 },
-  zombie: { hp: 1.8, speed: 0.55, damage: 1.25, xp: 0.7, radius: 0.65 },
-  voidMage: { hp: 2.1, speed: 0.65, damage: 1.65, xp: 3.5, radius: 0.72, ranged: true, shootCd: 2.5 },
-  charger: { hp: 3.2, speed: 0.78, damage: 1.8, xp: 4, radius: 0.95 },
+  imp: { hp: 1, speed: 1, damage: 1, radius: 0.6 },
+  brute: { hp: 4.5, speed: 0.6, damage: 2.2, radius: 1.1 },
+  shooter: { hp: 1.4, speed: 0.7, damage: 1.4, radius: 0.6, ranged: true, shootCd: 2.2 },
+  boss: { hp: 34, speed: 0.85, damage: 3, radius: 1.9, ranged: true, shootCd: 1.6 },
+  suicide: { hp: 1.1, speed: 1.2, damage: 1.2, radius: 0.65 },
+  frostSuicide: { hp: 1.25, speed: 1.12, damage: 1.15, radius: 0.65 },
+  fireMage: { hp: 1.8, speed: 0.62, damage: 1.55, radius: 0.7, ranged: true, shootCd: 3.2 },
+  iceMage: { hp: 1.9, speed: 0.58, damage: 1.45, radius: 0.7, ranged: true, shootCd: 2.8 },
+  summoner: { hp: 2.2, speed: 0.55, damage: 1.2, radius: 0.75, ranged: true, shootCd: 6 },
+  zombie: { hp: 1.8, speed: 0.55, damage: 1.25, radius: 0.65 },
+  voidMage: { hp: 2.1, speed: 0.65, damage: 1.65, radius: 0.72, ranged: true, shootCd: 2.5 },
+  charger: { hp: 3.2, speed: 0.78, damage: 1.8, radius: 0.95 },
 }
 
 // 보스 패턴 수치는 이후 config로 옮기기 쉽도록 이 파일 한 곳에 모아 둔다.
@@ -85,7 +84,6 @@ export class Enemy {
   maxHp: number
   speed: number
   damage: number
-  xp: number
   radius: number
   elite: boolean
   affix: EliteAffix | undefined
@@ -141,7 +139,6 @@ export class Enemy {
     hpMul: number,
     dmgMul: number,
     speedMul: number,
-    xpMul = 1,
     elite = false,
     affix?: EliteAffix,
     stageTier = 1,
@@ -167,7 +164,6 @@ export class Enemy {
     this.speed = CONFIG.enemy.baseSpeed * this.def.speed * speedMul
     if (this.affix === 'swift') this.speed *= ELITE_AFFIX.swift.speedMultiplier
     this.damage = CONFIG.enemy.baseDamage * this.def.damage * dmgMul
-    this.xp = CONFIG.enemy.baseXp * this.def.xp * xpMul
     this.radius = this.def.radius
     this.shootTimer = kind === 'boss' ? 0 : (this.def.shootCd ?? 0) * Math.random()
     this.teleportTimer = CONFIG.enemy.stagePatterns.voidMage.teleportCooldown * 0.5
@@ -645,16 +641,15 @@ export class Enemy {
     }]
   }
 
-  /** 분열 접두사가 붙은 적의 사망 보상. 자식은 접두사·경험치를 갖지 않는다. */
+  /** 분열 접두사가 붙은 적의 사망 보상. 자식은 접두사를 갖지 않는다. */
   createSplitChildren(): Enemy[] {
     if (this.affix !== 'split' || this.kind === 'boss') return []
     return Array.from({ length: ELITE_AFFIX.split.childCount }, () => {
-      const child = new Enemy(this.kind, this.artSet, this.pos.x, this.pos.z, 1, 1, 1, 1, false, undefined, this.stageTier)
+      const child = new Enemy(this.kind, this.artSet, this.pos.x, this.pos.z, 1, 1, 1, false, undefined, this.stageTier)
       child.maxHp = this.maxHp * ELITE_AFFIX.split.hpMultiplier
       child.hp = child.maxHp
       child.speed = this.speed
       child.damage = this.damage
-      child.xp = 0
       child.radius = this.radius * ELITE_AFFIX.split.scaleMultiplier
       child.group.scale.setScalar(ELITE_AFFIX.split.scaleMultiplier)
       return child

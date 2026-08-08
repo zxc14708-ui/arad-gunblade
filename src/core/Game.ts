@@ -463,7 +463,7 @@ export class Game {
     this.state = 'clear'
     this.audio.levelup()
     const reward = this.meta.grantStageClear(this.run.cfg.reward)
-    this.hud.showStageClear(this.run.stage, this.kills, this.run.gold, this.player.level, this.run.isLastStage, reward)
+    this.hud.showStageClear(this.run.stage, this.kills, this.run.gold, this.run.isLastStage, reward)
   }
 
   /**
@@ -1082,7 +1082,7 @@ export class Game {
         const spawn = this.spawnQueue.shift()!
         const p = this.safeSpawnPoint()
         const plan = this.curPlan!
-        const e = new Enemy(spawn.kind, spawn.artSet, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.xpMul, plan.kind === 'elite', plan.affix, this.run.stage)
+        const e = new Enemy(spawn.kind, spawn.artSet, p.x, p.z, plan.hpMul, plan.dmgMul, plan.speedMul, plan.kind === 'elite', plan.affix, this.run.stage)
         this.enemies.push(e)
         this.scene.add(e.group)
         this.effects.burst(new THREE.Vector3(p.x, 1, p.z), 0x8a4a6a, 8, 5)
@@ -1103,8 +1103,7 @@ export class Game {
     this.resolveBullets()
     this.resolveEnemyBullets()
 
-    const got = this.pickups.update(worldDt, this.player.pos, this.player.stats.magnetRange, CONFIG.xp.orbSpeed)
-    if (got.xp > 0) this.gainXp(got.xp * this.player.stats.xpGain)
+    const got = this.pickups.update(worldDt, this.player.pos, CONFIG.economy.goldPickupSpeed)
     if (got.gold > 0) this.run.addGold(got.gold)
 
     // ── 방 장식 / 상호작용 오브젝트 ──
@@ -1136,7 +1135,7 @@ export class Game {
       this.player.gun.name,
       this.player.coreSlots.get('shot') === 'last_bullet',
     )
-    this.hud.setStats(this.player.level, this.mode === 'town' ? 0 : this.run.depth, this.kills, this.run.gold)
+    this.hud.setStats(this.mode === 'town' ? 0 : this.run.depth, this.kills, this.run.gold)
 
     const damageEvent = this.player.consumeDamageEvent()
     if (damageEvent === 'ward') this.hud.banner_('수호막이 피해를 막았습니다!')
@@ -1242,7 +1241,6 @@ export class Game {
           plan.hpMul,
           plan.dmgMul,
           plan.speedMul,
-          plan.xpMul,
           false,
           undefined,
           this.run.stage,
@@ -1674,8 +1672,7 @@ export class Game {
       }
     }
 
-    // 경험치 + 골드 드랍
-    this.pickups.dropXp(e.pos.x, e.pos.z, e.xp)
+    // 골드 드랍
     const gold = e.kind === 'boss' ? 120 + Math.floor(Math.random() * 60) : Math.max(2, Math.round(e.maxHp * 0.22))
     this.pickups.dropGold(e.pos.x, e.pos.z, gold)
 
@@ -1704,7 +1701,6 @@ export class Game {
     if (cur) cur.count++
     else this.acquired.set(u.id, { upgrade: u, count: 1 })
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
-    this.hud.setXp(this.player.xp, this.player.xpToNext)
     return true
   }
 
@@ -1733,45 +1729,10 @@ export class Game {
     onDone(this.applyTrait(u))
   }
 
-  private gainXp(amount: number) {
-    const leveled = this.player.gainXp(amount)
-    this.hud.setXp(this.player.xp, this.player.xpToNext)
-    if (leveled) this.openLevelUp()
-  }
-
-  private openLevelUp() {
-    this.state = 'levelup'
-    this.input.clearAll()
-    this.audio.levelup()
-    const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
-    if (choices.length === 0) {
-      while (this.player.gainXp(0)) {
-        // 특성이 모두 소진된 뒤 남은 경험치는 선택창 없이 정상적으로 처리한다.
-      }
-      this.hud.setXp(this.player.xp, this.player.xpToNext)
-      this.state = 'play'
-      this.hud.banner_('모든 특성이 최대 스택에 도달했습니다')
-      this.clock.getDelta()
-      return
-    }
-    this.hud.showLevelUp('LEVEL UP!', '강화할 능력을 선택하세요', choices, (u) => {
-      this.offerTrait(u, () => {
-        // 레벨이 더 쌓였으면 연속 처리
-        if (this.player.gainXp(0)) {
-          this.hud.setXp(this.player.xp, this.player.xpToNext)
-          this.openLevelUp()
-        } else {
-          this.state = 'play'
-          this.clock.getDelta()
-        }
-      })
-    })
-  }
-
   private gameOver() {
     this.state = 'gameover'
     this.audio.gameOver()
     this.hud.setPrompt(null)
-    this.hud.showGameOver(this.run.depth, this.kills, this.run.gold, this.player.level)
+    this.hud.showGameOver(this.run.depth, this.kills, this.run.gold)
   }
 }

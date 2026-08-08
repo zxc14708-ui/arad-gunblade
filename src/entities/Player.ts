@@ -31,8 +31,6 @@ export interface PlayerStats {
   critChance: number
   critMult: number
   lifesteal: number
-  magnetRange: number
-  xpGain: number
 }
 
 /** 특성이 누적하는 배수/가산치 + 레전더리 특수 효과 플래그 */
@@ -52,8 +50,6 @@ export interface Mods {
   critChance: number // +
   critMult: number // 기본 2, +
   lifesteal: number // +
-  magnetRange: number // ×
-  xpGain: number // ×
   // 레전더리 특수
   explodeOnKill: number // >0이면 처치 시 폭발 데미지
   swordReloads: boolean // 검을 휘두르면 총 즉시 장전 (총검일체 전용, 발도장전은 기본 메커니즘으로 이관)
@@ -67,7 +63,7 @@ function freshMods(): Mods {
   return {
     gunDamage: 1, gunCooldown: 1, bulletSpeed: 1, reloadTime: 1, pierce: 0, multishot: 0,
     swordDamage: 1, swordRange: 1, swordCooldown: 1, moveSpeed: 1, dashCooldown: 1,
-    maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0, magnetRange: 1, xpGain: 1,
+    maxHp: 0, critChance: 0, critMult: 2, lifesteal: 0,
     explodeOnKill: 0, swordReloads: false, dashStrike: 0,
     // '발도장전'(lg_quickdraw)이 기본 메커니즘으로 승격됐다(작업 지시
     // slot_system_phase1 커밋 3) — 검 적중 직후 총알 3발에 항상 +30% 피해.
@@ -113,9 +109,6 @@ export class Player {
   /** 마지막 피격의 영구 성장 이벤트. HUD 연출에서만 읽고 게임 로직에는 의존하지 않는다. */
   lastDamageEvent: 'none' | 'ward' | 'hit' | 'revive' | 'dead' | 'dashBlock' = 'none'
 
-  level = 1
-  xp = 0
-  xpToNext = CONFIG.xp.baseToLevel
   alive = true
 
   private gunTimer = 0
@@ -197,8 +190,6 @@ export class Player {
       critChance: Math.min(1, 0.1 + m.critChance),
       critMult: m.critMult,
       lifesteal: m.lifesteal,
-      magnetRange: CONFIG.xp.orbMagnetRange * m.magnetRange,
-      xpGain: m.xpGain,
     }
     this.magSize = this.stats.magSize
     if (this.hp > 0) this.hp = Math.min(this.hp, this.stats.maxHp)
@@ -633,16 +624,5 @@ export class Player {
 
   heal(amount: number) {
     this.hp = Math.min(this.stats.maxHp, this.hp + amount)
-  }
-
-  gainXp(amount: number): boolean {
-    this.xp += amount
-    if (this.xp >= this.xpToNext) {
-      this.xp -= this.xpToNext
-      this.level++
-      this.xpToNext = Math.round(this.xpToNext * CONFIG.xp.growth)
-      return true // 레벨업
-    }
-    return false
   }
 }

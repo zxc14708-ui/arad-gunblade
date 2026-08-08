@@ -35,7 +35,6 @@ export interface RoomPlan {
   hpMul: number
   dmgMul: number
   speedMul: number
-  xpMul: number
   affix?: EliteAffix
   x: number
   y: number
@@ -112,7 +111,6 @@ export interface StageDef {
   difficulty: {
     baseHp: number
     baseDmg: number
-    baseXp: number
     /** depth 1당 hpMul 증가율 (기존 하드코딩 0.17) */
     depthHpStep: number
     /** depth 1당 dmgMul 증가율 (기존 하드코딩 0.1) */
@@ -147,7 +145,7 @@ export const STAGES: StageDef[] = [
     id: 1,
     name: '검은 숲 지하',
     normalRooms: 6,
-    difficulty: { baseHp: 1.0, baseDmg: 1.0, baseXp: 1.0, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    difficulty: { baseHp: 1.0, baseDmg: 1.0, depthHpStep: 0.17, depthDmgStep: 0.1 },
     // 기존 combat 블록: depth>=3 && r<0.2 → brute, depth>=2 && r<0.5 → shooter, else imp.
     // enemiesFor()의 누적 임계값 검사로 그대로 옮겼다(표본 검사로 확인, 최종 보고 참고).
     enemies: [
@@ -183,10 +181,9 @@ export const STAGES: StageDef[] = [
   // 이어가기 전환 흐름(마을을 거치지 않고 다음 스테이지로 넘어가는 것)을
   // 검증하려면 STAGES가 최소 5개 있어야 하는데 아직 실제 스테이지 2~5
   // 콘텐츠(적 구성/아트/방크기)가 없어 채워 넣었다. difficulty(baseHp/
-  // baseDmg/baseXp 램프)만 스테이지별로 다르고 나머지(enemies/boss/art/
+  // baseDmg 램프)만 스테이지별로 다르고 나머지(enemies/boss/art/
   // roomSize/reward)는 스테이지 1과 완전히 동일하다 — 실제 콘텐츠가
-  // 정해지면 이 4개 항목을 교체해야 한다. baseXp = 1 + (stage-1) * 0.15
-  // 공식(작업 지시 커밋3)을 그대로 따랐다. baseHp/baseDmg 램프는 depth당
+  // 정해지면 이 4개 항목을 교체해야 한다. baseHp/baseDmg 램프는 depth당
   // 증가폭(depthHpStep 0.17 / depthDmgStep 0.1)과 같은 폭을 스테이지
   // 단위로도 적용한 것으로, 실제 밸런스 수치가 아니라 전환 흐름 테스트용
   // placeholder다.
@@ -194,7 +191,7 @@ export const STAGES: StageDef[] = [
     id: 2,
     name: '안개 습지 · 스테이지 2',
     normalRooms: 6,
-    difficulty: { baseHp: 1.17, baseDmg: 1.1, baseXp: 1.15, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    difficulty: { baseHp: 1.17, baseDmg: 1.1, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
       { kind: 'suicide', artSet: 's2Suicide', weight: 0.22, minDepth: 2 },
       { kind: 'brute', artSet: 's2Brute', weight: 0.42, minDepth: 3 },
@@ -225,7 +222,7 @@ export const STAGES: StageDef[] = [
     id: 3,
     name: '독버섯 군락 · 스테이지 3',
     normalRooms: 6,
-    difficulty: { baseHp: 1.34, baseDmg: 1.2, baseXp: 1.3, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    difficulty: { baseHp: 1.34, baseDmg: 1.2, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
       { kind: 'suicide', artSet: 's3Suicide', weight: 0.25, minDepth: 2 },
       { kind: 'brute', artSet: 's3Brute', weight: 0.45, minDepth: 3 },
@@ -256,7 +253,7 @@ export const STAGES: StageDef[] = [
     id: 4,
     name: '불타는 주둔지 · 스테이지 4',
     normalRooms: 6,
-    difficulty: { baseHp: 1.51, baseDmg: 1.3, baseXp: 1.45, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    difficulty: { baseHp: 1.51, baseDmg: 1.3, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
       { kind: 'fireMage', artSet: 's4FireMage', weight: 0.24, minDepth: 3 },
       { kind: 'shooter', artSet: 's4Shooter', weight: 0.62, minDepth: 2 },
@@ -286,7 +283,7 @@ export const STAGES: StageDef[] = [
     id: 5,
     name: '얼어붙은 계곡 · 스테이지 5',
     normalRooms: 6,
-    difficulty: { baseHp: 1.68, baseDmg: 1.4, baseXp: 1.6, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    difficulty: { baseHp: 1.68, baseDmg: 1.4, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
       { kind: 'iceMage', artSet: 's5IceMage', weight: 0.2, minDepth: 3 },
       { kind: 'frostSuicide', artSet: 's5FrostSuicide', weight: 0.4, minDepth: 2 },
@@ -317,7 +314,7 @@ export const STAGES: StageDef[] = [
     id: 6,
     name: '망자의 숲 · 스테이지 6',
     normalRooms: 6,
-    difficulty: { baseHp: 1.85, baseDmg: 1.5, baseXp: 1.75, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    difficulty: { baseHp: 1.85, baseDmg: 1.5, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
       { kind: 'summoner', artSet: 's6Summoner', weight: 0.2, minDepth: 3 },
       { kind: 'shooter', artSet: 's6Shooter', weight: 0.62, minDepth: 2 },
@@ -341,7 +338,7 @@ export const STAGES: StageDef[] = [
     id: 7,
     name: '차원의 문턱 · 스테이지 7',
     normalRooms: 6,
-    difficulty: { baseHp: 2.02, baseDmg: 1.6, baseXp: 1.9, depthHpStep: 0.17, depthDmgStep: 0.1 },
+    difficulty: { baseHp: 2.02, baseDmg: 1.6, depthHpStep: 0.17, depthDmgStep: 0.1 },
     enemies: [
       { kind: 'voidMage', artSet: 's7VoidMage', weight: 0.18, minDepth: 3 },
       { kind: 'charger', artSet: 's7Charger', weight: 0.38, minDepth: 2 },
@@ -437,9 +434,6 @@ export class RunState {
       hpMul: c.difficulty.baseHp * (1 + (depth - 1) * c.difficulty.depthHpStep),
       dmgMul: c.difficulty.baseDmg * (1 + (depth - 1) * c.difficulty.depthDmgStep),
       speedMul: Math.min(1.7, 1 + (depth - 1) * 0.035),
-      // 스테이지 배수만 적용(depth 배수는 이번 작업 범위 밖) — 스테이지 정의의
-      // difficulty.baseXp 자체가 그 배수다. 스테이지 1은 1.0 = 기존과 동일.
-      xpMul: c.difficulty.baseXp,
     }
   }
 
@@ -476,7 +470,7 @@ export class RunState {
         const e = this.enemiesFor(depth)
         enemies.push({ kind: e.kind, artSet: e.artSet })
       }
-      return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08, xpMul: m.xpMul }
+      return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
     }
     if (kind === 'treasure') {
       const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))

@@ -52,7 +52,9 @@ export interface Upgrade {
  * 내렸다 — 지시문 표에 있는 그대로).
  */
 const RAW_POOL: Upgrade[] = [
-  // ── 각인(sigil) 8종 — 스택 상한 3, 전부 가산/상시 배수 ──
+  // ── 각인(sigil) 7종 — 스택 상한 3, 전부 가산/상시 배수 ──
+  // '전투의 깨달음'(xp_gain, 경험치 획득량 +10%)은 작업 지시 P7 커밋1에서
+  // 경험치 체계 자체가 폐지되며 함께 삭제됐다(8→7종).
   { id: 'hp', name: '강인한 육체', desc: '최대 체력 +20, 완전 회복', icon: '❤️', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.maxHp += 20; p.recompute(); p.hp = p.stats.maxHp } },
   { id: 'speed', name: '경신법', desc: '이동 속도 +8%', icon: '👟', slot: 'sigil', maxStacks: 3,
@@ -63,8 +65,6 @@ const RAW_POOL: Upgrade[] = [
     apply: (p) => { p.mods.critMult += 0.4; p.recompute() } },
   { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 4% 회복', icon: '🩸', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.lifesteal += 0.04; p.recompute() } },
-  { id: 'xp_gain', name: '전투의 깨달음', desc: '경험치 획득량 +10%', icon: '📘', slot: 'sigil', maxStacks: 3,
-    apply: (p) => { p.mods.xpGain *= 1.1; p.recompute() } },
   { id: 'reload', name: '신속 장전', desc: '장전 시간 -15%', icon: '🔁', slot: 'sigil', maxStacks: 3,
     apply: (p) => { p.mods.reloadTime *= 0.85; p.recompute() } },
   { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해, 스택당 +14', icon: '💣', slot: 'sigil', maxStacks: 3,

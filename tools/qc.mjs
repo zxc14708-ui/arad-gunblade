@@ -378,7 +378,7 @@ const STEPS = [
         g.player.pos.set(0, 0, 0)
       })
       for (let i = 0; i < MELEE_TRIALS; i++) {
-        await dismissLevelUp(p) // 클러스터 처치로 레벨업 모달이 뜨면 게임 시계가 멈춘다
+        await dismissLevelUp(p) // 다른 트리거(상자/제련소 등)로 열린 모달이 남아있으면 게임 시계가 멈춘다
         const target = await p.evaluate(() => {
           const g = window.__game
           g.debugClearEnemies()
@@ -1191,10 +1191,9 @@ const STEPS = [
         }
       }, ricochetSetup)
 
-      // 도탄 서브테스트에서 브루트 5마리를 죽여 XP를 얻는다 — 레벨업 조건을
-      // 채우면 다음 프레임에 'levelup' 모달이 뜨고 state !== 'play'가 되어
-      // simClock이 멈춘다(바로 다음 잔영 서브테스트의 waitGame이 "게임 시계
-      // 정지"로 실패하던 원인). 대시 서브테스트를 시작하기 전에 반드시 닫는다.
+      // 다른 트리거(상자/제련소 등)로 'levelup' 모달이 남아있으면 state !== 'play'가
+      // 되어 simClock이 멈춘다(바로 다음 잔영 서브테스트의 waitGame이 "게임 시계
+      // 정지"로 실패하던 원인) — 대시 서브테스트를 시작하기 전에 반드시 닫는다.
       await dismissLevelUp(p)
 
       // ── 잔영 — 대시 무적 피격 시 쿨 초기화(1회), 피격 후 무적 중에는 초기화 안 됨 ──
@@ -1325,10 +1324,9 @@ const STEPS = [
     needs: 'dungeon',
     what: '화염구 고블린 — 적정 거리에서 측면 이동하고 커진 화염구(2.2배)를 발사하는가',
     async run(p) {
-      // XP는 처치 즉시가 아니라 오브가 자석 범위 안으로 들어와야 들어온다 —
-      // 앞선 스텝의 처치로 얻은 XP가 이 스텝 도중 늦게 레벨업 모달을 띄우면
-      // state!=='play'가 돼 게임 시계가 멈춘다(오늘 이 세션에서 반복 확인된
-      // 패턴). 다른 대부분의 스텝처럼 시작할 때 닫고 들어간다.
+      // 다른 트리거(상자/제련소 등)로 'levelup' 모달이 열린 채 넘어오면
+      // state!=='play'가 돼 게임 시계가 멈춘다 — 다른 대부분의 스텝처럼
+      // 시작할 때 닫고 들어간다.
       await dismissLevelUp(p)
       await p.evaluate(() => {
         const g = window.__game
@@ -1636,8 +1634,8 @@ const STEPS = [
     needs: 'dungeon',
     what: '보스 돌진 — 예고(0.7s)→돌진(1.0s,3.5배속)→경직(1.2s) 타이밍',
     async run(p) {
-      // 09-combat 에서 처치한 적의 경험치로 레벨업 모달이 뜬 채 남아있을 수
-      // 있다 — state가 'levelup'이면 Game의 프레임 루프가 적을 갱신하지 않아
+      // 다른 트리거(상자/제련소 등)로 'levelup' 모달이 뜬 채 남아있을 수 있다 —
+      // state가 'levelup'이면 Game의 프레임 루프가 적을 갱신하지 않아
       // (this.state==='play' 로만 진행) 이후 모든 보스/엘리트 단계가 멈춰
       // 보인다. 항상 먼저 치워야 한다.
       await dismissLevelUp(p)
@@ -1833,7 +1831,10 @@ const STEPS = [
           swiftSpeed: window.__qcSwiftSpeed,
           playerHpBefore: window.__qcPlayerHpBefore,
           playerHpAfter: g.player.hp,
-          splitChildren: g.enemies.filter((e) => e.kind === 'imp' && !e.affix && e.xp === 0).length,
+          // 분열 자식은 kind가 부모와 같고(imp) 접두사를 물려받지 않는다 — 이 스텝의
+          // 다른 두 대조용 개체(normal/swift)는 둘 다 affix가 있어 걸러진다. 예전엔
+          // e.xp === 0도 함께 검사했지만 경험치 체계 자체가 폐지됐다(작업 지시 P7 커밋1).
+          splitChildren: g.enemies.filter((e) => e.kind === 'imp' && !e.affix).length,
         }
       })
       if (r.swiftSpeed <= r.normalSpeed) return `신속 접두사인데 속도가 더 안 빠름 (일반:${r.normalSpeed} 신속:${r.swiftSpeed})`
@@ -1844,16 +1845,15 @@ const STEPS = [
   },
   {
     name: 'run-reset',
-    what: '런 상태 초기화 — 마을 복귀 시 레벨/경험치/특성/골드 초기화, 시작 특성 제단 재사용 가능, 메타 성장·무기 해금은 유지',
+    what: '런 상태 초기화 — 마을 복귀 시 특성/골드 초기화, 시작 특성 제단 재사용 가능, 메타 성장·무기 해금은 유지',
     async run(p) {
       await dismissLevelUp(p)
       await p.evaluate(() => {
         const g = window.__game
         // 던전을 뛰어 쌓일 런 범위 상태를 결정적으로 채워둔 뒤, 스테이지
         // 클리어 화면의 '계속하기' 버튼이 호출하는 것과 동일한 enterTown()을
-        // 직접 불러 마을 복귀 시점의 리셋 경계를 검증한다.
-        g.player.level = 7
-        g.player.xp = 42
+        // 직접 불러 마을 복귀 시점의 리셋 경계를 검증한다. 경험치/레벨은
+        // 작업 지시 P7 커밋1에서 폐지됐다 — 남은 런 범위 상태만 검증한다.
         g.player.recordTrait('qc-test-trait')
         g.run.addGold(500)
         g.startingTraitTaken = true
@@ -1866,8 +1866,6 @@ const STEPS = [
     check: async (p) => {
       return p.evaluate(() => {
         const g = window.__game
-        if (g.player.level !== 1) return `레벨이 초기화되지 않음 (${g.player.level})`
-        if (g.player.xp !== 0) return `경험치가 초기화되지 않음 (${g.player.xp})`
         if (g.player.traitStacks.size !== 0) return `특성 스택이 초기화되지 않음 (${g.player.traitStacks.size}개 남음)`
         if (g.run.gold !== 0) return `골드가 초기화되지 않음 (${g.run.gold})`
         if (g.startingTraitTaken !== false) return '시작 특성 제단이 다시 사용 가능한 상태가 아님'
@@ -2026,10 +2024,11 @@ const STEPS = [
 ]
 
 /**
- * 09-combat 등에서 처치한 적의 경험치로 레벨업/보스보상 모달(state==='levelup')이
- * 열린 채 남아있으면 Game의 프레임 루프가 적을 갱신하지 않는다(this.state==='play'
- * 로만 진행) — 보스/엘리트 디버그 단계 진입 전에 항상 치운다. 모달이 없으면 아무것도
- * 안 한다.
+ * 상자/제련소/엘리트 보상 등 특성 선택 모달(state==='levelup' — 경험치 체계는
+ * 작업 지시 P7 커밋1에서 폐지됐지만 상태 이름은 그대로다, 모든 특성 선택
+ * 트리거가 공유하는 UI라서)이 열린 채 남아있으면 Game의 프레임 루프가 적을
+ * 갱신하지 않는다(this.state==='play' 로만 진행) — 다음 스텝 진입 전에 항상
+ * 치운다. 모달이 없으면 아무것도 안 한다.
  */
 async function dismissLevelUp(p) {
   for (let i = 0; i < 5; i++) {

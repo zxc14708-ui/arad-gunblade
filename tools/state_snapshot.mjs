@@ -128,10 +128,10 @@ function writeSnapshot(m) {
   L.push('')
   L.push(`기준값: HP ${CONFIG.enemy.baseHp} / 속도 ${CONFIG.enemy.baseSpeed} / 피해 ${CONFIG.enemy.baseDamage}`)
   L.push('')
-  L.push('| 종류 | HP배율 | 속도배율 | 피해배율 | XP | 반경 | 원거리 |')
-  L.push('|---|---:|---:|---:|---:|---:|---|')
+  L.push('| 종류 | HP배율 | 속도배율 | 피해배율 | 반경 | 원거리 |')
+  L.push('|---|---:|---:|---:|---:|---|')
   for (const [kind, d] of Object.entries(DEFS)) {
-    L.push(`| ${kind} | ${d.hp} | ${d.speed} | ${d.damage} | ${d.xp} | ${d.radius} | ${d.ranged ? `O (쿨 ${d.shootCd}s)` : '-'} |`)
+    L.push(`| ${kind} | ${d.hp} | ${d.speed} | ${d.damage} | ${d.radius} | ${d.ranged ? `O (쿨 ${d.shootCd}s)` : '-'} |`)
   }
   L.push('')
   L.push(`엘리트 접두사 ${ELITE_AFFIXES.length}종: ${ELITE_AFFIXES.join(', ')} — 개체가 아니라 방 단위로 적용된다.`)

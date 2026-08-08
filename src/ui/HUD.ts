@@ -1,4 +1,4 @@
-import { Upgrade, SLOT_LABEL } from '../systems/Upgrades'
+import { Upgrade, SLOT_LABEL, CORE_SLOTS } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
@@ -20,13 +20,11 @@ export class HUD {
   root: HTMLDivElement
   floaterLayer: HTMLDivElement
 
-  private elLevel!: HTMLElement
   private elWave!: HTMLElement
   private elScore!: HTMLElement
   private elKills!: HTMLElement
   private hpFill!: HTMLElement
   private hpLabel!: HTMLElement
-  private xpFill!: HTMLElement
   private dashRing!: HTMLElement
   private banner!: HTMLElement
   private bossBar!: HTMLElement
@@ -53,13 +51,11 @@ export class HUD {
     container.appendChild(this.root)
     this.floaterLayer = this.root
 
-    this.elLevel = this.q('#sLevel')
     this.elWave = this.q('#sWave')
     this.elScore = this.q('#sGold')
     this.elKills = this.q('#sKills')
     this.hpFill = this.q('#hpFill')
     this.hpLabel = this.q('#hpLabel')
-    this.xpFill = this.q('#xpFill')
     this.dashRing = this.q('#dashRing')
     this.banner = this.q('#banner')
     this.bossBar = this.q('#bossBar')
@@ -82,7 +78,6 @@ export class HUD {
     return `
       <div class="hud-top">
         <div class="stat-row">
-          <span>Lv <b id="sLevel">1</b></span>
           <span id="progWrap">방 <b id="sWave">0</b></span>
           <span>처치 <b id="sKills">0</b></span>
           <span class="gold-stat">🪙 <b id="sGold">0</b></span>
@@ -101,7 +96,6 @@ export class HUD {
 
       <div class="hud-bars">
         <div class="bar" id="hpBar"><div class="fill" id="hpFill" style="width:100%"></div><div class="label" id="hpLabel">100 / 100</div></div>
-        <div class="bar" id="xpBar"><div class="fill" id="xpFill" style="width:0%"></div></div>
       </div>
 
       <div class="hud-ammo" id="ammoBox">
@@ -346,28 +340,69 @@ export class HUD {
         <div class="eq"><span class="eqi">${equip.swordIcon}</span><span>${equip.sword}</span></div>`
     }
 
-    // 획득 특성 목록
+    this.renderOwnedTraits(traits)
+    this.settingsOv.classList.add('show')
+  }
+
+  /**
+   * 보유 각인 패널(작업 지시 P7 커밋1) — 경험치/레벨이 사라지면서 각인
+   * 획득·승급이 유일한 성장 표시가 됐다. 예전엔 스택 순으로 정렬한 플랫
+   * 목록이라 슬롯 구분이 옅은 좌측 테두리 색뿐이었다 — 핵심 슬롯(베기/
+   * 사격/대시)을 항목별로 항상 보여주고(빈 슬롯은 "비어있음"), 각인은
+   * 별도 섹션에 스택 수와 함께 나열해 슬롯별 구분과 이름이 뚜렷이 읽히게
+   * 한다. 'skill' 슬롯은 P6 커밋2에서 액티브 스킬이 전면 폐지된 뒤로 채울
+   * 수 있는 특성이 하나도 없다(3축 재편 전까지) — 항상 빈 채로 표시해봐야
+   * 혼동만 주므로 이 패널에서는 제외한다.
+   */
+  private renderOwnedTraits(traits: { upgrade: Upgrade; count: number }[]) {
     const box = this.q('#traits')
     const count = this.q('#traitsCount')
     box.innerHTML = ''
-    if (traits.length === 0) {
-      box.innerHTML = '<div class="trait-empty">아직 획득한 특성이 없습니다. 레벨업으로 특성을 얻으세요.</div>'
-      count.textContent = ''
+    count.textContent = traits.length > 0 ? `(${traits.length}종)` : ''
+
+    const bySlot = new Map<string, { upgrade: Upgrade; count: number }>()
+    const sigils: { upgrade: Upgrade; count: number }[] = []
+    for (const t of traits) {
+      if (t.upgrade.slot === 'sigil') sigils.push(t)
+      else bySlot.set(t.upgrade.slot, t)
+    }
+
+    const section = document.createElement('div')
+    section.className = 'trait-section'
+    section.innerHTML = '<div class="trait-section-head">핵심 슬롯</div>'
+    for (const slot of CORE_SLOTS) {
+      if (slot === 'skill') continue
+      const t = bySlot.get(slot)
+      const el = document.createElement('div')
+      el.className = `trait slot-${slot}${t ? '' : ' trait-slot-empty'}`
+      el.innerHTML = t
+        ? `<span class="ticon">${t.upgrade.icon}</span>
+           <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
+           <span class="tslot">${SLOT_LABEL[slot]}</span>`
+        : `<span class="ticon">—</span>
+           <span class="tmain"><span class="tname">비어있음</span></span>
+           <span class="tslot">${SLOT_LABEL[slot]}</span>`
+      section.appendChild(el)
+    }
+    box.appendChild(section)
+
+    const sigilSection = document.createElement('div')
+    sigilSection.className = 'trait-section'
+    sigilSection.innerHTML = '<div class="trait-section-head">각인</div>'
+    if (sigils.length === 0) {
+      sigilSection.innerHTML += '<div class="trait-empty">아직 획득한 각인이 없습니다. 전투·상자 보상으로 얻으세요.</div>'
     } else {
-      count.textContent = `(${traits.length}종)`
-      // 레벨 높은 순 정렬
-      const sorted = [...traits].sort((a, b) => b.count - a.count)
-      for (const t of sorted) {
+      for (const t of [...sigils].sort((a, b) => b.count - a.count)) {
         const el = document.createElement('div')
-        el.className = `trait slot-${t.upgrade.slot}`
+        el.className = 'trait slot-sigil'
         el.innerHTML = `
           <span class="ticon">${t.upgrade.icon}</span>
           <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
-          <span class="tlv">Lv.${t.count}</span>`
-        box.appendChild(el)
+          <span class="tlv">×${t.count}</span>`
+        sigilSection.appendChild(el)
       }
     }
-    this.settingsOv.classList.add('show')
+    box.appendChild(sigilSection)
   }
 
   closeSettings() {
@@ -402,8 +437,7 @@ export class HUD {
     this.ammoText.textContent = reloading ? `장전 중… ${Math.round(ratio * 100)}%` : `${ammo} / ${mag}`
   }
 
-  setStats(level: number, wave: number, kills: number, gold: number) {
-    this.elLevel.textContent = String(level)
+  setStats(wave: number, kills: number, gold: number) {
     this.elWave.textContent = String(wave)
     this.elKills.textContent = String(kills)
     this.elScore.textContent = String(gold)
@@ -471,10 +505,6 @@ export class HUD {
     const pct = Math.max(0, (hp / max) * 100)
     this.hpFill.style.width = pct + '%'
     this.hpLabel.textContent = `${Math.ceil(hp)} / ${max}`
-  }
-
-  setXp(xp: number, toNext: number) {
-    this.xpFill.style.width = Math.min(100, (xp / toNext) * 100) + '%'
   }
 
   setDash(ratio: number, ready: boolean) {
@@ -728,17 +758,17 @@ export class HUD {
     }
   }
 
-  showStageClear(stage: number, kills: number, gold: number, level: number, chapterDone: boolean, reward?: { faint: number; decent: number; strong: number; tokens: number }) {
+  showStageClear(stage: number, kills: number, gold: number, chapterDone: boolean, reward?: { faint: number; decent: number; strong: number; tokens: number }) {
     this.q('#clearStats').innerHTML = `
-      스테이지 <b>${stage}</b> 클리어! &nbsp;·&nbsp; 레벨 <b>${level}</b><br/>
+      스테이지 <b>${stage}</b> 클리어!<br/>
       처치 <b>${kills}</b> &nbsp;·&nbsp; 획득 골드 <b>🪙 ${gold}</b>${reward ? `<br/><span class="clear-meta">◇ ${reward.faint} &nbsp;◆ ${reward.decent} &nbsp;✦ ${reward.strong} &nbsp; 모험가 증표 ${reward.tokens}</span>` : ''}`
     ;(this.q('#clearBtn') as HTMLButtonElement).textContent = chapterDone ? '마을로 귀환' : '다음 스테이지로'
     this.q<HTMLDivElement>('#clearOv').classList.add('show')
   }
 
-  showGameOver(wave: number, kills: number, score: number, level: number) {
+  showGameOver(wave: number, kills: number, score: number) {
     this.q('#overStats').innerHTML = `
-      도달 웨이브 <b>${wave}</b> &nbsp;·&nbsp; 레벨 <b>${level}</b><br/>
+      도달 웨이브 <b>${wave}</b><br/>
       처치 <b>${kills}</b> &nbsp;·&nbsp; 최종 점수 <b>${score}</b>`
     this.overOv.classList.add('show')
   }

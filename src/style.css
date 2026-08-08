@@ -89,7 +89,7 @@ canvas.pixelated {
   color: var(--gold);
 }
 
-/* ===== 좌하단 체력/경험치 ===== */
+/* ===== 좌하단 체력 ===== */
 .hud-bars {
   position: absolute;
   left: 20px;
@@ -122,13 +122,6 @@ canvas.pixelated {
 }
 #hpFill {
   background: linear-gradient(90deg, #b02a2a, #e0554f);
-}
-#xpFill {
-  background: linear-gradient(90deg, #2a7fb0, #6ad0ff);
-  height: 12px;
-}
-#xpBar {
-  height: 12px;
 }
 
 /* 대시 게이지 */
@@ -618,7 +611,19 @@ canvas.pixelated {
 .traits {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
+.trait-section {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+.trait-section-head {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  color: #8a92a8;
+  text-transform: uppercase;
 }
 .trait-empty {
   font-size: 13px;
@@ -640,8 +645,15 @@ canvas.pixelated {
 .trait.slot-dash { border-left-color: #38d1d1; }
 .trait.slot-skill { border-left-color: #ff6bcb; }
 .trait.slot-sigil { border-left-color: #9098a8; }
+.trait.trait-slot-empty {
+  background: rgba(255, 255, 255, 0.015);
+  opacity: 0.55;
+}
+.trait.trait-slot-empty .tname { color: #888; font-weight: normal; }
 .trait .ticon {
   font-size: 24px;
+  width: 24px;
+  text-align: center;
 }
 .trait .tmain {
   flex: 1;
@@ -657,11 +669,16 @@ canvas.pixelated {
   font-size: 12px;
   color: #b8b0a0;
 }
-.trait .tlv {
-  font-size: 15px;
+.trait .tlv, .trait .tslot {
+  font-size: 13px;
   font-weight: bold;
   color: var(--gold);
   white-space: nowrap;
+}
+.trait .tslot {
+  color: #8a92a8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .btn.small {
   margin-top: 22px;
@@ -1040,10 +1057,6 @@ canvas.pixelated {
 }
 .bar .label {
   font-size: 17px;
-}
-#xpBar,
-#xpFill {
-  height: 16px;
 }
 
 .hud-dash {

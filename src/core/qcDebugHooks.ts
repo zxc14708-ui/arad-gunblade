@@ -225,7 +225,7 @@ export function installQcDebugHooks(game: Game) {
 
   api.debugSpawnBoss = () => {
     const g = internals(game)
-    const e = new Enemy('boss', 'boss', g.player.pos.x, g.player.pos.z - 6, 1, 1, 1, 1, false)
+    const e = new Enemy('boss', 'boss', g.player.pos.x, g.player.pos.z - 6, 1, 1, 1, false)
     g.enemies.push(e)
     g.scene.add(e.group)
     g.boss = e
@@ -235,10 +235,7 @@ export function installQcDebugHooks(game: Game) {
 
   api.debugSpawnEnemy = (kind) => {
     const g = internals(game)
-    const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 8, 1, 1, 1, 1, false)
-    // QC 전투의 처치가 레벨업 모달을 열어 이후 게임 시계를 멈추지 않게 한다.
-    // 실제 방에서 생성되는 적과 보상 수치는 전혀 바뀌지 않는다.
-    e.xp = 0
+    const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 8, 1, 1, 1, false)
     g.enemies.push(e)
     g.scene.add(e.group)
     return e
@@ -246,8 +243,7 @@ export function installQcDebugHooks(game: Game) {
 
   api.debugSpawnElite = (kind, affix) => {
     const g = internals(game)
-    const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 4, 1, 1, 1, 1, true, affix)
-    e.xp = 0
+    const e = new Enemy(kind, kind, g.player.pos.x, g.player.pos.z - 4, 1, 1, 1, true, affix)
     g.enemies.push(e)
     g.scene.add(e.group)
     return e

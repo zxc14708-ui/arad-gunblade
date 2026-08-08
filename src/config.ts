@@ -36,7 +36,6 @@ export const COLORS = {
   enemyBullet: 0xff5a7a,
   slash: 0xfff0c0,
   hit: 0xffb0b0,
-  xp: 0x6ad0ff,
 }
 
 export const CONFIG = {
@@ -94,7 +93,6 @@ export const CONFIG = {
     baseHp: 30,
     baseSpeed: 4.2,
     baseDamage: 10,
-    baseXp: 4,
     contactCooldown: 0.6,
     stagePatterns: {
       // shooter는 스테이지1부터 쓰는 기본 원거리 종류라 다른 kind처럼 전용
@@ -121,15 +119,12 @@ export const CONFIG = {
     roomDensity: 1.6,
   },
 
-  xp: {
-    orbMagnetRange: 4.5,
-    orbSpeed: 16,
-    baseToLevel: 12,
-    growth: 1.28, // 레벨당 필요 경험치 증가율
-  },
-
   // 골드 소비처 (DESIGN_LOG B5 2·3단계 — 잉여 골드 흡수용)
   economy: {
+    // 바닥 골드 픽업이 플레이어에게 끌려오는 속도/범위(작업 지시 P7 커밋1 —
+    // 경험치 체계 폐지로 픽업이 골드 하나만 남으면서 CONFIG.xp에서 옮겨왔다).
+    goldPickupSpeed: 16,
+    goldMagnetRange: 6,
     // 던전 제련소: 보유 특성을 같은 등급의 다른 특성으로 교체. 사용할 때마다 가격이
     // 오른다(런 단위 유지) — 가격 = 이전 가격 * ratio, 반올림은 매 단계 누적 적용.
     dungeonForgeBasePrice: 100,
