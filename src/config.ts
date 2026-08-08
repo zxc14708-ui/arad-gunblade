@@ -108,6 +108,10 @@ export const CONFIG = {
       charger: { triggerRange: 9, warning: 0.55, duration: 0.8, speedMultiplier: 3.1, damageMultiplier: 1.45 },
       bossSpecialChance: 0.38,
     },
+    // 보스 브레이크(작업 지시 P7 커밋3) — 체력 75%/25%(각각 런당 1회)에서
+    // 발동하는 기절 지속시간. 50%(2페이즈 진입)와 겹치지 않도록 임계를
+    // 나눴다 — Enemy.updateBoss() 참고.
+    bossBreak: { duration: 1.5 },
   },
 
   spawn: {

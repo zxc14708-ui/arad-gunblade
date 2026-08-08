@@ -16,6 +16,7 @@ export type EnemyAction =
   | { type: 'bossGroundFx'; effect: 'warning' | 'shockwave' | 'tealMagic'; position: THREE.Vector3; radius: number; duration: number }
   | { type: 'bossSlam'; position: THREE.Vector3; radius: number; damageMultiplier: number; effectDuration: number; phaseEntry: boolean }
   | { type: 'eliteRegenFx'; position: THREE.Vector3; radius: number; duration: number }
+  | { type: 'bossCancelWarning' }
 type BossSlamAction = Extract<EnemyAction, { type: 'bossSlam' }>
 export type DamageSource = 'ranged' | 'melee'
 
@@ -108,6 +109,13 @@ export class Enemy {
   private bossPhaseTwo = false
   private bossStaggerVulnerable = false
   private bossHistory: BossPattern[] = []
+  /** 보스 브레이크(작업 지시 P7 커밋3) — 체력 75%/25% 임계는 각각 런당 1회만 발동한다. */
+  private bossBreak75Used = false
+  private bossBreak25Used = false
+  /** 기절(작업 지시 P7 커밋3) — 지속시간 동안 이동·공격·사격이 멈춘다. 중첩은
+   * 갱신(덮어쓰기)이다 — 누적(+=)하면 반복 적용으로 무한 기절이 가능해진다.
+   * 플레이어에게는 이 개념이 없다(히트스톱에서 이미 조작 불능이 문제였다). */
+  private stunTimer = 0
   private lastHitTimer = -1
   private regenEffectTimer = 0
   private shield = 0
@@ -215,6 +223,7 @@ export class Enemy {
     if (this.hitFlash > 0) this.hitFlash -= dt
     if (this.contactTimer > 0) this.contactTimer -= dt
     if (this.markTimer > 0) this.markTimer -= dt
+    if (this.stunTimer > 0) this.stunTimer -= dt
     if (this.movementSlowTimer > 0) {
       this.movementSlowTimer -= dt
       if (this.movementSlowTimer <= 0) this.movementSlowMultiplier = 1
@@ -238,6 +247,11 @@ export class Enemy {
       const result = this.updateBoss(dt, dir, dist)
       actions = result.actions
       moving = result.moving
+    } else if (this.stunned) {
+      // 기절 — 이동·공격·사격 전부 멈춘다(작업 지시 P7 커밋3). 보스는 여기
+      // 오지 않는다 — updateBoss()가 브레이크(보스 전용 기절)를 직접
+      // 처리한다(패턴 취소·예고 이펙트 정리가 얽혀 있어서).
+      moving = false
     } else if (this.kind === 'suicide' || this.kind === 'frostSuicide') {
       const result = this.updateSuicide(dt, dir, dist)
       actions.push(...result.actions)
@@ -285,7 +299,7 @@ export class Enemy {
     const facing = this.kind === 'boss' && (this.bossState === 'chargeWarning' || this.bossState === 'charge')
       ? this.bossFacing
       : dir
-    this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, this.hitFlashCrit, bobY)
+    this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, this.hitFlashCrit, bobY, this.stunned)
     if (this.eliteBarFill) this.eliteBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.hp / this.maxHp))
     if (this.shieldBarFill) {
       this.shieldBarFill.visible = this.shield > 0
@@ -428,6 +442,12 @@ export class Enemy {
     const actions: EnemyAction[] = []
     let moving = false
 
+    // 브레이크로 기절 중이면 이동·공격·사격을 전부 멈춘다(작업 지시 P7
+    // 커밋3) — phase2/브레이크 임계 체크보다 먼저 확인해 기절 중엔 아무
+    // 임계도 재평가하지 않는다(이미 통과한 임계는 각 플래그로 막혀 있어
+    // 재평가해도 무해하지만, 조기 반환이 더 명확하다).
+    if (this.stunned) return { actions, moving }
+
     if (!this.bossPhaseTwo && this.hp <= this.maxHp * 0.5) {
       this.bossPhaseTwo = true
       const phaseShockwave = this.createBossSlamAction(true)
@@ -438,6 +458,23 @@ export class Enemy {
         radius: BOSS_PATTERN.slam.radius,
         duration: phaseShockwave.effectDuration,
       }, phaseShockwave)
+    }
+
+    // 보스 브레이크 — 75%/25%는 각각 런당 1회만 발동한다. 50%(2페이즈)와
+    // 겹치지 않도록 임계를 나눴다(작업 지시 원문 그대로 지켜야 하는 배치) —
+    // 한 번의 공격으로 두 임계를 동시에 통과해도(예: 80%→10%) 기절은 1회만.
+    let crossedBreak = false
+    if (!this.bossBreak75Used && this.hp <= this.maxHp * 0.75) {
+      this.bossBreak75Used = true
+      crossedBreak = true
+    }
+    if (!this.bossBreak25Used && this.hp <= this.maxHp * 0.25) {
+      this.bossBreak25Used = true
+      crossedBreak = true
+    }
+    if (crossedBreak) {
+      actions.push(...this.triggerBossBreak())
+      return { actions, moving }
     }
 
     switch (this.bossState) {
@@ -588,6 +625,30 @@ export class Enemy {
     this.bossStaggerVulnerable = vulnerable
   }
 
+  /**
+   * 보스 브레이크 발동(작업 지시 P7 커밋3) — 돌진·슬램 예고 중이면 즉시
+   * 취소한다(예고 이펙트도 함께 지워야 한다 — 안 지우면 예고만 뜬 채
+   * 공격이 영영 안 오는 유령 판정이 된다, Game.ts가 bossCancelWarning을
+   * 받아 지운다). 취소된 패턴 자체의 쿨타임은 없다 — 기절이 끝나면 idle에서
+   * chooseBossPattern()이 새로 굴러가는 것으로 "정상 진행"을 대신한다.
+   * '경직'(stagger, 패턴 후 짧은 경직)과는 별개 개념이다 — 보스는
+   * applyStun()엔 면역이라 여기서 stunTimer를 직접 설정한다.
+   */
+  private triggerBossBreak(): EnemyAction[] {
+    const actions: EnemyAction[] = []
+    if (this.bossState === 'chargeWarning' || this.bossState === 'slamWarning') {
+      actions.push({ type: 'bossCancelWarning' })
+      // chargeTimer가 자연 소진될 때까지 charge 애니메이션이 남아 있으면
+      // 상태는 idle인데 스프라이트만 계속 돌진 모션을 그리는 유령 예고가 된다.
+      this.sprite.cancelCharge()
+    }
+    this.bossState = 'idle'
+    this.bossTimer = 0
+    this.bossStaggerVulnerable = false
+    this.stunTimer = CONFIG.enemy.bossBreak.duration
+    return actions
+  }
+
   /** '표식' — 대시로 관통한 적을 duration초 동안 표식한다(기존 표식이 남아있으면 더 긴 쪽 유지). */
   mark(duration: number) {
     this.markTimer = Math.max(this.markTimer, duration)
@@ -595,6 +656,21 @@ export class Enemy {
 
   get isMarked() {
     return this.markTimer > 0
+  }
+
+  /**
+   * 기절 적용(작업 지시 P7 커밋3) — 이 커밋에서는 기절을 거는 각인·패턴이
+   * 없다(시스템만 넣고 디버그 훅으로 검증하라는 지시). 보스는 면역이다 —
+   * 대신 체력 임계에서만 스스로 발동하는 '브레이크'가 있다(용어를 구분해
+   * 기존 '경직'(stagger, 패턴 후 짧은 경직)과 혼동을 피한다).
+   */
+  applyStun(duration: number) {
+    if (this.kind === 'boss') return
+    this.stunTimer = duration
+  }
+
+  get stunned() {
+    return this.stunTimer > 0
   }
 
   takeDamage(amount: number, source: DamageSource = 'ranged', crit = false) {

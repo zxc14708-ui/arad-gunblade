@@ -112,10 +112,20 @@ export class EnemySprite {
   }
 
   /**
+   * 돌진 모션을 즉시 취소한다 — 브레이크(P7 커밋3)가 예고 중인 패턴을
+   * 끊어도 chargeTimer가 자연 소진될 때까지 charge 애니메이션이 계속
+   * 재생되는 "유령 예고"를 막기 위함. playCharge()로 남은 시간이 걸려있어도
+   * 다음 update()에서 곧바로 idle/walk로 되돌아간다.
+   */
+  cancelCharge() {
+    this.chargeTimer = 0
+  }
+
+  /**
    * @param moving 이동 중인지
    * @param faceLeft 왼쪽을 보는지
    */
-  update(dt: number, moving: boolean, faceLeft: boolean, hitFlash: number, hitFlashCrit: boolean, bobY: number) {
+  update(dt: number, moving: boolean, faceLeft: boolean, hitFlash: number, hitFlashCrit: boolean, bobY: number, stunned = false) {
     if (this.attackTimer > 0) this.attackTimer -= dt
     if (this.chargeTimer > 0) this.chargeTimer -= dt
 
@@ -152,6 +162,9 @@ export class EnemySprite {
       const peak = CONFIG.effects.flashIntensity * (this.artSet === 'boss' ? CONFIG.effects.flashBossIntensityMul : 1)
       if (hitFlashCrit) this.mat.color.setRGB(peak, peak, peak * 0.3) // 치명타는 흰색 대신 노란색
       else this.mat.color.setRGB(peak, peak, peak)
+    } else if (stunned) {
+      // 기절 지속 틴트 — 피격 번쩍임과 구분되는 청색, 난전에서도 식별 가능해야 함(P7 커밋3)
+      this.mat.color.setRGB(0.55, 0.8, 1.35)
     } else {
       this.mat.color.setRGB(1, 1, 1)
     }

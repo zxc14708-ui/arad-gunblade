@@ -27,6 +27,7 @@ type Floater = {
 }
 
 type GroundFx = {
+  kind: GroundFxKind
   mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
   time: number
   duration: number
@@ -221,7 +222,22 @@ export class Effects {
     mesh.position.set(x, 0.03, z)
     mesh.scale.set(diameter, diameter, 1)
     this.scene.add(mesh)
-    this.groundFx.push({ mesh, time: 0, duration, frames })
+    this.groundFx.push({ kind, mesh, time: 0, duration, frames })
+  }
+
+  /**
+   * kind가 일치하는 바닥 이펙트를 즉시 제거한다 — 보스 브레이크(P7 커밋3)로
+   * 예고 패턴이 취소됐는데 예고 이펙트만 남는 "유령 예고"를 막기 위함.
+   * kind 생략 시 전부 제거.
+   */
+  clearGroundFx(kind?: GroundFxKind) {
+    for (let i = this.groundFx.length - 1; i >= 0; i--) {
+      const effect = this.groundFx[i]
+      if (kind && effect.kind !== kind) continue
+      this.scene.remove(effect.mesh)
+      effect.mesh.material.dispose()
+      this.groundFx.splice(i, 1)
+    }
   }
 
   /**

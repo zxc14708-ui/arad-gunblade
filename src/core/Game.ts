@@ -1349,6 +1349,13 @@ export class Game {
       return
     }
 
+    if (action.type === 'bossCancelWarning') {
+      // 브레이크(P7 커밋3)로 예고 중이던 패턴이 취소됨 — 공격이 오지 않는데
+      // 예고 이펙트만 남는 "유령 예고"를 막기 위해 즉시 제거한다.
+      this.effects.clearGroundFx('warning')
+      return
+    }
+
     this.effects.playGroundFx('shockwave', action.position.x, action.position.z, action.radius * 2, action.effectDuration)
     if (action.phaseEntry) this.hud.banner_('⚠ 보스 2페이즈 ⚠')
 

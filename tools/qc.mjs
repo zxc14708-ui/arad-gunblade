@@ -1729,6 +1729,128 @@ const STEPS = [
     },
   },
   {
+    name: 'enemy-stun',
+    needs: 'dungeon',
+    what: '일반 적 기절(작업 지시 P7 커밋3) — 이동/공격/사격 정지, 지속시간 후 자동 해제, 보스는 applyStun() 면역',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0)
+        const shooter = g.debugSpawnEnemy('shooter')
+        shooter.pos.set(0, 0, -3)
+        window.__qcStunEnemy = shooter
+        window.__qcStunPosBefore = { x: shooter.pos.x, z: shooter.pos.z }
+        window.__qcStunBulletsBefore = g.projectiles.bullets.length
+        shooter.applyStun(1.0)
+        const boss = g.debugSpawnBoss()
+        boss.applyStun(1.0)
+        window.__qcStunBoss = boss
+      })
+    },
+    check: async (p) => {
+      await waitGame(p, 0.4) // 기절 지속시간(1.0s) 중간 시점
+      const mid = await p.evaluate(() => {
+        const e = window.__qcStunEnemy
+        const boss = window.__qcStunBoss
+        const moved = Math.hypot(e.pos.x - window.__qcStunPosBefore.x, e.pos.z - window.__qcStunPosBefore.z)
+        return {
+          stunned: e.stunned,
+          moved,
+          bulletsNow: window.__game.projectiles.bullets.length,
+          bulletsBefore: window.__qcStunBulletsBefore,
+          bossStunned: boss.stunned,
+        }
+      })
+      if (!mid.stunned) return '기절 지속시간 중인데 Enemy.stunned=false'
+      if (mid.moved > 0.05) return `기절 중인데 이동함 (변위 ${mid.moved.toFixed(3)})`
+      if (mid.bulletsNow > mid.bulletsBefore) return '기절 중인데 사격함 (투사체 수 증가)'
+      if (mid.bossStunned) return '보스가 applyStun()에 걸림 — 보스는 일반 기절에 면역이어야 함(브레이크 전용)'
+
+      await waitGame(p, 0.8) // 지속시간(1.0s) 경과 후
+      const after = await p.evaluate(() => window.__qcStunEnemy.stunned)
+      if (after) return '기절 지속시간이 지났는데도 여전히 stunned=true'
+      return null
+    },
+  },
+  {
+    name: 'boss-break',
+    needs: 'dungeon',
+    what: '보스 브레이크(작업 지시 P7 커밋3) — HP 75%/25% 기절(50%는 기절 없이 2페이즈만), 동시 임계 통과 1회만, 예고 취소+이펙트 제거',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const boss = g.debugSpawnBoss()
+        // 슬램 예고 중(바닥 경고 이펙트가 이미 떠 있는 상태)으로 만들어, 75%
+        // 임계를 통과시켰을 때 "패턴 취소 + 예고 이펙트 제거"를 검증한다.
+        boss.bossAnchor.copy(boss.pos)
+        boss.bossState = 'slamWarning'
+        boss.bossTimer = 5
+        g.effects.playGroundFx('warning', boss.pos.x, boss.pos.z, 4, 5)
+        window.__qcBreakBoss = boss
+      })
+    },
+    check: async (p) => {
+      const beforeCount = await p.evaluate(() => window.__game.effects.groundFx.length)
+      if (beforeCount < 1) return '사전 조건 실패 — 예고(warning) 이펙트가 생성되지 않음'
+
+      await p.evaluate(() => { window.__qcBreakBoss.hp = window.__qcBreakBoss.maxHp * 0.74 }) // 75% 임계만 통과
+      await waitGame(p, 0.15)
+      const afterBreak75 = await p.evaluate(() => {
+        const g = window.__game
+        const boss = window.__qcBreakBoss
+        return {
+          stunned: boss.stunned,
+          bossState: boss.bossState,
+          groundFxKinds: g.effects.groundFx.map((fx) => fx.kind),
+          phaseTwo: boss.bossPhaseTwo,
+        }
+      })
+      if (!afterBreak75.stunned) return '75% 임계를 통과했는데 보스가 기절하지 않음'
+      if (afterBreak75.bossState !== 'idle') return `75% 브레이크 후 bossState가 idle이 아님 (실제: ${afterBreak75.bossState})`
+      if (afterBreak75.groundFxKinds.includes('warning')) return '75% 브레이크로 패턴이 취소됐는데 예고(warning) 이펙트가 남아있음 (유령 예고)'
+      if (afterBreak75.phaseTwo) return '75% 임계에서 2페이즈가 잘못 진입함 (2페이즈는 50%에서만, 기절 없이 진입해야 함)'
+
+      await waitGame(p, 1.6) // 브레이크 기절 지속시간(CONFIG.enemy.bossBreak.duration=1.5s) 경과 대기
+      const afterStunEnds = await p.evaluate(() => window.__qcBreakBoss.stunned)
+      if (afterStunEnds) return '보스 브레이크 기절이 지정된 지속시간 이후에도 풀리지 않음'
+
+      // 50% 통과 — 이번엔 기절 없이 2페이즈만 진입해야 한다(작업 지시가 명시적으로 요구하는 배치)
+      await p.evaluate(() => { window.__qcBreakBoss.hp = window.__qcBreakBoss.maxHp * 0.49 })
+      await waitGame(p, 0.15)
+      const at50 = await p.evaluate(() => {
+        const boss = window.__qcBreakBoss
+        return { stunned: boss.stunned, phaseTwo: boss.bossPhaseTwo }
+      })
+      if (!at50.phaseTwo) return '50% 임계인데 2페이즈로 진입하지 않음'
+      if (at50.stunned) return '50%(2페이즈) 진입 시 기절이 함께 발생함 — 75%/25%만 기절해야 하며 50%와 겹치면 안 됨'
+
+      // 한 번의 공격으로 75%/25% 두 임계를 동시에 통과(80%→10%) — 기절은 1회만 발동해야 한다
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const boss = g.debugSpawnBoss()
+        boss.hp = boss.maxHp * 0.1
+        window.__qcBreakBoss2 = boss
+      })
+      await waitGame(p, 0.15)
+      const doubleCross = await p.evaluate(() => window.__qcBreakBoss2.stunned)
+      if (!doubleCross) return '75%/25% 동시 통과인데 기절하지 않음'
+
+      // 이미 두 임계 모두 통과한 상태에서 체력을 더 깎아도 재발동(stunTimer 재연장) 없어야 함(래치 확인)
+      const stunBefore = await p.evaluate(() => window.__qcBreakBoss2.stunTimer)
+      await p.evaluate(() => { window.__qcBreakBoss2.hp = window.__qcBreakBoss2.maxHp * 0.05 })
+      await waitGame(p, 0.15)
+      const stunAfter = await p.evaluate(() => window.__qcBreakBoss2.stunTimer)
+      if (stunAfter > stunBefore + 0.01) return '이미 통과한 임계가 재발동해 stunTimer가 다시 늘어남 (런당 1회 래치 깨짐)'
+
+      return null
+    },
+  },
+  {
     name: 'elite-ward-thorns',
     needs: 'dungeon',
     what: '엘리트 접두사 — 보호막(피격 흡수) / 가시(근접 반사 25%)',
