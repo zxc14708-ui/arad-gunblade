@@ -130,13 +130,11 @@ export const CONFIG = {
     dungeonForgeBasePrice: 100,
     dungeonForgePriceRatio: 1.7,
     // 던전 분수: 런 전체 첫 사용은 무료, 두 번째 사용부터 유료(방당 1회 제한은 별도).
+    // 분수가 배치되는 방(보스 준비방 고정 1개 + '회복' 분기 노드, 작업 지시
+    // P7 커밋2)의 개수는 이제 맵 구조 자체가 보장한다 — 별도 설정값이 필요
+    // 없다(예전 fountainRoomCount는 격자 맵 시절 확률 배치를 보정하던 값).
     fountainBasePrice: 60,
     fountainPriceRatio: 1.6,
-    // 분수가 배치되는 방의 총 개수(상점방 1개 + 보스 준비방 1개 포함) —
-    // RunState.generateMap()이 맵 생성 시점에 이 개수를 보장한다. 확률 배치로
-    // 두면 런마다 0개가 나올 수 있어 개수 보장 방식으로 고정했다(DESIGN_LOG
-    // B5 "분수 사문화" 해결).
-    fountainRoomCount: 4,
   },
 
   // 브라우저 프로필에 저장되는 영구 성장. 런 중 골드/특성과는 분리한다.

@@ -66,21 +66,40 @@ function internals(game: Game): GameInternals {
 
 /** RunState.nodes(private)에 QC 목적으로 접근하기 위한 캐스팅 타입 */
 interface RunStateInternals {
-  nodes: Map<string, { plan: { kind: RoomKind; hasFountain: boolean } }>
+  nodes: Map<string, {
+    plan: { kind: RoomKind; depth: number; hasFountain: boolean }
+    exits: Partial<Record<'north' | 'east' | 'south' | 'west', string>>
+  }>
 }
 
-export interface FountainSampleResult {
+/**
+ * 선형 분기 맵(작업 지시 P7 커밋2) 배치 규칙 표본 검증 결과. 위반 카운터는
+ * 전부 "0이어야 정상"이다 — 하나라도 0이 아니면 그 규칙이 확률적으로만
+ * 지켜지고 있다는 뜻이라 배치 로직 자체를 고쳐야 한다(분수 배치에서 겪은
+ * 것과 같은 유형의 결함).
+ */
+export interface MapSampleResult {
   n: number
-  /** hasFountain 개수 -> 그 개수가 나온 표본 수. 예: { 4: 297, 3: 3 } */
-  counts: Record<number, number>
-  /** 상점방에 분수가 없었던 표본 수 (항상 0이어야 한다) */
-  shopMissing: number
-  /** 보스 준비방에 분수가 없었던 표본 수 (항상 0이어야 한다) */
-  restMissing: number
-  /** 보스방에 분수가 배치된 표본 수 (항상 0이어야 한다) */
-  bossHasFountain: number
-  /** 전투방만으로 정원을 못 채워 보물/엘리트방을 보충으로 썼던 표본 수 */
-  supplementUsed: number
+  /** 깊이4가 상점이 아니었던 표본 수 */
+  shopDepthWrong: number
+  /** 깊이8이 보스 준비방이 아니었던 표본 수 */
+  restDepthWrong: number
+  /** 깊이9가 보스가 아니었던 표본 수 */
+  bossDepthWrong: number
+  /** 분기 깊이(1·2·3·5·6·7) 수가 6이 아니었던 표본 수 */
+  branchDepthCountWrong: number
+  /** 분기 깊이 중 선택지가 2~3개 범위를 벗어난 것이 있었던 표본 수 */
+  branchChoiceCountWrong: number
+  /** 각인 계열(각인+상위 전투) 노드 총수가 2~4 범위를 벗어난 표본 수 */
+  traitNodeCountWrong: number
+  /** 회복 노드가 1개 미만이었던 표본 수 */
+  recoverMissing: number
+  /** 상위 전투가 깊이 5 미만에 나온 표본 수 */
+  hardCombatTooEarly: number
+  /** 같은 깊이 선택지 중 종류가 겹친 것이 있었던 표본 수 */
+  duplicateKindAtDepth: number
+  /** 되돌아가기가 가능한 간선(자식 깊이가 부모 깊이+1이 아님)이 있었던 표본 수 */
+  backwardEdge: number
 }
 
 /** 검 스윙 1회당 기록 — resolveSlash 호출마다 하나씩 쌓인다 */
@@ -117,7 +136,7 @@ export function installQcDebugHooks(game: Game) {
     debugSpawnElite: (kind: EnemyKind, affix: EliteAffix) => Enemy
     debugEquipWeapons: (gunId: string, swordId: string) => boolean
     debugClearEnemies: () => void
-    debugFountainSample: (n: number) => FountainSampleResult
+    debugMapSample: (n: number) => MapSampleResult
     debugGetDensityLog: () => DensityLog
     debugSetGauge: (v: { progress: number; color: string; decreasing?: boolean } | null) => void
     debugSetCoreSlot: (slot: string, id: string) => void
@@ -181,25 +200,71 @@ export function installQcDebugHooks(game: Game) {
   // 게임 상태(this.run)는 건드리지 않는다 — 매 표본마다 독립된 RunState를
   // 새로 만들어 맵만 생성하고 버린다. RunState는 Game에 의존하지 않아
   // standalone으로 안전하게 인스턴스화할 수 있다.
-  api.debugFountainSample = (n) => {
-    const counts: Record<number, number> = {}
-    let shopMissing = 0
-    let restMissing = 0
-    let bossHasFountain = 0
-    let supplementUsed = 0
+  api.debugMapSample = (n) => {
+    const result: MapSampleResult = {
+      n,
+      shopDepthWrong: 0,
+      restDepthWrong: 0,
+      bossDepthWrong: 0,
+      branchDepthCountWrong: 0,
+      branchChoiceCountWrong: 0,
+      traitNodeCountWrong: 0,
+      recoverMissing: 0,
+      hardCombatTooEarly: 0,
+      duplicateKindAtDepth: 0,
+      backwardEdge: 0,
+    }
+    const branchDepths = [1, 2, 3, 5, 6, 7]
     for (let i = 0; i < n; i++) {
       const run = new RunState()
       run.enterFirst()
       const nodes = (run as unknown as RunStateInternals).nodes
-      const plans = [...nodes.values()].map((node) => node.plan)
-      const fountainCount = plans.filter((p) => p.hasFountain).length
-      counts[fountainCount] = (counts[fountainCount] ?? 0) + 1
-      if (!plans.some((p) => p.kind === 'shop' && p.hasFountain)) shopMissing++
-      if (!plans.some((p) => p.kind === 'rest' && p.hasFountain)) restMissing++
-      if (plans.some((p) => p.kind === 'boss' && p.hasFountain)) bossHasFountain++
-      if (plans.some((p) => (p.kind === 'treasure' || p.kind === 'elite') && p.hasFountain)) supplementUsed++
+
+      const byDepth = new Map<number, RoomKind[]>()
+      for (const node of nodes.values()) {
+        const list = byDepth.get(node.plan.depth) ?? []
+        list.push(node.plan.kind)
+        byDepth.set(node.plan.depth, list)
+      }
+
+      const at = (d: number) => byDepth.get(d) ?? []
+      if (!(at(4).length === 1 && at(4)[0] === 'shop')) result.shopDepthWrong++
+      if (!(at(8).length === 1 && at(8)[0] === 'rest')) result.restDepthWrong++
+      if (!(at(9).length === 1 && at(9)[0] === 'boss')) result.bossDepthWrong++
+
+      if (branchDepths.filter((d) => at(d).length > 0).length !== branchDepths.length) result.branchDepthCountWrong++
+
+      let choiceCountBad = false
+      let dupKind = false
+      let hardCombatEarly = false
+      let traitFamilyCount = 0
+      let recoverCount = 0
+      for (const d of branchDepths) {
+        const kinds = at(d)
+        if (kinds.length < 2 || kinds.length > 3) choiceCountBad = true
+        if (new Set(kinds).size !== kinds.length) dupKind = true
+        for (const k of kinds) {
+          if (k === 'trait' || k === 'hardCombat') traitFamilyCount++
+          if (k === 'recover') recoverCount++
+          if (k === 'hardCombat' && d < 5) hardCombatEarly = true
+        }
+      }
+      if (choiceCountBad) result.branchChoiceCountWrong++
+      if (dupKind) result.duplicateKindAtDepth++
+      if (hardCombatEarly) result.hardCombatTooEarly++
+      if (traitFamilyCount < 2 || traitFamilyCount > 4) result.traitNodeCountWrong++
+      if (recoverCount < 1) result.recoverMissing++
+
+      let backward = false
+      for (const node of nodes.values()) {
+        for (const targetId of Object.values(node.exits)) {
+          const target = targetId ? nodes.get(targetId) : undefined
+          if (target && target.plan.depth !== node.plan.depth + 1) backward = true
+        }
+      }
+      if (backward) result.backwardEdge++
     }
-    return { n, counts, shopMissing, restMissing, bossHasFountain, supplementUsed }
+    return result
   }
 
   api.debugClearEnemies = () => {
@@ -218,8 +283,15 @@ export function installQcDebugHooks(game: Game) {
     if (stage < 1 || stage > 7) return false
     const g = internals(game)
     g.run.reset(stage)
-    const plan = g.run.enterFirst()
-    g.loadRoom.call(game, plan)
+    const lobby = g.run.enterFirst()
+    g.loadRoom.call(game, lobby)
+    // enterFirst()는 깊이 0(진입 로비)에 들어간다 — 적이 없는 구조적
+    // 앵커라 스테이지 콘텐츠(적 로스터) 검증엔 의미가 없다(작업 지시 P7
+    // 커밋2, RunState.generateMap() 주석 참고). 실제 전투가 있는 깊이 1
+    // 방으로 곧장 한 번 더 들어간다 — 적이 있는 선택지를 우선한다('회복'
+    // 노드가 뽑히면 적이 0이라 로스터 검증이 안 된다).
+    const firstExit = g.run.exits.find((exit) => exit.plan.enemies.length > 0) ?? g.run.exits[0]
+    if (firstExit) g.loadRoom.call(game, g.run.enter(firstExit.plan.id))
     return g.run.stage === stage && g.curPlan?.depth === 1
   }
 

@@ -141,8 +141,8 @@ function writeSnapshot(m) {
   const e = CONFIG.economy
   L.push('## 런 구조와 경제')
   L.push('')
-  L.push(`스테이지 ${STAGES.length}개: ${STAGES.map((s) => `${s.name}(일반 방 ${s.normalRooms})`).join(', ')}`)
-  L.push(`방 구성 = 일반 ${STAGES[0].normalRooms} + 상점/보스준비/보스. 분수 방 ${e.fountainRoomCount}개(상점 1 + 보스준비 1 + 전투 ${e.fountainRoomCount - 2}).`)
+  L.push(`스테이지 ${STAGES.length}개: ${STAGES.map((s) => s.name).join(', ')}`)
+  L.push('방 구성(작업 지시 P7 커밋2) = 선형 분기 깊이 9 고정: 1·2·3·5·6·7 분기(2~3 선택지) · 4 상점 · 8 보스 준비방 · 9 보스.')
   L.push('')
   L.push(`- 제련소: ${ladder(e.dungeonForgeBasePrice, e.dungeonForgePriceRatio, 3).join(' → ')} G (런 단위 누적)`)
   L.push(`- 분수: 첫 사용 무료, 이후 ${ladder(e.fountainBasePrice, e.fountainPriceRatio, 3).join(' → ')} G`)

@@ -1574,9 +1574,13 @@ const STEPS = [
     }),
   },
   {
+    // 작업 지시 P7 커밋2 — 선형 분기 맵(깊이 9 고정). 단일 관찰로는 확률
+    // 기반 배치 결함(예: 분수 배치에서 겪은 약 1.3% 조건 미달)을 못 잡는다 —
+    // RunState를 300회 이상 독립적으로 새로 생성해 배치 규칙 위반 카운터로
+    // 검증한다(게임 상태는 건드리지 않음, debugMapSample 참고).
     name: 'boss-prep',
     needs: 'dungeon',
-    what: '보스 준비 장소 — 적 없이 상점·분수로 보스방 하나만 연결되는가',
+    what: '보스 준비 장소 — 적 없이 상점·분수로 보스방 하나만 연결되는가, 선형 분기 맵 배치 규칙(깊이 9, 300회 표본)',
     async run(p) {
       await p.evaluate(() => {
         const g = window.__game
@@ -1600,32 +1604,26 @@ const STEPS = [
         if (!rest || !boss) structural = '보스 준비 장소 또는 보스방이 없음'
         else if (rest.plan.enemies.length !== 0) structural = '보스 준비 장소에 적이 배치됨'
         else if (!kinds.includes('merchant') || !kinds.includes('fountain')) structural = '보스 준비 장소에 상점 또는 분수가 없음'
-        else if (restExitIds.length !== 2 || !restExitIds.includes(boss.plan.id)) structural = '준비 장소가 보스방과 단일 통로로 연결되지 않음'
-        else if (bossExitIds.length !== 1 || bossExitIds[0] !== rest.plan.id) structural = '보스방에 준비 장소 외의 출입구가 있음'
+        else if (restExitIds.length !== 1 || restExitIds[0] !== boss.plan.id) structural = '준비 장소가 보스방과 단일 통로로 연결되지 않음'
+        else if (bossExitIds.length !== 0) structural = '보스방에 출입구가 있음(터미널 노드여야 함 — 되돌아가기 폐지 위반)'
 
-        // 단일 런 관찰로는 분수 배치 결함(전투방만으로 못 채우는 약 1.3%
-        // 케이스)을 못 잡는다 — RunState를 300회 이상 독립적으로 새로 생성해
-        // hasFountain 분포로 검증한다(게임 상태는 건드리지 않음, debugFountainSample 참고).
-        const sample = g.debugFountainSample(300)
+        const sample = g.debugMapSample(300)
         return { structural, sample }
       })
       if (r.structural) return r.structural
 
-      const { sample } = r
-      const dist = Object.entries(sample.counts)
-        .sort((a, b) => Number(a[0]) - Number(b[0]))
-        .map(([count, times]) => `${count}개 ${times}회`)
-        .join(', ')
-      const supplementRate = ((sample.supplementUsed / sample.n) * 100).toFixed(2)
-      console.log(`  · 분수 배치 표본 ${sample.n}회 — 분포: ${dist} · 보충(보물/엘리트) 발동 ${sample.supplementUsed}회(${supplementRate}%)`)
-
-      if (sample.shopMissing > 0) return `상점방에 분수가 없는 표본 ${sample.shopMissing}건`
-      if (sample.restMissing > 0) return `보스 준비방에 분수가 없는 표본 ${sample.restMissing}건`
-      if (sample.bossHasFountain > 0) return `보스방에 분수가 배치된 표본 ${sample.bossHasFountain}건`
-      const wantCount = sample.counts[4] ?? 0
-      if (wantCount !== sample.n) {
-        return `분수 개수가 4가 아닌 표본 있음 (${sample.n}회 중 4개 ${wantCount}회) — 분포: ${dist}`
-      }
+      const s = r.sample
+      console.log(`  · 선형 분기 맵 표본 ${s.n}회 검증(작업 지시 P7 커밋2)`)
+      if (s.shopDepthWrong > 0) return `깊이4가 상점이 아닌 표본 ${s.shopDepthWrong}건`
+      if (s.restDepthWrong > 0) return `깊이8이 보스 준비방이 아닌 표본 ${s.restDepthWrong}건`
+      if (s.bossDepthWrong > 0) return `깊이9가 보스가 아닌 표본 ${s.bossDepthWrong}건`
+      if (s.branchDepthCountWrong > 0) return `분기 깊이가 6개가 아닌 표본 ${s.branchDepthCountWrong}건`
+      if (s.branchChoiceCountWrong > 0) return `분기 선택지가 2~3개 범위를 벗어난 표본 ${s.branchChoiceCountWrong}건`
+      if (s.traitNodeCountWrong > 0) return `각인 계열 노드 수가 2~4개 범위를 벗어난 표본 ${s.traitNodeCountWrong}건`
+      if (s.recoverMissing > 0) return `회복 노드가 없는 표본 ${s.recoverMissing}건`
+      if (s.hardCombatTooEarly > 0) return `상위 전투가 깊이 5 미만에 나온 표본 ${s.hardCombatTooEarly}건`
+      if (s.duplicateKindAtDepth > 0) return `같은 깊이에 같은 종류 선택지가 겹친 표본 ${s.duplicateKindAtDepth}건`
+      if (s.backwardEdge > 0) return `되돌아가기가 가능한 간선이 있는 표본 ${s.backwardEdge}건`
       return null
     },
   },

@@ -3,7 +3,7 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { CONFIG, COLORS } from '../config'
 import { Input } from './Input'
 import { Room, RoomVisualKind, DEFAULT_ROOM_SIZES } from '../systems/Room'
-import { RunState, RoomPlan, RoomEnemy, ROOM_ICON, roomLabel, Direction, OPPOSITE } from '../systems/RunState'
+import { RunState, RoomPlan, RoomEnemy, ROOM_ICON, roomLabel, Direction } from '../systems/RunState'
 import { Player } from '../entities/Player'
 import { Enemy, EnemyAction } from '../entities/Enemy'
 import { enemyDeathArt, ENEMY_SCALE } from '../entities/EnemySprite'
@@ -291,8 +291,8 @@ export class Game {
     )
     // 마을 상인은 런 골드가 아닌 영구 재화로 무기를 해금한다.
     this.interactables.push(new Interactable('merchant', -10, -2, '모험가 상점 — 무기 설계도').addTo(this.scene))
-    // 회복 분수
-    this.interactables.push(new Interactable('fountain', 10, -2, '분수에서 회복').addTo(this.scene))
+    // 마을 분수는 작업 지시 P7 커밋2에서 제거됐다 — 마을 입장 시 이미
+    // heal(9999)로 완전 회복되므로(아래) 회복 수단이 중복이었다.
     // 특성 시설 (런당 1회)
     this.interactables.push(new Interactable('traitAltar', -6, 6, '시작 특성 선택').addTo(this.scene))
     this.interactables.push(new Interactable('metaAltar', 6, 6, '힘의 제단 — 영구 강화').addTo(this.scene))
@@ -332,8 +332,8 @@ export class Game {
     this.audio.waveStart()
   }
 
-  /** 방 하나 구성 */
-  private loadRoom(plan: RoomPlan, enteredFrom: Direction = 'south') {
+  /** 방 하나 구성 — 문은 항상 북쪽에 모여 있어(openDoors 참고) 다음 방은 항상 남쪽에서 진입한다. */
+  private loadRoom(plan: RoomPlan) {
     this.clearWorld()
     this.room?.dispose()
     const visual: RoomVisualKind = plan.kind === 'boss' ? 'boss' : 'dungeon'
@@ -370,15 +370,15 @@ export class Game {
     }
 
     // 회복 분수 — RunState.generateMap()이 맵 생성 시점에 hasFountain을 정해
-    // 재방문해도 나타났다 사라지지 않는다(상점방 1개 + 전투방 일부, DESIGN_LOG
-    // B5 "분수 사문화" 해결).
+    // 재방문해도 나타났다 사라지지 않는다. 'rest'(깊이 8 고정 보스 준비방)와
+    // 'recover'(분기 노드, 작업 지시 P7 커밋2)만 hasFountain: true다.
     if (plan.hasFountain) {
-      const p = plan.kind === 'shop' || plan.kind === 'rest' ? { x: 6, z: -1 } : this.room.randomPoint(5)
-      this.interactables.push(new Interactable('fountain', p.x, p.z, plan.kind === 'rest' ? `보스전 회복 우물 · ${this.fountainLabel()}` : this.fountainLabel()).addTo(this.scene))
+      const p = plan.kind === 'rest' ? { x: 6, z: -1 } : this.room.randomPoint(5)
+      this.interactables.push(new Interactable('fountain', p.x, p.z, plan.kind === 'rest' ? `보스전 회복 우물 · ${this.fountainLabel()}` : `회복의 우물 · ${this.fountainLabel()}`).addTo(this.scene))
     }
 
     // 플레이어 진입 위치
-    const e = this.room.entryPoint(enteredFrom)
+    const e = this.room.entryPoint()
     this.player.pos.set(e.x, 0, e.z)
 
     // 배너 / 진행 표시
@@ -399,11 +399,19 @@ export class Game {
     this.clock.getDelta()
   }
 
-  /** 방 클리어 → 다음 방 문 생성 */
+  /**
+   * 방 클리어 → 다음 방 문 생성. 선형 분기 맵(작업 지시 P7 커밋2)에서는 한
+   * 방에서 다음 깊이로 2~3개 선택지가 동시에 열릴 수 있다 — 전부 북쪽 벽에
+   * 고르게 배치한다(room.doorPoints, "앞으로 나아간다"는 방향감을 유지하려고
+   * 남/동/서 대신 항상 북쪽에 모은다). direction 필드 자체는 RunState의
+   * exits 맵 키(북/동/서를 임의 슬롯으로 재사용)일 뿐 실제 배치와는 무관하다.
+   */
   private openDoors() {
     if (this.curPlan?.kind === 'boss') return
-    this.run.exits.forEach(({ direction, plan }) => {
-      const p = this.room.doorPoint(direction)
+    const exits = this.run.exits
+    const points = this.room.doorPoints(exits.length)
+    exits.forEach(({ direction, plan }, i) => {
+      const p = points[i]
       const label = `${roomLabel(plan)} 방으로 (${ROOM_ICON[plan.kind]})`
       const door = new Interactable('door', p.x, p.z, label)
       door.targetRoomId = plan.id
@@ -421,11 +429,74 @@ export class Game {
       this.onStageClear()
     } else if (this.curPlan?.kind === 'elite') {
       this.grantEliteReward()
+    } else if (this.curPlan?.kind === 'trait') {
+      this.grantTraitReward()
+    } else if (this.curPlan?.kind === 'hardCombat') {
+      this.grantHardCombatReward()
     } else {
       this.audio.pick()
       this.hud.banner_('방 클리어! 문이 열렸다')
       this.openDoors()
     }
+  }
+
+  /**
+   * '각인' 노드(작업 지시 P7 커밋2) — 전투 후 각인 하나를 자동으로 지급한다.
+   * 상자(openChest)와 달리 확률로 골드가 나오는 대신 항상 특성이 나온다.
+   */
+  private grantTraitReward() {
+    this.state = 'reward'
+    this.input.clearAll()
+    this.audio.levelup()
+    const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
+    if (choices.length === 0) {
+      this.state = 'play'
+      this.hud.banner_('획득 가능한 특성이 없습니다')
+      this.openDoors()
+      this.clock.getDelta()
+      return
+    }
+    this.hud.showLevelUp('각인 획득!', '특성 하나를 선택하세요', choices, (u) => {
+      this.offerTrait(u, () => {
+        this.audio.pick()
+        this.state = 'play'
+        this.hud.banner_('각인 획득!')
+        this.openDoors()
+        this.clock.getDelta()
+      })
+    })
+  }
+
+  /**
+   * '상위 전투' 노드(작업 지시 P7 커밋2) — 원문은 "상위 등급 각인 획득"이지만
+   * 각인 등급 체계가 아직 없다(RunState.makePlan의 hardCombat 분기 주석
+   * 참고 — P6 커밋4/5가 이 작업 다음에 온다). 등급 대신 엘리트와 같은 4장
+   * 선택 + 약간의 골드로 "더 나은 보상"을 표현했다. 등급이 생기면 대체돼야
+   * 한다 — 최종 보고에서 별도로 짚는다.
+   */
+  private grantHardCombatReward() {
+    this.state = 'reward'
+    this.input.clearAll()
+    this.audio.levelup()
+    const gold = 20 + this.run.depth * 8
+    this.run.addGold(gold)
+    const choices = rollChoices(4, this.player.traitStacks, this.player.coreSlots)
+    if (choices.length === 0) {
+      this.state = 'play'
+      this.hud.banner_(`골드 +${gold} · 획득 가능한 특성이 없습니다`)
+      this.openDoors()
+      this.clock.getDelta()
+      return
+    }
+    this.hud.showLevelUp('상위 전투 클리어!', `각인을 선택하세요 · 골드 +${gold}`, choices, (u) => {
+      this.offerTrait(u, () => {
+        this.audio.pick()
+        this.state = 'play'
+        this.hud.banner_('상위 전투 보상 획득!')
+        this.openDoors()
+        this.clock.getDelta()
+      })
+    })
   }
 
   /** Elite rooms grant a reward before exits are unlocked. */
@@ -523,8 +594,10 @@ export class Game {
         this.openLoadout()
         break
       case 'door':
-        if (target.targetRoomId && target.direction) {
-          this.loadRoom(this.run.enter(target.targetRoomId), OPPOSITE[target.direction])
+        if (target.targetRoomId) {
+          // 문은 항상 북쪽 벽에 모여 있다(openDoors 참고) — loadRoom()은
+          // 항상 남쪽 진입점을 쓴다(entryPoint() 기본값).
+          this.loadRoom(this.run.enter(target.targetRoomId))
         }
         break
       case 'chest':

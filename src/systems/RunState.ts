@@ -2,7 +2,14 @@ import { CONFIG } from '../config'
 import { EnemyKind } from '../entities/Enemy'
 import { ELITE_AFFIX, EliteAffix, rollEliteAffix } from './EliteAffixes'
 
-export type RoomKind = 'combat' | 'elite' | 'treasure' | 'shop' | 'rest' | 'boss'
+/**
+ * 작업 지시 P7 커밋2 — 선형 분기 맵으로 재편되며 방 종류도 그에 맞춰
+ * 바뀌었다. 'treasure'(보물방)는 분기 노드 표(전투/각인/상위 전투/엘리트/
+ * 회복)에 없어 폐지, 'trait'(각인)·'hardCombat'(상위 전투)·'recover'(회복)가
+ * 새로 생겼다. 'shop'(깊이 4 고정)·'rest'(깊이 8 고정 보스 준비방)·
+ * 'boss'(깊이 9)는 역할이 고정된 깊이 그대로다.
+ */
+export type RoomKind = 'combat' | 'trait' | 'hardCombat' | 'elite' | 'recover' | 'shop' | 'rest' | 'boss'
 export type Direction = 'north' | 'east' | 'south' | 'west'
 
 export const DIRECTIONS: Direction[] = ['north', 'east', 'south', 'west']
@@ -11,13 +18,6 @@ export const OPPOSITE: Record<Direction, Direction> = {
   east: 'west',
   south: 'north',
   west: 'east',
-}
-
-const DELTA: Record<Direction, { x: number; y: number }> = {
-  north: { x: 0, y: -1 },
-  east: { x: 1, y: 0 },
-  south: { x: 0, y: 1 },
-  west: { x: -1, y: 0 },
 }
 
 /** 방 안에 스폰될 적 1개체 — kind(행동/AI)와 artSet(외형)를 분리한다(작업 지시
@@ -70,16 +70,20 @@ export interface RoomExit {
 
 export const ROOM_LABEL: Record<RoomKind, string> = {
   combat: '전투',
+  trait: '각인',
+  hardCombat: '상위 전투',
   elite: '엘리트',
-  treasure: '보물',
+  recover: '회복',
   shop: '상점',
   rest: '보스 준비',
   boss: '보스',
 }
 export const ROOM_ICON: Record<RoomKind, string> = {
   combat: '⚔',
+  trait: '📘',
+  hardCombat: '🔥',
   elite: '✦',
-  treasure: '◆',
+  recover: '❤',
   shop: '¤',
   rest: '⛺',
   boss: '☠',
@@ -362,8 +366,18 @@ export const STAGES: StageDef[] = [
 ]
 
 /**
- * 한 스테이지의 모든 방을 시작할 때 생성한다. 방은 격자 위의 연결 그래프로
- * 배치되며, 한 번 방문한 인접 방은 언제든 다시 이동할 수 있다.
+ * 선형 분기 맵의 고정 구조(작업 지시 P7 커밋2) — 깊이는 항상 9.
+ * 분기 깊이(1·2·3·5·6·7)에는 2~3개 선택지, 고정 깊이(4·8·9)에는 선택지가 없다.
+ */
+const BRANCH_DEPTHS = [1, 2, 3, 5, 6, 7]
+const SHOP_DEPTH = 4
+const REST_DEPTH = 8
+const BOSS_DEPTH = 9
+
+/**
+ * 한 스테이지의 모든 방을 시작할 때 생성한다. 깊이 1~9의 선형 분기 그래프로
+ * 배치되며(작업 지시 P7 커밋2), 한 번 지나간 방으로는 돌아갈 수 없다 —
+ * 모든 연결이 단방향(부모→자식)이라 되돌아가기 자체가 구조적으로 불가능하다.
  */
 export class RunState {
   stage = 1
@@ -387,7 +401,7 @@ export class RunState {
     return STAGES[Math.min(this.stage - 1, STAGES.length - 1)]
   }
   get bossDepth() {
-    return this.cfg.normalRooms + 3
+    return BOSS_DEPTH
   }
   get isBossRoom() {
     return this.current?.kind === 'boss'
@@ -460,7 +474,9 @@ export class RunState {
       ]
       return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, ...m }
     }
-    if (kind === 'shop' || kind === 'rest') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
+    if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: false, ...m }
+    if (kind === 'rest') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
+    if (kind === 'recover') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
     if (kind === 'elite') {
       const affix = rollEliteAffix(this.previousEliteAffix)
       this.previousEliteAffix = affix
@@ -472,149 +488,166 @@ export class RunState {
       }
       return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, affix, hpMul: m.hpMul * 1.45, dmgMul: m.dmgMul * 1.2, speedMul: m.speedMul * 1.08 }
     }
-    if (kind === 'treasure') {
-      const n = Math.max(2, Math.ceil((1 + Math.floor(Math.random() * 2)) * CONFIG.spawn.roomDensity))
-      const enemies: RoomEnemy[] = Array.from({ length: n }, () => {
+    if (kind === 'hardCombat') {
+      // 상위 전투(작업 지시 P7 커밋2) — 원문은 "난이도 상승, 상위 등급 각인
+      // 획득"이지만 각인 등급 체계는 아직 없다(P6 커밋4/5가 이 작업 다음
+      // 순서로 예정돼 있다는 지시 자체가 근거). 등급으로 표현할 수 없어
+      // 임시로 난이도(엘리트보다 낮게)와 선택지 수(엘리트와 동일 4장)로
+      // "더 나은 보상"을 대신했다 — 등급이 생기면 이 자리를 대체해야
+      // 한다. 최종 보고에서 별도로 짚는다.
+      const count = Math.ceil((5 + Math.floor(depth * 1.2)) * CONFIG.spawn.roomDensity)
+      const enemies: RoomEnemy[] = Array.from({ length: count }, () => {
         const e = this.enemiesFor(depth)
         return { kind: e.kind, artSet: e.artSet }
       })
-      return { id, kind, enemies, chests: 2, x, y, depth, hasFountain: false, ...m }
+      return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, hpMul: m.hpMul * 1.25, dmgMul: m.dmgMul * 1.15, speedMul: m.speedMul * 1.04 }
     }
 
+    // 'combat' | 'trait' — 각인 노드는 전투 구성 자체는 일반 전투와 같고
+    // 보상만 다르다(클리어 시 자동 지급 — Game.onRoomClear()에서 분기).
     const count = Math.ceil((4 + Math.floor(depth * 1.2) + Math.floor(Math.random() * 3)) * CONFIG.spawn.roomDensity)
     const enemies: RoomEnemy[] = Array.from({ length: count }, () => {
       const e = this.enemiesFor(depth)
       return { kind: e.kind, artSet: e.artSet }
     })
-    return { id, kind, enemies, chests: Math.random() < 0.4 ? 1 : 0, x, y, depth, hasFountain: false, ...m }
-  }
-
-  private key(x: number, y: number) {
-    return `${x},${y}`
+    // 상자는 순수 '전투' 노드에만 둔다 — '각인' 노드는 클리어 시 이미 각인을
+    // 확정 지급하므로, 상자가 또 특성을 얹으면 보상이 겹친다.
+    const chests = kind === 'combat' && Math.random() < 0.4 ? 1 : 0
+    return { id, kind, enemies, chests, x, y, depth, hasFountain: false, ...m }
   }
 
   private addNode(plan: RoomPlan) {
     this.nodes.set(plan.id, { plan, exits: {}, visited: false, cleared: false, usedObjects: new Set() })
   }
 
-  private connect(a: RoomNode, direction: Direction, b: RoomNode) {
+  /**
+   * 한쪽으로만 연결한다 — 되돌아가기 완전 폐지(작업 지시 P7 커밋2). 예전
+   * connect()는 양방향으로 이어(b.exits[OPPOSITE[direction]] = a.id) 인접한
+   * 두 방을 서로 오갈 수 있게 했는데, 그게 되돌아가기가 가능했던 원인이다.
+   * 이제는 부모→자식 한 방향만 기록되고, 자식의 exits는 자신이 다음 깊이로
+   * 나갈 때만 채워진다 — 부모로 돌아가는 경로 자체가 그래프에 없다.
+   */
+  private connectForward(a: RoomNode, direction: Direction, b: RoomNode) {
     a.exits[direction] = b.plan.id
-    b.exits[OPPOSITE[direction]] = a.plan.id
-  }
-
-  /** 무작위 연결형 방 지도 생성. 인접한 방은 자동으로 이어져 가끔 순환 경로도 생긴다. */
-  private generateMap() {
-    const start = this.makePlan('room-0', 1, 'combat', 0, 0)
-    this.addNode(start)
-
-    const occupied = new Map<string, RoomNode>()
-    occupied.set(this.key(0, 0), this.nodes.get(start.id)!)
-    const roomCount = this.cfg.normalRooms + 3
-    const restIndex = roomCount - 2
-    const bossIndex = roomCount - 1
-    const shopIndex = 2 + Math.floor(Math.random() * Math.max(1, this.cfg.normalRooms - 2))
-
-    for (let index = 1; index < roomCount; index++) {
-      if (index === bossIndex) {
-        const rest = this.nodes.get(`room-${restIndex}`)!
-        const directions = DIRECTIONS.filter((direction) => {
-          const d = DELTA[direction]
-          return !rest.exits[direction] && !occupied.has(this.key(rest.plan.x + d.x, rest.plan.y + d.y))
-        })
-        const direction = directions[Math.floor(Math.random() * directions.length)]
-        const d = DELTA[direction]
-        const plan = this.makePlan(`room-${index}`, index + 1, 'boss', rest.plan.x + d.x, rest.plan.y + d.y)
-        this.addNode(plan)
-        const node = this.nodes.get(plan.id)!
-        occupied.set(this.key(plan.x, plan.y), node)
-        this.connect(rest, direction, node)
-        continue
-      }
-
-      const candidates: { parent: RoomNode; direction: Direction; x: number; y: number }[] = []
-      for (const node of occupied.values()) {
-        if (node.plan.kind === 'boss' || node.plan.kind === 'rest') continue
-        for (const direction of DIRECTIONS) {
-          const d = DELTA[direction]
-          const x = node.plan.x + d.x
-          const y = node.plan.y + d.y
-          if (!occupied.has(this.key(x, y))) candidates.push({ parent: node, direction, x, y })
-        }
-      }
-      const placementCandidates = index === restIndex
-        ? candidates.filter((candidate) => DIRECTIONS.some((direction) => {
-          const d = DELTA[direction]
-          return !occupied.has(this.key(candidate.x + d.x, candidate.y + d.y))
-        }))
-        : candidates
-      const pick = placementCandidates[Math.floor(Math.random() * placementCandidates.length)]
-      const roll = Math.random()
-      const kind: RoomKind = index === restIndex ? 'rest' : index === shopIndex ? 'shop' : roll < 0.16 ? 'elite' : roll < 0.42 ? 'treasure' : 'combat'
-      const plan = this.makePlan(`room-${index}`, index + 1, kind, pick.x, pick.y)
-      this.addNode(plan)
-      const node = this.nodes.get(plan.id)!
-      occupied.set(this.key(pick.x, pick.y), node)
-      this.connect(pick.parent, pick.direction, node)
-
-      // 새 방이 기존 방에 맞닿아 있으면 함께 연결해 지름길/순환 경로를 만든다.
-      for (const direction of kind === 'rest' ? [] : DIRECTIONS) {
-        const d = DELTA[direction]
-        const neighbor = occupied.get(this.key(pick.x + d.x, pick.y + d.y))
-        if (neighbor && neighbor !== node && !node.exits[direction]) this.connect(node, direction, neighbor)
-      }
-    }
-
-    this.assignFountains(roomCount)
   }
 
   /**
-   * 분수 배치 — 확률이 아니라 개수를 보장한다(런마다 0개가 나오는 걸 막는다).
-   * 상점방과 보스 준비방은 makePlan()에서 이미 hasFountain: true로 고정된다.
-   * 나머지 (fountainRoomCount - 2)개는 전투방 중에서 고르되, 첫 분수를
-   * 후반부에서만 만나는 일이 없도록 최소 1개는 전반부(depth가 전체 방 수의
-   * 절반 이하) 방에서 뽑는다. 전투방만으로 정원을 못 채우면 보물방 →
-   * 엘리트방 순으로 보충한다(보스/상점/보스준비방은 대상에서 제외 — 상점·
-   * 보스준비는 이미 확정, 보스방은 원래도 분수를 두지 않는다). 전반부 우선
-   * 규칙은 보충 단계에도 그대로 적용한다 — 아직 전반부 방을 못 뽑았다면
-   * 지금 보는 풀(보물/엘리트)의 전반부 후보부터 시도한다.
-   * 그래도 후보가 모자라면(작은 스테이지 등) 있는 만큼만 배치한다.
+   * 분기 깊이(1·2·3·5·6·7) 각각의 노드 종류를 먼저 확정한다 — 배치 규칙을
+   * 확률이 아니라 개수 보장으로 만족시킨다(분수 배치에서 겪었던 "약 1.3%
+   * 확률로 조건 미달" 결함과 같은 유형을 피하려는 것, DESIGN_LOG B5 참고).
+   *
+   * 규칙: 분기 깊이 6개 각각 2~3개 선택지 / 각인 노드(각인+상위 전투) 총
+   * 2~4개, 서로 다른 깊이에 하나씩만 둬 "같은 깊이에 같은 종류 중복" 문제를
+   * 원천적으로 피한다 / 회복 노드 최소 1개 / 상위 전투는 깊이 5 이상에서만 /
+   * 같은 깊이의 선택지는 항상 서로 다른 종류.
    */
-  private assignFountains(roomCount: number) {
-    const extraNeeded = CONFIG.economy.fountainRoomCount - 2
-    if (extraNeeded <= 0) return
+  private planBranchKinds(): Map<number, RoomKind[]> {
+    const counts = new Map<number, number>()
+    for (const d of BRANCH_DEPTHS) counts.set(d, Math.random() < 0.5 ? 2 : 3)
 
-    const earlyCutoff = roomCount / 2
-    const chosen: RoomPlan[] = []
-    let haveEarly = false
+    const slots = new Map<number, (RoomKind | null)[]>()
+    for (const d of BRANCH_DEPTHS) slots.set(d, new Array<RoomKind | null>(counts.get(d)!).fill(null))
 
-    for (const kind of ['combat', 'treasure', 'elite'] as const) {
-      if (chosen.length >= extraNeeded) break
-      const pool = [...this.nodes.values()].map((n) => n.plan).filter((p) => p.kind === kind)
-      if (pool.length === 0) continue
+    const usedAt = (d: number) => slots.get(d)!.filter((k): k is RoomKind => k !== null)
+    const place = (d: number, kind: RoomKind) => {
+      const arr = slots.get(d)!
+      const free: number[] = []
+      arr.forEach((v, i) => { if (v === null) free.push(i) })
+      if (free.length === 0) return false
+      arr[free[Math.floor(Math.random() * free.length)]] = kind
+      return true
+    }
 
-      if (!haveEarly) {
-        const earlyPool = pool.filter((p) => p.depth <= earlyCutoff)
-        if (earlyPool.length > 0) {
-          chosen.push(earlyPool[Math.floor(Math.random() * earlyPool.length)])
-          haveEarly = true
-        }
-      }
+    // 각인 계열(각인/상위 전투) — traitTarget(2~4)개를 서로 다른 깊이에
+    // 하나씩 배정한다. 분기 깊이가 6개라 목표(최대 4)보다 항상 많아 반드시
+    // 채워진다.
+    const traitTarget = 2 + Math.floor(Math.random() * 3)
+    const shuffledForTrait = [...BRANCH_DEPTHS].sort(() => Math.random() - 0.5)
+    let traitPlaced = 0
+    for (const d of shuffledForTrait) {
+      if (traitPlaced >= traitTarget) break
+      const kind: RoomKind = d >= 5 && Math.random() < 0.4 ? 'hardCombat' : 'trait'
+      if (place(d, kind)) traitPlaced++
+    }
 
-      const remaining = pool.filter((p) => !chosen.includes(p))
-      while (chosen.length < extraNeeded && remaining.length > 0) {
-        const idx = Math.floor(Math.random() * remaining.length)
-        chosen.push(remaining[idx])
-        remaining.splice(idx, 1)
+    // 회복 노드 최소 1개.
+    for (const d of [...BRANCH_DEPTHS].sort(() => Math.random() - 0.5)) {
+      if (place(d, 'recover')) break
+    }
+
+    // 나머지 빈 슬롯 — 깊이별로 허용되는 종류 중 그 깊이에 아직 없는 것을 채운다.
+    // 각인 계열(각인/상위 전투)은 위에서 이미 traitTarget만큼 정확히 배정했다 —
+    // 여기 후보에 다시 넣으면 목표(2~4개) 이상으로 더 뽑혀버린다(실측 300회
+    // 중 265회 위반 — 이 필터가 빠졌을 때 실제로 발생한 결함).
+    const fillKinds: RoomKind[] = ['combat', 'elite', 'recover']
+    for (const d of BRANCH_DEPTHS) {
+      const arr = slots.get(d)!
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i] !== null) continue
+        const used = usedAt(d)
+        const candidates = fillKinds.filter((k) => !used.includes(k))
+        const pool = candidates.length > 0 ? candidates : (['combat'] as RoomKind[])
+        arr[i] = pool[Math.floor(Math.random() * pool.length)]
       }
     }
 
-    for (const p of chosen) p.hasFountain = true
+    return slots as Map<number, RoomKind[]>
   }
 
-  /** 새 스테이지 지도 생성 후 시작 방으로 진입 */
+  /**
+   * 선형 분기 맵(작업 지시 P7 커밋2) — 깊이 1~9로 고정된다. 역할이 고정된
+   * 깊이(4=상점, 8=보스 준비방, 9=보스)에는 선택지가 없고, 분기 깊이에는
+   * planBranchKinds()가 보장한 2~3개 선택지가 있다.
+   *
+   * 깊이 0("로비")은 표에 없는 구조적 앵커다 — 문(door) 인터랙터블은 항상
+   * "지금 서 있는 방"에 붙어야 하는데, 깊이 1 자체가 첫 분기라 그 분기를
+   * 보여줄 방이 하나 필요하다(적이 없어 즉시 클리어되고 문이 바로 열린다,
+   * 상점/보스 준비방과 같은 처리). 던전 진입 즉시 실질적으로 깊이 1 분기를
+   * 마주하므로 표의 의도(깊이 1부터 분기)를 그대로 구현한 것이다.
+   *
+   * 깊이 i의 모든 노드는 깊이 i+1의 모든 노드로 각각 연결된다 — 전부
+   * connectForward(단방향)만 쓴다. 어느 노드를 골라도 다음 깊이의 모든
+   * 선택지를 볼 수 있다: "선택"은 각 깊이에서 무엇을 겪을지에 있지, 그다음
+   * 깊이 접근 자체를 좁히는 데 있지 않다.
+   */
+  private generateMap() {
+    const lobby = this.makePlan('lobby', 0, 'combat', 0, 0)
+    lobby.enemies = []
+    this.addNode(lobby)
+
+    const kindsByDepth = this.planBranchKinds()
+    const nodesByDepth = new Map<number, RoomNode[]>()
+    nodesByDepth.set(0, [this.nodes.get('lobby')!])
+
+    for (const depth of BRANCH_DEPTHS) {
+      const kinds = kindsByDepth.get(depth)!
+      const nodes = kinds.map((kind, i) => {
+        const plan = this.makePlan(`d${depth}-${i}`, depth, kind, depth, i)
+        this.addNode(plan)
+        return this.nodes.get(plan.id)!
+      })
+      nodesByDepth.set(depth, nodes)
+    }
+    for (const [depth, kind] of [[SHOP_DEPTH, 'shop'], [REST_DEPTH, 'rest'], [BOSS_DEPTH, 'boss']] as [number, RoomKind][]) {
+      const plan = this.makePlan(`d${depth}-0`, depth, kind, depth, 0)
+      this.addNode(plan)
+      nodesByDepth.set(depth, [this.nodes.get(plan.id)!])
+    }
+
+    const doorDirs: Direction[] = ['north', 'east', 'west']
+    for (let depth = 0; depth < BOSS_DEPTH; depth++) {
+      const from = nodesByDepth.get(depth)!
+      const to = nodesByDepth.get(depth + 1)!
+      for (const a of from) {
+        to.forEach((b, i) => this.connectForward(a, doorDirs[i % doorDirs.length], b))
+      }
+    }
+  }
+
+  /** 새 스테이지 지도 생성 후 진입 로비로 진입 */
   enterFirst(): RoomPlan {
     this.generateMap()
-    return this.enter('room-0')
+    return this.enter('lobby')
   }
 
   /** 현재 방과 연결된 방으로 이동 */
