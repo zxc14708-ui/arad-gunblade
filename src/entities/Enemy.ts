@@ -18,7 +18,7 @@ export type EnemyAction =
   | { type: 'eliteRegenFx'; position: THREE.Vector3; radius: number; duration: number }
   | { type: 'bossCancelWarning' }
 type BossSlamAction = Extract<EnemyAction, { type: 'bossSlam' }>
-export type DamageSource = 'ranged' | 'melee'
+export type DamageSource = 'ranged' | 'melee' | 'bleed'
 
 interface KindDef {
   hp: number
@@ -116,6 +116,17 @@ export class Enemy {
    * 갱신(덮어쓰기)이다 — 누적(+=)하면 반복 적용으로 무한 기절이 가능해진다.
    * 플레이어에게는 이 개념이 없다(히트스톱에서 이미 조작 불능이 문제였다). */
   private stunTimer = 0
+  /** 출혈(작업 지시 P8 커밋2) — 스택마다 독립된 잔여 지속시간(초). 기절과
+   * 달리 중첩이 쌓인다(applyBleed()마다 새 스택 추가) — 시간 경과로 스택
+   * 하나씩 개별 만료된다. 스택 수만큼 틱 피해가 곱해진다(bleedTickTimer). */
+  private bleedStacks: number[] = []
+  private bleedTickTimer = 0
+  private bleedPipMeshes: THREE.Sprite[] = []
+  /** 감전(작업 지시 P8 커밋2) — 중첩 없음(기절과 같은 갱신 방식), 지속 중
+   * 받는 피해가 증가한다. 기절과 달리 행동을 멈추지 않는다 — 초당 발사
+   * 수가 많은 무기(기관단총 등)와 만나면 영구 경직이 되는 경직류 효과로
+   * 설계하지 말라는 작업 지시의 명시적 제약. */
+  private shockTimer = 0
   private lastHitTimer = -1
   private regenEffectTimer = 0
   private shield = 0
@@ -224,10 +235,12 @@ export class Enemy {
     if (this.contactTimer > 0) this.contactTimer -= dt
     if (this.markTimer > 0) this.markTimer -= dt
     if (this.stunTimer > 0) this.stunTimer -= dt
+    if (this.shockTimer > 0) this.shockTimer -= dt
     if (this.movementSlowTimer > 0) {
       this.movementSlowTimer -= dt
       if (this.movementSlowTimer <= 0) this.movementSlowMultiplier = 1
     }
+    this.updateBleed(dt)
 
     const dir = new THREE.Vector3(target.x - this.pos.x, 0, target.z - this.pos.z)
     const dist = dir.length()
@@ -299,7 +312,8 @@ export class Enemy {
     const facing = this.kind === 'boss' && (this.bossState === 'chargeWarning' || this.bossState === 'charge')
       ? this.bossFacing
       : dir
-    this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, this.hitFlashCrit, bobY, this.stunned)
+    this.sprite.update(dt, moving, facing.x < -0.05, this.hitFlash, this.hitFlashCrit, bobY, this.stunned, this.bleeding, this.shocked)
+    this.syncBleedPips()
     if (this.eliteBarFill) this.eliteBarFill.scale.x = Math.max(0.04, 2.5 * Math.max(0, this.hp / this.maxHp))
     if (this.shieldBarFill) {
       this.shieldBarFill.visible = this.shield > 0
@@ -673,11 +687,47 @@ export class Enemy {
     return this.stunTimer > 0
   }
 
+  /**
+   * 출혈 적용(작업 지시 P8 커밋2) — 이 커밋에서는 출혈을 거는 각인이 없다
+   * (시스템만 넣고 디버그 훅으로 검증하라는 지시). 기절과 달리 보스도
+   * 면역이 아니다 — 스택마다 독립된 지속시간을 갖고 쌓인다(applyStun()의
+   * "갱신" 방식과 다르다: 같은 대상에게 여러 번 걸면 스택이 늘어난다).
+   */
+  applyBleed(duration = CONFIG.enemy.bleed.duration) {
+    // 첫 스택(또는 전부 만료된 뒤 다시 걸린 스택)일 때만 틱 타이머를 한
+    // 간격만큼 채운다 — 안 그러면 기본값 0에서 시작해 다음 프레임에 바로
+    // 틱이 나가버린다(즉발 피해 버그, QC로 재현 후 발견).
+    if (this.bleedStacks.length === 0) this.bleedTickTimer = CONFIG.enemy.bleed.tickInterval
+    this.bleedStacks.push(duration)
+  }
+
+  get bleedStackCount() {
+    return this.bleedStacks.length
+  }
+
+  get bleeding() {
+    return this.bleedStacks.length > 0
+  }
+
+  /**
+   * 감전 적용(작업 지시 P8 커밋2) — 중첩 없이 갱신(기절과 같은 방식)만
+   * 한다. 보스도 면역이 아니다. 행동을 멈추지 않는다 — takeDamage()의
+   * 받는 피해 배율로만 작용한다(경직류로 만들지 말라는 지시).
+   */
+  applyShock(duration = CONFIG.enemy.shock.duration) {
+    this.shockTimer = duration
+  }
+
+  get shocked() {
+    return this.shockTimer > 0
+  }
+
   takeDamage(amount: number, source: DamageSource = 'ranged', crit = false) {
     let effective = this.kind === 'boss' && this.bossState === 'stagger' && this.bossStaggerVulnerable
       ? amount * BOSS_PATTERN.staggerDamageMultiplier
       : amount
     if (this.markTimer > 0) effective *= CONFIG.traits.markedDamageMult
+    if (this.shockTimer > 0) effective *= CONFIG.enemy.shock.damageTakenMult
     if (this.affix === 'ward') {
       this.shieldHitTimer = 0
       const absorbed = Math.min(this.shield, effective)
@@ -752,6 +802,57 @@ export class Enemy {
     const d = Math.hypot(dx, dz) || 1
     this.vel.set((dx / d) * power, 0, (dz / d) * power)
     this.knockTimer = 0.2
+  }
+
+  /**
+   * 출혈 스택 개별 만료 + 틱 피해(작업 지시 P8 커밋2). 각 스택은 독립된
+   * 잔여시간을 갖고 시간 경과로 하나씩 사라진다. 스택이 하나라도 남아있는
+   * 동안만 공용 틱 타이머가 돈다 — 스택이 전부 사라지면 타이머를 0으로
+   * 되돌려 다음 최초 적용 시 즉시 첫 틱이 들어가지 않고 tickInterval을
+   * 온전히 기다리게 한다(재적용마다 매번 즉시 틱이 나가면 스택 추가가
+   * "공짜 즉발 피해"로 남용될 수 있다).
+   */
+  private updateBleed(dt: number) {
+    if (this.bleedStacks.length === 0) return
+    for (let i = this.bleedStacks.length - 1; i >= 0; i--) {
+      this.bleedStacks[i] -= dt
+      if (this.bleedStacks[i] <= 0) this.bleedStacks.splice(i, 1)
+    }
+    if (this.bleedStacks.length === 0) {
+      this.bleedTickTimer = 0
+      return
+    }
+    this.bleedTickTimer -= dt
+    if (this.bleedTickTimer <= 0) {
+      this.bleedTickTimer += CONFIG.enemy.bleed.tickInterval
+      this.takeDamage(this.bleedStacks.length * CONFIG.enemy.bleed.tickDamage, 'bleed')
+    }
+  }
+
+  /**
+   * 출혈 중첩 수를 머리 위 붉은 점 행으로 표시한다(작업 지시 P8 커밋2 —
+   * "출혈이 몇 겹인지 난전에서 읽혀야 한다"). 틴트 하나로는 숫자를 전할
+   * 수 없어 점 개수로 센다 — MAX_BLEED_PIPS를 넘는 스택은 점이 늘지 않고
+   * 마지막 점 자리에서 멈춘다(그 이상은 사실상 드문 값이라 UI 폭주를
+   * 막는 상한일 뿐, 게임플레이 수치에는 영향 없다).
+   */
+  private syncBleedPips() {
+    const MAX_BLEED_PIPS = 6
+    const count = Math.min(this.bleedStacks.length, MAX_BLEED_PIPS)
+    while (this.bleedPipMeshes.length < count) {
+      const pip = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xff3b3b, transparent: true, depthWrite: false }))
+      pip.scale.set(0.22, 0.22, 1)
+      this.group.add(pip)
+      this.bleedPipMeshes.push(pip)
+    }
+    const y = (this.kind === 'boss' ? 4.9 : this.kind === 'brute' || this.kind === 'charger' ? 3.3 : 2.3) + (this.elite ? 0.5 : 0)
+    const spacing = 0.28
+    const startX = -((count - 1) * spacing) / 2
+    for (let i = 0; i < this.bleedPipMeshes.length; i++) {
+      const pip = this.bleedPipMeshes[i]
+      pip.visible = i < count
+      if (pip.visible) pip.position.set(startX + i * spacing, y, 0.03)
+    }
   }
 
   private createEliteMarker() {

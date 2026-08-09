@@ -1883,6 +1883,101 @@ const STEPS = [
     },
   },
   {
+    name: 'status-bleed-shock',
+    needs: 'dungeon',
+    what: '출혈/감전(작업 지시 P8 커밋2) — 출혈 중첩·개별 만료·틱 피해, 감전 갱신(비중첩)·받는피해 증가·비경직, 보스도 면역 아님, 기절과 다른 틴트',
+    async run(p) {
+      await dismissLevelUp(p)
+      const r = await p.evaluate(async () => {
+        const g = window.__game
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        const out = {}
+
+        // ── 출혈 — 중첩 3개(서로 다른 지속시간), 틱 피해, 개별 만료 ──
+        g.debugClearEnemies()
+        const bleedTarget = g.debugSpawnEnemy('brute')
+        bleedTarget.hp = 100000
+        bleedTarget.pos.set(20, 0, 20) // 화면/다른 검증과 겹치지 않게 격리
+        bleedTarget.speed = 0
+        bleedTarget.damage = 0
+        bleedTarget.applyBleed(1.3) // 곧 만료될 스택
+        bleedTarget.applyBleed() // 기본 지속시간(4s) 스택 2개
+        bleedTarget.applyBleed()
+        out.stackCountAfterApply = bleedTarget.bleedStackCount
+        const hpBeforeTick = bleedTarget.hp
+        const simT0 = g.simClock
+        while (g.simClock - simT0 < 1.2) await wait(30) // 첫 틱(1s) 이후, 3스택 전부 아직 생존
+        out.hpAfterFirstTick = bleedTarget.hp
+        out.tickDelta = hpBeforeTick - bleedTarget.hp
+        while (g.simClock - simT0 < 1.6) await wait(30) // 1.3s 스택 만료 시점 통과
+        out.stackCountAfterOneExpires = bleedTarget.bleedStackCount
+        out.bleedingAfterOneExpires = bleedTarget.bleeding
+        out.bleedTint = bleedTarget.sprite.mat.color.getHex()
+
+        // ── 감전 — 갱신(비중첩), 받는 피해 증가, 이동/행동 유지 ──
+        g.debugClearEnemies()
+        const shockTarget = g.debugSpawnEnemy('imp')
+        shockTarget.hp = 100000
+        shockTarget.pos.set(0, 0, -6)
+        shockTarget.applyShock(3)
+        const posBefore = { x: shockTarget.pos.x, z: shockTarget.pos.z }
+        const simT1 = g.simClock
+        while (g.simClock - simT1 < 1.0) await wait(30) // shockTimer 3s -> 남은 시간 약 2s
+        const shockTimerBeforeReapply = shockTarget.stunTimer // 참고용(항상 0이어야 함, 감전은 기절이 아니다)
+        const timerBefore = shockTarget.shocked
+        shockTarget.applyShock(3) // 재적용 — 누적이 아니라 갱신이어야 한다
+        out.shockStillShocked = shockTarget.shocked
+        out.shockNeverStuns = shockTimerBeforeReapply === 0
+        out.shockMoved = Math.hypot(shockTarget.pos.x - posBefore.x, shockTarget.pos.z - posBefore.z)
+        const hpBeforeShockHit = shockTarget.hp
+        shockTarget.takeDamage(100, 'ranged', false)
+        out.shockDamageDealt = hpBeforeShockHit - shockTarget.hp
+        out.shockTint = shockTarget.sprite.mat.color.getHex()
+
+        // 감전 해제 후엔 배율이 원래대로(1배)여야 한다
+        shockTarget.hp = 100000
+        shockTarget.shockTimer = 0
+        const hpBeforeNoShockHit = shockTarget.hp
+        shockTarget.takeDamage(100, 'ranged', false)
+        out.noShockDamageDealt = hpBeforeNoShockHit - shockTarget.hp
+
+        // ── 보스 — 기절은 면역이지만 출혈/감전은 면역이 아니어야 한다 ──
+        g.debugClearEnemies()
+        const boss = g.debugSpawnBoss()
+        boss.applyBleed()
+        boss.applyShock()
+        out.bossBleedStacks = boss.bleedStackCount
+        out.bossShocked = boss.shocked
+
+        return out
+      })
+      await p.evaluate((result) => { window.__qcStatusResult = result }, r)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcStatusResult
+      if (!r) return '결과 없음'
+      if (r.stackCountAfterApply !== 3) return `출혈 3회 적용 후 스택 수가 3이 아님 (${r.stackCountAfterApply})`
+      const expectedTick = 3 * 3 // 스택 3개 × 틱 피해(CONFIG.enemy.bleed.tickDamage=3)
+      if (Math.abs(r.tickDelta - expectedTick) > 0.5) return `출혈 틱 피해가 스택 수(3)×틱피해와 다름 (${r.tickDelta} / 기대 ${expectedTick})`
+      if (r.stackCountAfterOneExpires !== 2) return `1.3초 스택 만료 후 남은 스택이 2가 아님 (${r.stackCountAfterOneExpires}) — 개별 만료가 아니라 전체 일괄 처리되는 듯`
+      if (!r.bleedingAfterOneExpires) return '스택이 남아있는데 bleeding=false'
+      if (r.bleedTint == null) return '출혈 틴트 색을 읽지 못함'
+
+      if (!r.shockStillShocked) return '감전 재적용 후 shocked=false (지속시간이 사라짐)'
+      if (!r.shockNeverStuns) return '감전이 기절(stunTimer)을 함께 걸고 있음 — 경직류로 만들지 말라는 지시 위반'
+      if (r.shockMoved < 1) return `감전 중인데 이동하지 않음 (변위 ${r.shockMoved}) — 경직류가 아니어야 한다`
+      const shockRatio = r.shockDamageDealt / r.noShockDamageDealt
+      if (Math.abs(shockRatio - 1.3) > 0.05) return `감전 중 받는 피해 배율이 1.3배가 아님 (실측 ${shockRatio.toFixed(2)})`
+      if (r.shockTint == null) return '감전 틴트 색을 읽지 못함'
+      if (r.shockTint === r.bleedTint) return '감전과 출혈 틴트 색이 동일함 — 시각적으로 구분되지 않음'
+
+      if (r.bossBleedStacks < 1) return '보스가 출혈에 면역임 — 기절과 달리 면역이면 안 된다'
+      if (!r.bossShocked) return '보스가 감전에 면역임 — 기절과 달리 면역이면 안 된다'
+
+      return null
+    }),
+  },
+  {
     name: 'elite-ward-thorns',
     needs: 'dungeon',
     what: '엘리트 접두사 — 보호막(피격 흡수) / 가시(근접 반사 25%)',

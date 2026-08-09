@@ -112,6 +112,18 @@ export const CONFIG = {
     // 발동하는 기절 지속시간. 50%(2페이즈 진입)와 겹치지 않도록 임계를
     // 나눴다 — Enemy.updateBoss() 참고.
     bossBreak: { duration: 1.5 },
+    // 상태이상(작업 지시 P8 커밋2) — 이 커밋은 시스템만 넣고 이 값을 실제로
+    // 거는 각인은 아직 없다(디버그 훅으로만 검증). 수치는 향후 각인이
+    // 들어올 때 조정될 수 있는 자리값이다.
+    bleed: {
+      duration: 4, // 스택 하나의 지속시간(초)
+      tickInterval: 1, // 이 간격마다 스택 수만큼 곱한 피해가 들어간다
+      tickDamage: 3, // 스택 1개, 틱 1회당 피해
+    },
+    shock: {
+      duration: 3,
+      damageTakenMult: 1.3, // 감전 중 받는 모든 피해 배율(중첩 없음, 경직 아님)
+    },
   },
 
   spawn: {

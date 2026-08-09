@@ -122,7 +122,8 @@ function writeSnapshot(m) {
   L.push(`각인(sigil) 스택 상한: ${sigils.length ? sigils[0].maxStacks : '해당 없음'} · 핵심 슬롯은 슬롯당 1개(스택 없음)`)
   L.push('')
   L.push(`조건부·트리거형 ${conditional.length}종: ${conditional.map((u) => u.name).join(', ')}`)
-  L.push(`나머지 ${POOL.length - conditional.length}종은 상시 배수·가산이다. 상태이상 축은 없다.`)
+  L.push(`나머지 ${POOL.length - conditional.length}종은 상시 배수·가산이다.`)
+  L.push(`상태이상(작업 지시 P8 커밋2): 기절(적용 각인 없음, 시스템만) · 출혈(중첩형, 스택당 ${CONFIG.enemy.bleed.tickDamage} 피해/${CONFIG.enemy.bleed.tickInterval}s, 지속 ${CONFIG.enemy.bleed.duration}s) · 감전(갱신형, 받는 피해 ×${CONFIG.enemy.shock.damageTakenMult}, 지속 ${CONFIG.enemy.shock.duration}s) — 아직 이를 거는 각인은 없다.`)
   L.push('')
 
   // ── 적 ──

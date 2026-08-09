@@ -125,7 +125,10 @@ export class EnemySprite {
    * @param moving 이동 중인지
    * @param faceLeft 왼쪽을 보는지
    */
-  update(dt: number, moving: boolean, faceLeft: boolean, hitFlash: number, hitFlashCrit: boolean, bobY: number, stunned = false) {
+  update(
+    dt: number, moving: boolean, faceLeft: boolean, hitFlash: number, hitFlashCrit: boolean, bobY: number,
+    stunned = false, bleeding = false, shocked = false,
+  ) {
     if (this.attackTimer > 0) this.attackTimer -= dt
     if (this.chargeTimer > 0) this.chargeTimer -= dt
 
@@ -165,6 +168,13 @@ export class EnemySprite {
     } else if (stunned) {
       // 기절 지속 틴트 — 피격 번쩍임과 구분되는 청색, 난전에서도 식별 가능해야 함(P7 커밋3)
       this.mat.color.setRGB(0.55, 0.8, 1.35)
+    } else if (shocked) {
+      // 감전 지속 틴트 — 보라 계열, 기절(청)/출혈(적)과 구분(작업 지시 P8 커밋2)
+      this.mat.color.setRGB(1.3, 0.7, 1.5)
+    } else if (bleeding) {
+      // 출혈 지속 틴트 — 적색 계열. 중첩 수 자체는 틴트가 아니라 머리 위
+      // 점(Enemy.syncBleedPips())으로 표시한다 — 색만으로는 "몇 겹"이 안 읽힌다.
+      this.mat.color.setRGB(1.3, 0.5, 0.5)
     } else {
       this.mat.color.setRGB(1, 1, 1)
     }
