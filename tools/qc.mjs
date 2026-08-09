@@ -692,7 +692,7 @@ const STEPS = [
   {
     name: 'trait-slots',
     needs: 'dungeon',
-    what: '핵심 슬롯 특성(작업 지시 slot_system_phase1 커밋 3) — 발도참/조준사격/최후탄/표식/급전환 실제 발동과 슬롯 교체 UI',
+    what: '핵심 슬롯 특성(작업 지시 P8 커밋1 3축 재편 반영) — 발도참/조준사격/마지막 한발/표식/급전환 실제 발동과 슬롯 교체 UI',
     async run(p) {
       await dismissLevelUp(p)
       const r = await p.evaluate(async () => {
@@ -704,14 +704,14 @@ const STEPS = [
         g.player.alive = true
         g.player.hp = g.player.stats.maxHp
 
-        // ── 발도참(slash) — 0.5초 이상 정지 후 첫 베기 250% ──
+        // ── 발도참(sword) — 0.5초 이상 정지 후 첫 베기 250% ──
         g.debugClearEnemies()
         g.player.pos.set(0, 0, 0)
         g.player.invuln = 5
-        // 기본 10% 치명타 확률이 배율 검증(최후탄 등)을 이따금 흔들지 않도록 끈다
+        // 기본 10% 치명타 확률이 배율 검증(마지막 한발 등)을 이따금 흔들지 않도록 끈다
         g.player.mods.critChance = -0.1
         g.player.recompute()
-        g.debugSetCoreSlot('slash', 'iaijutsu')
+        g.debugSetCoreSlot('sword', 'iaijutsu')
         const iaiTarget = g.debugSpawnEnemy('brute')
         iaiTarget.pos.set(0, 0, -3)
         iaiTarget.speed = 0
@@ -724,8 +724,8 @@ const STEPS = [
         out.note = 'resolveSlash 직접 호출은 참고용 — 실제 배율 검증은 아래 conditionGauge로 대체'
         out.iaijutsuGaugeReady = g.player.conditionGauge()?.progress >= 1
 
-        // ── 조준사격(shot) — 0.35초 이상 쉬고 쏘면 확정 치명타 ──
-        g.debugSetCoreSlot('shot', 'aimed_shot')
+        // ── 조준사격(gun) — 0.35초 이상 쉬고 쏘면 확정 치명타 ──
+        g.debugSetCoreSlot('gun', 'aimed_shot')
         g.player.ammo = g.player.magSize
         g.player.reloading = false
         g.player.gunTimer = 0
@@ -780,13 +780,13 @@ const STEPS = [
       }
       const aimedShotCrit = await p.evaluate(() => window.__game.projectiles.bullets[0]?.crit ?? null)
 
-      // ── 최후탄(shot) — 탄창 마지막 1발 220%, 핍 색 변경 ──
+      // ── 마지막 한발(gun, 구 최후탄) — 탄창 마지막 1발 220%, 핍 색 변경 ──
       // 실제로 명중시키려면 정밀 조준(aimAtPoint)이 필요해 조준 오차가 결과에
       // 섞인다 — 배율 자체는 발사 시점에 이미 bullets[].damage에 반영되므로
       // 총알이 맞았는지와 무관하게 스폰된 총알의 damage 필드로 직접 검증한다.
       const lastBulletSetup = await p.evaluate(() => {
         const g = window.__game
-        g.debugSetCoreSlot('shot', 'last_bullet')
+        g.debugSetCoreSlot('gun', 'last_bullet')
         g.debugClearEnemies()
         g.projectiles.clear()
         g.player.ammo = 1
@@ -811,7 +811,35 @@ const STEPS = [
         return { dealt: b ? b.damage : null, expected: setup.expected, pipClass: setup.pipClass }
       }, lastBulletSetup)
 
-      // ── 표식(dash) — 대시로 관통한 적은 3초간 받는 피해 +35% ──
+      // ── 마지막 한발 넉백 충격파 — 명중 지점 근처의 다른 적(직격 대상 아님)도 밀려나는가 ──
+      // 실제 조준-발사-비행 경로는 이 샌드박스의 큰 프레임 dt에서 작은 반경(imp)의
+      // 적을 관통(터널링)하기 쉬워 명중 자체가 불안정하다(aimed-density 스텝이
+      // 명중 수를 검증하지 않고 계측 훅 존재만 보는 것과 같은 이유) — 조준/비행에
+      // 기대지 않고, 총알을 적 위치에 직접 스폰(속도 0, shockwave=true)해 다음
+      // resolveBullets() 틱에서 반드시 겹치게 만든다. 이건 Game.resolveBullets()의
+      // 충격파 처리 로직 자체를 검증하는 것이지 조준 판정을 검증하는 게 아니다.
+      const shockwaveResult = await p.evaluate(async () => {
+        const g = window.__game
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        g.debugClearEnemies()
+        g.projectiles.clear()
+        const direct = g.debugSpawnEnemy('imp')
+        direct.pos.set(0, 0, -4)
+        direct.speed = 0
+        direct.damage = 0
+        const nearby = g.debugSpawnEnemy('imp')
+        nearby.pos.set(1.5, 0, -4) // 직격 대상 바로 옆 — 충격파 반경(3.5) 안
+        nearby.speed = 0
+        nearby.damage = 0
+        const nearbyPos = { x: nearby.pos.x, z: nearby.pos.z }
+        g.projectiles.spawnBullet(direct.pos.clone(), direct.pos.clone().set(0, 0, -1), 0, 1, false, 0, true)
+        const simT0 = g.simClock
+        while (g.simClock - simT0 < 0.2) await wait(30)
+        const moved = Math.hypot(nearby.pos.x - nearbyPos.x, nearby.pos.z - nearbyPos.z)
+        return { moved }
+      })
+
+      // ── 표식(character) — 대시로 관통한 적은 3초간 받는 피해 +35% ──
       const markResult = await p.evaluate(async () => {
         const g = window.__game
         g.state = 'play'
@@ -820,7 +848,7 @@ const STEPS = [
         g.player.alive = true
         g.player.hp = g.player.stats.maxHp
         g.player.invuln = 999
-        g.debugSetCoreSlot('dash', 'mark')
+        g.debugSetCoreSlot('character', 'mark')
         g.player.dashCdTimer = 0
         g.debugClearEnemies()
         g.player.pos.set(0, 0, 0)
@@ -842,7 +870,7 @@ const STEPS = [
         return e ? e.isMarked : null
       }, markResult.spawnedId)
 
-      // ── 급전환(dash) — 대시 종료 직후 검 쿨 절반 + 총 즉시 장전 ──
+      // ── 급전환(character) — 대시 종료 직후 검 쿨 절반 + 총 즉시 장전 ──
       const quickSwitch = await p.evaluate(async () => {
         const g = window.__game
         g.state = 'play'
@@ -851,7 +879,7 @@ const STEPS = [
         g.player.alive = true
         g.player.hp = g.player.stats.maxHp
         g.player.invuln = 999
-        g.debugSetCoreSlot('dash', 'quick_switch')
+        g.debugSetCoreSlot('character', 'quick_switch')
         g.player.dashCdTimer = 0 // 직전 표식 테스트의 대시 쿨다운을 건너뛴다
         g.player.ammo = 0
         g.player.reloading = true
@@ -870,8 +898,8 @@ const STEPS = [
       // ── 슬롯 교체 UI — 이미 찬 슬롯에 다른 특성을 고르면 "유지/교체" 카드가 나란히 뜨는가 ──
       const swapUi = await p.evaluate(() => {
         const g = window.__game
-        const current = { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', slot: 'shot' }
-        const incoming = { id: 'last_bullet', name: '최후탄', desc: '', icon: '🎯', slot: 'shot' }
+        const current = { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', slot: 'gun' }
+        const incoming = { id: 'last_bullet', name: '마지막 한발', desc: '', icon: '🎯', slot: 'gun' }
         g.hud.showSlotSwap(current, incoming, () => {})
         const cards = document.querySelectorAll('#cards .card')
         const tags = [...document.querySelectorAll('#cards .ctag')].map((el) => el.textContent)
@@ -888,6 +916,7 @@ const STEPS = [
         iaijutsuDealt,
         aimedShotCrit,
         lastBulletResult,
+        shockwaveResult,
         marked,
         quickSwitchResult,
         swapUi,
@@ -905,10 +934,13 @@ const STEPS = [
       if (r.aimedShotCrit !== true) return '조준사격 조건 충족 후 첫 발이 확정 치명타가 아님'
       const lastExpected = r.lastBulletResult.expected
       if (r.lastBulletResult.dealt == null || Math.abs(r.lastBulletResult.dealt - lastExpected) > lastExpected * 0.01) {
-        return `최후탄 피해 배율이 220%가 아님 (${r.lastBulletResult.dealt} / 기대 ${lastExpected.toFixed(1)})`
+        return `마지막 한발 피해 배율이 220%가 아님 (${r.lastBulletResult.dealt} / 기대 ${lastExpected.toFixed(1)})`
       }
       if (!r.lastBulletResult.pipClass || !r.lastBulletResult.pipClass.includes('last-bullet')) {
-        return '최후탄 상태에서 탄약 UI 마지막 핍에 강조 클래스가 없음'
+        return '마지막 한발 상태에서 탄약 UI 마지막 핍에 강조 클래스가 없음'
+      }
+      if (!r.shockwaveResult || r.shockwaveResult.moved < 0.3) {
+        return `마지막 한발 명중 시 인근 적이 넉백 충격파로 밀려나지 않음 (변위 ${r.shockwaveResult?.moved})`
       }
       if (r.marked !== true) return "표식 — 대시로 관통한 적이 마크되지 않음"
       if (r.quickSwitchResult.ammo !== window.__game.player.magSize || r.quickSwitchResult.reloading !== false) {
@@ -951,7 +983,7 @@ const STEPS = [
       // ── 일섬 — 정확히 1명 명중 시 200% ──
       await p.evaluate(() => {
         const g = window.__game
-        g.debugSetCoreSlot('slash', 'ilseom')
+        g.debugSetCoreSlot('sword', 'ilseom')
         g.debugClearEnemies()
         g.player.swordTimer = 0
         const e = g.debugSpawnEnemy('brute')
@@ -996,7 +1028,7 @@ const STEPS = [
       // ── 이도류 — 2연타 각 60%, 두 번째는 0.12초 뒤, 온힛(장전) 2회 ──
       await p.evaluate(() => {
         const g = window.__game
-        g.debugSetCoreSlot('slash', 'dualblade')
+        g.debugSetCoreSlot('sword', 'dualblade')
         g.debugClearEnemies()
         g.player.swordTimer = 0
         g.player.ammo = 0
@@ -1087,7 +1119,7 @@ const STEPS = [
         g.player.swordTimer = 0
         g.player.mods.critChance = -0.1 // 기본 10% 치명타 확률이 배율 검증을 흔들지 않도록
         g.player.recompute()
-        g.debugSetCoreSlot('slash', 'parry')
+        g.debugSetCoreSlot('sword', 'parry')
         g.debugClearEnemies()
         g.projectiles.clear()
         // 부채꼴 판정 범위(katana range) 안, 플레이어 쪽(+Z)으로 날아오는 적 탄환을 직접 스폰
@@ -1162,7 +1194,7 @@ const STEPS = [
       const ricochetSetup = await p.evaluate(() => {
         const g = window.__game
         g.debugEquipWeapons('rifle', 'katana') // 관통 3
-        g.debugSetCoreSlot('shot', 'ricochet')
+        g.debugSetCoreSlot('gun', 'ricochet')
         g.debugClearEnemies()
         g.projectiles.clear()
         const target = g.debugSpawnEnemy('brute')
@@ -1205,7 +1237,7 @@ const STEPS = [
       await p.evaluate(() => {
         const g = window.__game
         g.debugEquipWeapons('m1911', 'katana')
-        g.debugSetCoreSlot('dash', 'afterimage')
+        g.debugSetCoreSlot('character', 'afterimage')
         g.debugClearEnemies()
         g.projectiles.clear()
         g.player.pos.set(0, 0, 0)
@@ -2054,9 +2086,9 @@ const STEPS = [
     async run(p) {
       const levelUp = await p.evaluate(() => {
         const g = window.__game
-        const sigil = { id: 'hp', name: '강인한 육체', desc: '', icon: '❤️', slot: 'sigil', maxStacks: 3, apply: () => {} }
-        const slash = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'slash', maxStacks: 1, apply: () => {} }
-        g.hud.showLevelUp('레벨 업!', '', [sigil, slash], () => {})
+        const sigil = { id: 'hp', name: '강인한 육체', desc: '', icon: '❤️', slot: 'character-sigil', maxStacks: 3, apply: () => {} }
+        const sword = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'sword', maxStacks: 1, apply: () => {} }
+        g.hud.showLevelUp('레벨 업!', '', [sigil, sword], () => {})
         const cards = [...document.querySelectorAll('#cards .card')]
         const result = cards.map((c) => ({ className: c.className, crar: c.querySelector('.crar')?.textContent }))
         document.querySelector('#levelOv')?.classList.remove('show')
@@ -2066,7 +2098,7 @@ const STEPS = [
         const g = window.__game
         g.hud.renderShop(
           [
-            { icon: '💫', name: '일섬', desc: '', badgeClass: 'slot-slash', price: 90, sold: false, tag: '특성' },
+            { icon: '💫', name: '일섬', desc: '', badgeClass: 'slot-sword', price: 90, sold: false, tag: '특성' },
             { icon: '🗡️', name: '카타나', desc: '', badgeClass: 'common', price: 35, sold: false, tag: '검' },
           ],
           500, 20,
@@ -2077,9 +2109,9 @@ const STEPS = [
       })
       const settings = await p.evaluate(() => {
         const g = window.__game
-        const slash = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'slash', maxStacks: 1, apply: () => {} }
+        const sword = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'sword', maxStacks: 1, apply: () => {} }
         const prevAcquired = new Map(g.acquired)
-        g.acquired.set('ilseom', { upgrade: slash, count: 1 })
+        g.acquired.set('ilseom', { upgrade: sword, count: 1 })
         g.hud.openSettings(
           [...g.acquired.values()],
           { master: 1, music: 1, sfx: 1 },
@@ -2087,7 +2119,10 @@ const STEPS = [
           true,
           g.input.keyBindings,
         )
-        const el = document.querySelector('#traits .trait')
+        // CORE_SLOTS 순서가 gun/sword/character라 첫 .trait는 이제 항상 gun
+        // 슬롯이다(비어있으면 trait-slot-empty) — 주입한 sword 특성을 슬롯
+        // 배지 클래스로 직접 찾는다.
+        const el = document.querySelector('#traits .trait.slot-sword')
         const className = el ? el.className : null
         g.hud.closeSettings()
         g.acquired = prevAcquired
@@ -2099,16 +2134,16 @@ const STEPS = [
       const r = window.__qcTraitBadgeResult
       if (!r) return '결과 없음'
       const sigilCard = r.levelUp[0]
-      const slashCard = r.levelUp[1]
-      if (!sigilCard || sigilCard.className !== 'card slot-sigil' || sigilCard.crar !== '각인') {
+      const swordCard = r.levelUp[1]
+      if (!sigilCard || sigilCard.className !== 'card slot-character-sigil' || sigilCard.crar !== '캐릭터 각인') {
         return `레벨업 카드(각인)가 슬롯 배지로 표기되지 않음 (${JSON.stringify(sigilCard)})`
       }
-      if (!slashCard || slashCard.className !== 'card slot-slash' || slashCard.crar !== '베기') {
-        return `레벨업 카드(베기)가 슬롯 배지로 표기되지 않음 (${JSON.stringify(slashCard)})`
+      if (!swordCard || swordCard.className !== 'card slot-sword' || swordCard.crar !== '검') {
+        return `레벨업 카드(검)가 슬롯 배지로 표기되지 않음 (${JSON.stringify(swordCard)})`
       }
-      if (r.shop[0] !== 'shop-item slot-slash') return `상점 특성 아이템이 슬롯 배지가 아님 (${r.shop[0]})`
+      if (r.shop[0] !== 'shop-item slot-sword') return `상점 특성 아이템이 슬롯 배지가 아님 (${r.shop[0]})`
       if (r.shop[1] !== 'shop-item common') return `상점 무기 아이템의 등급 표기가 이전과 달라짐 (${r.shop[1]})`
-      if (r.settings !== 'trait slot-slash') return `보유 특성 목록이 슬롯 배지로 표기되지 않음 (${r.settings})`
+      if (r.settings !== 'trait slot-sword') return `보유 특성 목록이 슬롯 배지로 표기되지 않음 (${r.settings})`
       return null
     }),
   },
@@ -2558,8 +2593,7 @@ function checkStateSnapshot() {
 
 /**
  * rollChoices() 카드 구성 규칙을 2000회 표본으로 정적 검증한다(브라우저 불필요).
- * 특성 슬롯제(작업 지시 slot_system_phase1) 커밋 1의 완료 기준 —
- * tools/verify_roll_choices.mjs 참고.
+ * 슬롯 3축 재편(작업 지시 P8 커밋1)의 완료 기준 — tools/verify_roll_choices.mjs 참고.
  */
 function checkRollChoices() {
   console.log('· 특성 선택지 구성 규칙 검사 (tools/verify_roll_choices.mjs)')

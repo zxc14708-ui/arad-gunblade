@@ -11,7 +11,7 @@ import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
 import { Pickups } from '../systems/Pickups'
 import { Effects } from '../systems/Effects'
-import { rollChoices, Upgrade, forgeSwapCandidates, upgradeById, CoreSlot } from '../systems/Upgrades'
+import { rollChoices, Upgrade, forgeSwapCandidates, upgradeById, CoreSlot, isSigilSlot } from '../systems/Upgrades'
 import { Shop, ShopItem } from '../systems/Shop'
 import { AudioManager } from '../systems/Audio'
 import { ELITE_AFFIX } from '../systems/EliteAffixes'
@@ -715,7 +715,7 @@ export class Game {
         }
         // 각인은 스택 장부만 옮긴다(교체해도 힘이 줄지 않는다). 핵심 슬롯은
         // 애초에 슬롯당 1개뿐이라 setCoreSlot이 덮어쓰는 것 자체가 교체다.
-        if (from.slot === 'sigil') {
+        if (isSigilSlot(from.slot)) {
           const stack = Math.max(0, this.player.traitStacks.get(from.id) ?? 0)
           this.player.traitStacks.set(from.id, stack > 0 ? stack - 1 : 0)
         }
@@ -863,7 +863,7 @@ export class Game {
     const it = shop.items[index]
     if (!it || it.sold) return
     if (it.type === 'trait' && !this.player.canAcquireTrait(it.def)) {
-      this.hud.banner_(it.def.slot === 'sigil' ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
+      this.hud.banner_(isSigilSlot(it.def.slot) ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
       return
     }
     if (!this.run.spendGold(it.price)) return
@@ -1060,7 +1060,7 @@ export class Game {
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
-      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce)
+      this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce, b.shockwave)
     }
     if (bullets.length > 0) {
       this.audio.gunshot(this.player.gun.id)
@@ -1087,7 +1087,7 @@ export class Game {
     if (slash) {
       this.audio.slash(this.player.sword.id)
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
-      if (this.player.coreSlots.get('slash') === 'dualblade') {
+      if (this.player.coreSlots.get('sword') === 'dualblade') {
         // '이도류' — 2연타, 각 타 60%(합계 120%). 첫 타는 즉시, 두 번째 타는
         // 0.12초 뒤 그 시점의 플레이어 위치/각도로 다시 판정한다(대기열 방식,
         // Game.step()에서 playerDt 누적으로 소진 — 히트스톱 영향 없음).
@@ -1103,7 +1103,7 @@ export class Game {
         })
       } else {
         this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
-        if (this.player.coreSlots.get('slash') === 'parry') {
+        if (this.player.coreSlots.get('sword') === 'parry') {
           this.resolveDeflect(slash.pos, slash.angle, slash.arc, slash.range, slash.damage)
         }
       }
@@ -1138,7 +1138,7 @@ export class Game {
     }
     if (!this.player.isDashing && this.wasDashing) {
       this.player.onDashEnd() // '급전환' — 대시 종료 직후 검 쿨 절반 + 총 즉시 장전
-      if (this.player.coreSlots.get('dash') === 'mark') this.resolveDashMark(this.player.dashStart, this.player.pos)
+      if (this.player.coreSlots.get('character') === 'mark') this.resolveDashMark(this.player.dashStart, this.player.pos)
     }
     this.wasDashing = this.player.isDashing
 
@@ -1206,14 +1206,14 @@ export class Game {
       this.player.reloading,
       this.player.reloadRatio,
       this.player.gun.name,
-      this.player.coreSlots.get('shot') === 'last_bullet',
+      this.player.coreSlots.get('gun') === 'last_bullet',
     )
     this.hud.setStats(this.mode === 'town' ? 0 : this.run.depth, this.kills, this.run.gold)
 
     const damageEvent = this.player.consumeDamageEvent()
     if (damageEvent === 'ward') this.hud.banner_('수호막이 피해를 막았습니다!')
     else if (damageEvent === 'revive') this.hud.banner_('불굴 발동 — 체력 50%로 부활!')
-    else if (damageEvent === 'dashBlock' && this.player.coreSlots.get('dash') === 'afterimage' && this.player.tryRefreshDashOnBlock()) {
+    else if (damageEvent === 'dashBlock' && this.player.coreSlots.get('character') === 'afterimage' && this.player.tryRefreshDashOnBlock()) {
       // '잔영' — 대시 무적으로 흘렸을 때만(피격 후 무적은 dashBlock을 만들지 않는다),
       // 대시 1회당 최대 1회(tryRefreshDashOnBlock 자체가 가드). 적 탄환 피격
       // (resolveEnemyBullets)과 근접 접촉 피해(위 contactDamage 블록) 모두
@@ -1514,7 +1514,7 @@ export class Game {
           const rangeBonus = travelDist >= CONFIG.combat.gunRangeBonusDist
           // '밀착사격'(shot) — 먼 거리 보너스와 정반대 축이라 동시에 성립할 수 없다
           // (gunRangeBonusDist 8 ≫ closeRangeDist 3).
-          const closeRange = this.player.coreSlots.get('shot') === 'close_range' && travelDist <= CONFIG.traits.closeRangeDist
+          const closeRange = this.player.coreSlots.get('gun') === 'close_range' && travelDist <= CONFIG.traits.closeRangeDist
           const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : closeRange ? b.damage * CONFIG.traits.closeRangeMult : b.damage
           e.takeDamage(dmg, 'ranged', b.crit)
           b.hitSet.add(e.id)
@@ -1524,12 +1524,21 @@ export class Game {
           this.applyLifesteal(dmg)
           this.effects.hitImpact(e.pos.x, e.pos.z, b.crit ? 1.9 : 1.3)
           this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), dmg, b.crit, rangeBonus)
+          // '마지막 한발'(gun) — 명중 지점 주변에 넉백 충격파(피해는 없음, 순수 넉백).
+          if (b.shockwave) {
+            this.effects.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), COLORS.slash, 10, 5)
+            for (const other of this.enemies) {
+              if (!other.alive) continue
+              const d = Math.hypot(other.pos.x - e.pos.x, other.pos.z - e.pos.z)
+              if (d <= CONFIG.traits.lastBulletShockwaveRadius + other.radius) other.knockback(e.pos.x, e.pos.z, CONFIG.traits.lastBulletShockwaveKnockback)
+            }
+          }
           if (b.hitSet.size > b.pierce) {
             // '도탄'(shot) — 관통 소진으로 소멸하는 시점이 기준이라 무기 고유
             // 관통과 자연스럽게 합쳐진다(관통 3인 무기는 3명 뚫은 뒤 튕긴다).
             // 탄환당 1회만, 아직 안 맞은 적 중 가장 가까운 쪽으로 튕긴다.
             // hitSet은 그대로 유지 — 같은 적을 다시 맞히지 않는다.
-            if (this.player.coreSlots.get('shot') === 'ricochet' && !b.ricocheted) {
+            if (this.player.coreSlots.get('gun') === 'ricochet' && !b.ricocheted) {
               const target = this.nearestUnhitEnemy(b.pos, CONFIG.traits.ricochetRadius, b.hitSet)
               if (target) {
                 b.ricocheted = true
@@ -1662,7 +1671,7 @@ export class Game {
 
     // '일섬(一閃)' — 정확히 1명 명중 시에만 배수, 2명 이상이면 절반이라도 주는
     // 완충 없이 1.0배(작업 지시: "교환이 흐려진다" — 의도된 전부-아니면-없음).
-    const ilseomActive = this.player.coreSlots.get('slash') === 'ilseom' && hits.length === 1
+    const ilseomActive = this.player.coreSlots.get('sword') === 'ilseom' && hits.length === 1
     const finalDamage = ilseomActive ? damage * CONFIG.traits.ilseomMult : damage
     const fxScale = opts.halfFx ? CONFIG.traits.dualbladeSecondHitFxScale : 1
 
@@ -1770,12 +1779,12 @@ export class Game {
 
   private applyTrait(u: Upgrade) {
     if (!this.player.canAcquireTrait(u)) {
-      this.hud.banner_(u.slot === 'sigil' ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
+      this.hud.banner_(isSigilSlot(u.slot) ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
       return false
     }
     this.audio.pick()
     u.apply(this.player)
-    if (u.slot === 'sigil') this.player.recordTrait(u.id)
+    if (isSigilSlot(u.slot)) this.player.recordTrait(u.id)
     else this.player.setCoreSlot(u.slot as CoreSlot, u.id)
     const cur = this.acquired.get(u.id)
     if (cur) cur.count++
@@ -1788,11 +1797,9 @@ export class Game {
    * 특성 카드 하나를 "선택"한다 — 각인이거나 빈 슬롯이면 바로 적용한다.
    * 이미 채워진 핵심 슬롯의 다른 특성이면 현재 보유 특성과 나란히 보여주고
    * 교체/유지를 고르게 한다(유지를 고르면 이번 선택 기회는 소모된다).
-   * 이번 커밋은 핵심 슬롯 특성이 0종이라 이 분기는 실제로 타지 않는다 —
-   * 커밋 3에서 슬롯 특성이 들어오면 그대로 쓰인다.
    */
   private offerTrait(u: Upgrade, onDone: (applied: boolean) => void) {
-    if (u.slot !== 'sigil') {
+    if (!isSigilSlot(u.slot)) {
       const currentId = this.player.coreSlots.get(u.slot as CoreSlot)
       const current = currentId ? upgradeById(currentId) : undefined
       if (current && current.id !== u.id) {

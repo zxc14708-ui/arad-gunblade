@@ -186,8 +186,11 @@ export const CONFIG = {
     // gunRangeBonusDist(먼 거리 보너스)와 정반대 축 — 서로 겹칠 수 없다.
     closeRangeDist: 3,
     closeRangeMult: 1.9,
-    // 최후탄(shot): 탄창의 마지막 1발.
+    // 마지막 한발(gun, 구 최후탄): 탄창의 마지막 1발 — 피해 증폭 + 명중 시
+    // 넉백 충격파(작업 지시 P8 커밋1, 개명과 함께 추가). 피해는 없이 순수 넉백.
     lastBulletMult: 2.2,
+    lastBulletShockwaveRadius: 3.5,
+    lastBulletShockwaveKnockback: 9,
     // 조준사격(shot): 이 시간 이상 사격을 쉰 뒤 첫 발은 확정 치명타.
     aimedShotPauseThreshold: 0.35,
     // 표식(dash): 대시로 관통한 적이 받는 피해 배율(지속시간, 초).

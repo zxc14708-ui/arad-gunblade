@@ -14,8 +14,10 @@ export interface Bullet {
   crit: boolean
   pierce: number
   hitSet: Set<number>
-  /** '도탄'(shot) — 이 총알이 이미 한 번 튕겼는지(탄환당 1회만 허용) */
+  /** '도탄'(gun) — 이 총알이 이미 한 번 튕겼는지(탄환당 1회만 허용) */
   ricocheted: boolean
+  /** '마지막 한발'(gun) — 명중 시 주변에 넉백 충격파를 일으킨다. */
+  shockwave: boolean
 }
 
 export interface EnemyBullet {
@@ -54,7 +56,7 @@ export class Projectiles {
   }
 
   spawnBullet(
-    pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number, crit: boolean, pierce: number,
+    pos: THREE.Vector3, dir: THREE.Vector3, speed: number, damage: number, crit: boolean, pierce: number, shockwave = false,
   ) {
     const mesh = new THREE.Sprite(crit ? this.critMat : this.bulletMat)
     mesh.position.copy(pos)
@@ -72,6 +74,7 @@ export class Projectiles {
       pierce,
       hitSet: new Set(),
       ricocheted: false,
+      shockwave,
     })
   }
 

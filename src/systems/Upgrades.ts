@@ -1,14 +1,22 @@
 import { Player } from '../entities/Player'
 
 /**
- * 특성을 관리하는 두 축.
- * `sigil`(각인)은 traitStacks로 누적 스택하는 기존 방식 그대로다.
- * `slash`/`shot`/`dash`/`skill`(핵심 슬롯)은 슬롯당 1개만 보유하며,
- * Player.coreSlots가 "슬롯 → 보유 특성 id"를 기록한다.
+ * 특성을 관리하는 두 축 — 슬롯 3축 재편(작업 지시 P8 커밋1). 예전엔
+ * slash/shot/dash/skill(핵심 슬롯, 슬롯당 1개) + sigil(각인, 스택형) 이었는데,
+ * 무기 축 이름을 그대로 슬롯 이름으로 쓰던 걸 캐릭터/총/검 3축으로 재편하며
+ * 각인도 축별로 분리했다(총 각인/검 각인/캐릭터 각인) — 'sigil' 하나로 뭉쳐
+ * 있으면 "이 각인이 어느 무기 계열과 어울리는지"가 이름에서 안 읽혔다.
+ * `skill` 슬롯은 액티브 스킬(Q/E/R)이 P6 커밋2에서 전면 폐지된 뒤로 채울
+ * 특성이 하나도 없어 이번에 완전히 제거했다 — 핵심 슬롯은 이제 정확히 3개다.
  */
-export type UpgradeSlot = 'slash' | 'shot' | 'dash' | 'skill' | 'sigil'
-export type CoreSlot = Exclude<UpgradeSlot, 'sigil'>
-export const CORE_SLOTS: CoreSlot[] = ['slash', 'shot', 'dash', 'skill']
+export type CoreSlot = 'gun' | 'sword' | 'character'
+export type SigilSlot = 'gun-sigil' | 'sword-sigil' | 'character-sigil'
+export type UpgradeSlot = CoreSlot | SigilSlot
+export const CORE_SLOTS: CoreSlot[] = ['gun', 'sword', 'character']
+export const SIGIL_SLOTS: SigilSlot[] = ['gun-sigil', 'sword-sigil', 'character-sigil']
+export const isSigilSlot = (slot: UpgradeSlot): slot is SigilSlot => (SIGIL_SLOTS as UpgradeSlot[]).includes(slot)
+/** 핵심 슬롯 축(gun/sword/character) ↔ 그 축의 각인 슬롯 */
+export const sigilSlotOf = (core: CoreSlot): SigilSlot => `${core}-sigil` as SigilSlot
 
 /**
  * 특성 등급(rarity)은 슬롯제 도입 때 이미 폐기된 개념이었는데 필드만 남아
@@ -17,11 +25,12 @@ export const CORE_SLOTS: CoreSlot[] = ['slash', 'shot', 'dash', 'skill']
  * 여전히 `Rarity`(Weapons.ts)를 쓰며 이 맵과 무관하다.
  */
 export const SLOT_LABEL: Record<UpgradeSlot, string> = {
-  slash: '베기',
-  shot: '사격',
-  dash: '대시',
-  skill: '스킬',
-  sigil: '각인',
+  gun: '총',
+  sword: '검',
+  character: '캐릭터',
+  'gun-sigil': '총 각인',
+  'sword-sigil': '검 각인',
+  'character-sigil': '캐릭터 각인',
 }
 
 export interface Upgrade {
@@ -50,59 +59,64 @@ export interface Upgrade {
  * 이관: lg_blink → slot: 'dash'로 이동(대시 3종 중 하나), 각인에서 제외.
  * 각인 확정 8종은 수치를 3-2 표에 맞춰 낮췄다(스택 상한 5→3이라 값도 같이
  * 내렸다 — 지시문 표에 있는 그대로).
+ *
+ * 슬롯 3축 재편(작업 지시 P8 커밋1) — 효과는 그대로, 슬롯/축 소속만 바꾼다:
+ * shot→gun, slash→sword, dash→character, sigil→축별 3분리(표는 지시문 그대로).
+ * '최후탄'만 '마지막 한발'로 개명하며 넉백 충격파를 추가한다(Game.resolveBullets()
+ * 참고) — 그 외 11종은 이름·효과 불변.
  */
 const RAW_POOL: Upgrade[] = [
-  // ── 각인(sigil) 7종 — 스택 상한 3, 전부 가산/상시 배수 ──
+  // ── 총 각인(gun-sigil) 2종 — 스택 상한 3, 전부 가산/상시 배수 ──
+  { id: 'reload', name: '신속 장전', desc: '장전 시간 -15%', icon: '🔁', slot: 'gun-sigil', maxStacks: 3,
+    apply: (p) => { p.mods.reloadTime *= 0.85; p.recompute() } },
+  { id: 'crit', name: '급소 간파', desc: '치명타 확률 +8%p', icon: '💥', slot: 'gun-sigil', maxStacks: 3,
+    apply: (p) => { p.mods.critChance += 0.08; p.recompute() } },
+
+  // ── 검 각인(sword-sigil) 2종 ──
+  { id: 'crit_dmg', name: '처형인', desc: '치명타 배율 +0.4', icon: '☠️', slot: 'sword-sigil', maxStacks: 3,
+    apply: (p) => { p.mods.critMult += 0.4; p.recompute() } },
+  { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 4% 회복', icon: '🩸', slot: 'sword-sigil', maxStacks: 3,
+    apply: (p) => { p.mods.lifesteal += 0.04; p.recompute() } },
+
+  // ── 캐릭터 각인(character-sigil) 3종 ──
   // '전투의 깨달음'(xp_gain, 경험치 획득량 +10%)은 작업 지시 P7 커밋1에서
   // 경험치 체계 자체가 폐지되며 함께 삭제됐다(8→7종).
-  { id: 'hp', name: '강인한 육체', desc: '최대 체력 +20, 완전 회복', icon: '❤️', slot: 'sigil', maxStacks: 3,
+  { id: 'hp', name: '강인한 육체', desc: '최대 체력 +20, 완전 회복', icon: '❤️', slot: 'character-sigil', maxStacks: 3,
     apply: (p) => { p.mods.maxHp += 20; p.recompute(); p.hp = p.stats.maxHp } },
-  { id: 'speed', name: '경신법', desc: '이동 속도 +8%', icon: '👟', slot: 'sigil', maxStacks: 3,
+  { id: 'speed', name: '경신법', desc: '이동 속도 +8%', icon: '👟', slot: 'character-sigil', maxStacks: 3,
     apply: (p) => { p.mods.moveSpeed *= 1.08; p.recompute() } },
-  { id: 'crit', name: '급소 간파', desc: '치명타 확률 +8%p', icon: '💥', slot: 'sigil', maxStacks: 3,
-    apply: (p) => { p.mods.critChance += 0.08; p.recompute() } },
-  { id: 'crit_dmg', name: '처형인', desc: '치명타 배율 +0.4', icon: '☠️', slot: 'sigil', maxStacks: 3,
-    apply: (p) => { p.mods.critMult += 0.4; p.recompute() } },
-  { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 4% 회복', icon: '🩸', slot: 'sigil', maxStacks: 3,
-    apply: (p) => { p.mods.lifesteal += 0.04; p.recompute() } },
-  { id: 'reload', name: '신속 장전', desc: '장전 시간 -15%', icon: '🔁', slot: 'sigil', maxStacks: 3,
-    apply: (p) => { p.mods.reloadTime *= 0.85; p.recompute() } },
-  { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해, 스택당 +14', icon: '💣', slot: 'sigil', maxStacks: 3,
+  { id: 'lg_detonator', name: '⭐ 폭심(爆心)', desc: '적 처치 시 폭발로 주변에 피해, 스택당 +14', icon: '💣', slot: 'character-sigil', maxStacks: 3,
     apply: (p) => { p.mods.explodeOnKill += 14; p.recompute() } },
 
-  // ── 핵심 슬롯: slash(4종 — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
-  { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'slash', maxStacks: 1,
-    apply: () => { /* 발동 로직은 Player.update()의 slash 판정에서 stillTimer로 처리 — 상시 배수가 아니라 조건부라 apply는 상태만 등록한다(coreSlots에 이미 기록됨) */ } },
-  { id: 'ilseom', name: '일섬(一閃)', desc: '베기가 정확히 1명만 맞혔을 때 피해 +100% (2명 이상은 배수 없음)', icon: '💫', slot: 'slash', maxStacks: 1,
+  // ── 핵심 슬롯: sword(4종, 구 slash — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
+  { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'sword', maxStacks: 1,
+    apply: () => { /* 발동 로직은 Player.update()의 sword 판정에서 stillTimer로 처리 — 상시 배수가 아니라 조건부라 apply는 상태만 등록한다(coreSlots에 이미 기록됨) */ } },
+  { id: 'ilseom', name: '일섬(一閃)', desc: '베기가 정확히 1명만 맞혔을 때 피해 +100% (2명 이상은 배수 없음)', icon: '💫', slot: 'sword', maxStacks: 1,
     apply: () => { /* Game.resolveSlash()에서 명중 수 1일 때만 판정 */ } },
-  { id: 'dualblade', name: '이도류(二刀流)', desc: '베기가 2연타(각 60%, 합계 120%), 온힛 효과 각 타마다 발동', icon: '⚔️', slot: 'slash', maxStacks: 1,
+  { id: 'dualblade', name: '이도류(二刀流)', desc: '베기가 2연타(각 60%, 합계 120%), 온힛 효과 각 타마다 발동', icon: '⚔️', slot: 'sword', maxStacks: 1,
     apply: () => { /* Game.ts pendingSlashes 대기열에서 0.12초 뒤 두 번째 타격 처리 */ } },
-  { id: 'parry', name: '흘리기', desc: '베기 부채꼴 안 적 탄환을 반사(검 피해의 60%, 역방향) — 근접 적에겐 무효', icon: '🛡️', slot: 'slash', maxStacks: 1,
+  { id: 'parry', name: '흘리기', desc: '베기 부채꼴 안 적 탄환을 반사(검 피해의 60%, 역방향) — 근접 적에겐 무효', icon: '🛡️', slot: 'sword', maxStacks: 1,
     apply: () => { /* Game.resolveDeflect()에서 판정 — 근접 적은 접촉 피해라 대상이 없다(의도) */ } },
 
-  // ── 핵심 슬롯: shot(3종) ──
-  { id: 'close_range', name: '밀착사격', desc: '거리 3 이하 명중 시 피해 +90%', icon: '🔫', slot: 'shot', maxStacks: 1,
+  // ── 핵심 슬롯: gun(4종, 구 shot) ──
+  { id: 'close_range', name: '밀착사격', desc: '거리 3 이하 명중 시 피해 +90%', icon: '🔫', slot: 'gun', maxStacks: 1,
     apply: () => { /* Game.resolveBullets()에서 travelDist로 판정 */ } },
-  { id: 'last_bullet', name: '최후탄', desc: '탄창 마지막 1발 피해 220%', icon: '🎯', slot: 'shot', maxStacks: 1,
-    apply: () => { /* Player.update() 발사 블록에서 ammo===1로 판정 */ } },
-  { id: 'aimed_shot', name: '조준사격', desc: '0.35초 이상 사격을 쉰 뒤 첫 발 확정 치명타', icon: '🎯', slot: 'shot', maxStacks: 1,
+  { id: 'last_bullet', name: '마지막 한발', desc: '탄창 마지막 1발 피해 220%, 명중 시 주변에 넉백 충격파', icon: '🎯', slot: 'gun', maxStacks: 1,
+    apply: () => { /* Player.update() 발사 블록에서 ammo===1로 판정, 넉백은 Game.resolveBullets()에서 처리 */ } },
+  { id: 'aimed_shot', name: '조준사격', desc: '0.35초 이상 사격을 쉰 뒤 첫 발 확정 치명타', icon: '🎯', slot: 'gun', maxStacks: 1,
     apply: () => { /* Player.update() 발사 블록에서 aimPauseTimer로 판정 */ } },
-  { id: 'ricochet', name: '도탄(跳彈)', desc: '탄환이 소멸할 때 반경 8 안의 안 맞은 가장 가까운 적으로 1회 튕긴다', icon: '🔀', slot: 'shot', maxStacks: 1,
+  { id: 'ricochet', name: '도탄(跳彈)', desc: '탄환이 소멸할 때 반경 8 안의 안 맞은 가장 가까운 적으로 1회 튕긴다', icon: '🔀', slot: 'gun', maxStacks: 1,
     apply: () => { /* Game.resolveBullets()에서 관통 소진 시점에 판정 — 관통과 배타 아님 */ } },
 
-  // ── 핵심 슬롯: dash(4종, lg_blink 이관 포함) ──
-  { id: 'mark', name: '표식(標識)', desc: '대시로 관통한 적은 3초간 받는 피해 +35%', icon: '🏷️', slot: 'dash', maxStacks: 1,
+  // ── 핵심 슬롯: character(4종, 구 dash, lg_blink 이관 포함) ──
+  { id: 'mark', name: '표식(標識)', desc: '대시로 관통한 적은 3초간 받는 피해 +35%', icon: '🏷️', slot: 'character', maxStacks: 1,
     apply: () => { /* Game.resolveDashMark()에서 대시 종료 시 판정 */ } },
-  { id: 'quick_switch', name: '급전환', desc: '대시 종료 후 0.5초간 검 쿨 절반 + 총 즉시 장전', icon: '🔄', slot: 'dash', maxStacks: 1,
+  { id: 'quick_switch', name: '급전환', desc: '대시 종료 후 0.5초간 검 쿨 절반 + 총 즉시 장전', icon: '🔄', slot: 'character', maxStacks: 1,
     apply: () => { /* Player.onDashEnd()에서 처리 */ } },
-  { id: 'afterimage', name: '잔영(殘影)', desc: '대시 무적으로 공격을 흘리면 대시 쿨타임 즉시 초기화(대시 1회당 1번)', icon: '👥', slot: 'dash', maxStacks: 1,
+  { id: 'afterimage', name: '잔영(殘影)', desc: '대시 무적으로 공격을 흘리면 대시 쿨타임 즉시 초기화(대시 1회당 1번)', icon: '👥', slot: 'character', maxStacks: 1,
     apply: () => { /* Player.takeDamage()의 dashBlock 이벤트를 Game.ts가 감지해 tryRefreshDashOnBlock() 호출 */ } },
-  { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', slot: 'dash', maxStacks: 1,
+  { id: 'lg_blink', name: '⭐ 섬광강타', desc: '대시 종료 시 주변에 폭발 피해', icon: '⚡', slot: 'character', maxStacks: 1,
     apply: (p) => { p.mods.dashStrike += 44; p.recompute() } },
-
-  // skill 슬롯 특성 4종(역행/삼연사/여운/순환)은 액티브 스킬(Q/E/R) 전면
-  // 폐지와 함께 제거했다(작업 지시 P6 커밋2) — 24종 → 20종. skill 슬롯
-  // 자체(CORE_SLOTS)는 커밋4에서 3축으로 재편하기 전까지 빈 채로 둔다.
 ]
 
 export const POOL: Upgrade[] = RAW_POOL
@@ -129,11 +143,15 @@ export function rollChoices(
 ): Upgrade[] {
   const acquirable = POOL.filter((u) => (traitStacks.get(u.id) ?? 0) < u.maxStacks)
   const emptySlots = CORE_SLOTS.filter((s) => !coreSlots.has(s))
-  const coreSlotCandidates = acquirable.filter((u) => u.slot !== 'sigil' && emptySlots.includes(u.slot as CoreSlot))
-  const sigilPool = acquirable.filter((u) => u.slot === 'sigil')
+  const coreSlotCandidates = acquirable.filter((u) => !isSigilSlot(u.slot) && emptySlots.includes(u.slot as CoreSlot))
+  // 각인 후보 — 3축(총/검/캐릭터)을 하나의 풀로 합쳐 뽑는다. 축 구분은
+  // 표시(배지 색/라벨)와 제련소 교체(같은 축끼리만) 몫이지, 카드 구성
+  // 알고리즘 자체의 취지("빈 슬롯 우선 → 각인 위주 → 확정 이득 1장")는
+  // 축을 몰라도 성립해 굳이 축별로 쪼개지 않는다(작업 지시: 기존 취지 유지).
+  const sigilPool = acquirable.filter((u) => isSigilSlot(u.slot))
   const ownedSigils = sigilPool.filter((u) => (traitStacks.get(u.id) ?? 0) > 0)
   const swapCandidates = acquirable.filter(
-    (u) => u.slot !== 'sigil' && coreSlots.get(u.slot as CoreSlot) !== undefined && coreSlots.get(u.slot as CoreSlot) !== u.id,
+    (u) => !isSigilSlot(u.slot) && coreSlots.get(u.slot as CoreSlot) !== undefined && coreSlots.get(u.slot as CoreSlot) !== u.id,
   )
 
   const chosen: Upgrade[] = []
@@ -176,10 +194,11 @@ export function upgradeById(id: string): Upgrade | undefined {
 }
 
 /**
- * 던전 제련소용 교체 후보.
- * 각인은 각인끼리(등급 무관, 기존엔 "같은 등급"이었으나 등급 축이
- * 폐기됐으므로 슬롯 기준으로 대체한다), 핵심 슬롯 특성은 같은 슬롯끼리만
- * 후보가 된다. currentId 자신과 이미 maxStacks에 도달한 항목은 제외한다.
+ * 던전 제련소용 교체 후보 — "같은 축 내 교체"(작업 지시 P8 커밋1). 각인은
+ * 같은 축의 각인끼리(u.slot이 이제 'gun-sigil'처럼 축까지 못박힌 문자열이라
+ * slot 동등 비교 자체가 곧 "같은 축" 제약이다), 핵심 슬롯 특성은 같은 슬롯
+ * (축)끼리만 후보가 된다. currentId 자신과 이미 maxStacks에 도달한 항목은
+ * 제외한다.
  */
 export function forgeSwapCandidates(
   currentId: string,
@@ -190,7 +209,7 @@ export function forgeSwapCandidates(
   if (!current) return []
   return POOL.filter((u) => {
     if (u.id === currentId || u.slot !== current.slot) return false
-    if (u.slot === 'sigil') return (traitStacks.get(u.id) ?? 0) < u.maxStacks
+    if (isSigilSlot(u.slot)) return (traitStacks.get(u.id) ?? 0) < u.maxStacks
     return coreSlots.get(u.slot as CoreSlot) !== u.id
   })
 }

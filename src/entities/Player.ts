@@ -5,6 +5,7 @@ import { CharacterSprite } from './CharacterSprite'
 import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
 import { MetaBonuses } from '../systems/MetaProgression'
 import type { CoreSlot, UpgradeSlot } from '../systems/Upgrades'
+import { isSigilSlot } from '../systems/Upgrades'
 
 /** 무기 정의 × 특성 배수로 산출되는 실효 스탯 */
 export interface PlayerStats {
@@ -76,6 +77,8 @@ export interface BulletSpec {
   dir: THREE.Vector3
   damage: number
   crit: boolean
+  /** '마지막 한발'(gun) — 명중 시 주변에 넉백 충격파를 일으킨다(Game.resolveBullets()). */
+  shockwave?: boolean
 }
 
 export interface SlashSpec {
@@ -210,7 +213,7 @@ export class Player {
    * (다른 특성으로 슬롯을 교체하는 것은 별도 UI가 처리한다).
    */
   canAcquireTrait(u: { id: string; slot: UpgradeSlot; maxStacks: number }) {
-    if (u.slot === 'sigil') return this.traitStackCount(u.id) < u.maxStacks
+    if (isSigilSlot(u.slot)) return this.traitStackCount(u.id) < u.maxStacks
     return !this.hasCoreSlotTrait(u.id)
   }
 
@@ -227,7 +230,7 @@ export class Player {
 
   /** 대시가 끝난 프레임에 Game이 호출한다 — '급전환'(dash)이면 버프를 건다. */
   onDashEnd() {
-    if (this.coreSlots.get('dash') !== 'quick_switch') return
+    if (this.coreSlots.get('character') !== 'quick_switch') return
     this.quickSwitchTimer = CONFIG.traits.quickSwitchDuration
     this.ammo = this.magSize
     this.reloading = false
@@ -258,10 +261,10 @@ export class Player {
    */
   conditionGauge(): { progress: number; color: string; decreasing?: boolean } | null {
     const candidates: { progress: number; color: string; decreasing?: boolean }[] = []
-    if (this.coreSlots.get('slash') === 'iaijutsu') {
+    if (this.coreSlots.get('sword') === 'iaijutsu') {
       candidates.push({ progress: Math.min(1, this.stillTimer / CONFIG.traits.iaijutsuIdleThreshold), color: '#f97316' })
     }
-    if (this.coreSlots.get('shot') === 'aimed_shot') {
+    if (this.coreSlots.get('gun') === 'aimed_shot') {
       candidates.push({ progress: Math.min(1, this.aimPauseTimer / CONFIG.traits.aimedShotPauseThreshold), color: '#38bdf8' })
     }
     if (candidates.length === 0) return null
@@ -469,7 +472,7 @@ export class Player {
         const isLastBullet = this.ammo === 1
         // '조준사격'(shot) — 충분히 쉬었다 쏘는 첫 발은 확정 치명타. 발동했으면
         // 게이지를 소모(리셋)한다. 매 프레임 아래서 다시 리셋되므로 항상 최신값이다.
-        const aimedShotReady = this.coreSlots.get('shot') === 'aimed_shot' && this.aimPauseTimer >= CONFIG.traits.aimedShotPauseThreshold
+        const aimedShotReady = this.coreSlots.get('gun') === 'aimed_shot' && this.aimPauseTimer >= CONFIG.traits.aimedShotPauseThreshold
         this.gunTimer = this.stats.gunCooldown
         this.ammo--
         this.aimPauseTimer = 0
@@ -499,7 +502,9 @@ export class Player {
             dmg *= 1 + CONFIG.player.reloadRhythm.successBonusMult
             this.rhythmBonusShotsLeft--
           }
-          if (this.coreSlots.get('shot') === 'last_bullet' && isLastBullet) dmg *= CONFIG.traits.lastBulletMult
+          // '마지막 한발'(gun, 구 최후탄) — 피해 증폭 + 명중 시 넉백 충격파(Game.resolveBullets()).
+          const lastBulletActive = this.coreSlots.get('gun') === 'last_bullet' && isLastBullet
+          if (lastBulletActive) dmg *= CONFIG.traits.lastBulletMult
           bullets.push({
             // 총구 높이/전방 거리는 gunblader_gun_m1911.png 발사 프레임의 실제 총구
             // 픽셀 위치를 월드 단위로 환산한 값이다(CharacterSprite.ts GUN_SHOOT_FIX 주석 참고).
@@ -507,6 +512,7 @@ export class Player {
             dir,
             damage: dmg,
             crit,
+            shockwave: lastBulletActive,
           })
         }
         // 마지막 탄 발사 후 자동 장전
@@ -526,7 +532,7 @@ export class Player {
       const crit = this.rollCrit()
       // '발도참'(slash) — 0.5초 이상 정지 후 첫 베기는 강화된다. 발동하면 게이지를
       // 소모(리셋)해 다시 정지해야 재충전된다.
-      const iaijutsuReady = this.coreSlots.get('slash') === 'iaijutsu' && this.stillTimer >= CONFIG.traits.iaijutsuIdleThreshold
+      const iaijutsuReady = this.coreSlots.get('sword') === 'iaijutsu' && this.stillTimer >= CONFIG.traits.iaijutsuIdleThreshold
       if (iaijutsuReady) this.stillTimer = 0
       const dmgMult = iaijutsuReady ? CONFIG.traits.iaijutsuDamageMult : 1
       const kbMult = iaijutsuReady ? CONFIG.traits.iaijutsuKnockbackMult : 1

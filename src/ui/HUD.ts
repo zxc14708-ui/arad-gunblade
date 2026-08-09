@@ -1,4 +1,4 @@
-import { Upgrade, SLOT_LABEL, CORE_SLOTS } from '../systems/Upgrades'
+import { Upgrade, SLOT_LABEL, CORE_SLOTS, isSigilSlot } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
@@ -345,14 +345,13 @@ export class HUD {
   }
 
   /**
-   * 보유 각인 패널(작업 지시 P7 커밋1) — 경험치/레벨이 사라지면서 각인
-   * 획득·승급이 유일한 성장 표시가 됐다. 예전엔 스택 순으로 정렬한 플랫
-   * 목록이라 슬롯 구분이 옅은 좌측 테두리 색뿐이었다 — 핵심 슬롯(베기/
-   * 사격/대시)을 항목별로 항상 보여주고(빈 슬롯은 "비어있음"), 각인은
-   * 별도 섹션에 스택 수와 함께 나열해 슬롯별 구분과 이름이 뚜렷이 읽히게
-   * 한다. 'skill' 슬롯은 P6 커밋2에서 액티브 스킬이 전면 폐지된 뒤로 채울
-   * 수 있는 특성이 하나도 없다(3축 재편 전까지) — 항상 빈 채로 표시해봐야
-   * 혼동만 주므로 이 패널에서는 제외한다.
+   * 보유 각인 패널(작업 지시 P7 커밋1, P8 커밋1에서 3축으로 재편) — 경험치/
+   * 레벨이 사라지면서 각인 획득·승급이 유일한 성장 표시가 됐다. 핵심 슬롯
+   * (총/검/캐릭터)을 항목별로 항상 보여주고(빈 슬롯은 "비어있음"), 각인은
+   * 별도 섹션에 스택 수와 함께 나열해 슬롯(축)별 구분과 이름이 뚜렷이
+   * 읽히게 한다. 'skill' 슬롯은 액티브 스킬(Q/E/R) 전면 폐지(P6 커밋2) 이후
+   * 채울 특성이 없어 이번 3축 재편에서 완전히 제거했다 — CORE_SLOTS가 이제
+   * 정확히 3개뿐이라 이 패널에서 따로 걸러낼 필요도 없다.
    */
   private renderOwnedTraits(traits: { upgrade: Upgrade; count: number }[]) {
     const box = this.q('#traits')
@@ -363,7 +362,7 @@ export class HUD {
     const bySlot = new Map<string, { upgrade: Upgrade; count: number }>()
     const sigils: { upgrade: Upgrade; count: number }[] = []
     for (const t of traits) {
-      if (t.upgrade.slot === 'sigil') sigils.push(t)
+      if (isSigilSlot(t.upgrade.slot)) sigils.push(t)
       else bySlot.set(t.upgrade.slot, t)
     }
 
@@ -371,7 +370,6 @@ export class HUD {
     section.className = 'trait-section'
     section.innerHTML = '<div class="trait-section-head">핵심 슬롯</div>'
     for (const slot of CORE_SLOTS) {
-      if (slot === 'skill') continue
       const t = bySlot.get(slot)
       const el = document.createElement('div')
       el.className = `trait slot-${slot}${t ? '' : ' trait-slot-empty'}`
@@ -386,6 +384,8 @@ export class HUD {
     }
     box.appendChild(section)
 
+    // 각인은 3축(총/검/캐릭터)을 한 목록으로 합쳐 스택순 정렬한다 — 슬롯
+    // 배지 색(slot-gun-sigil 등)과 tslot 라벨로 축은 여전히 항목별로 읽힌다.
     const sigilSection = document.createElement('div')
     sigilSection.className = 'trait-section'
     sigilSection.innerHTML = '<div class="trait-section-head">각인</div>'
@@ -394,10 +394,11 @@ export class HUD {
     } else {
       for (const t of [...sigils].sort((a, b) => b.count - a.count)) {
         const el = document.createElement('div')
-        el.className = 'trait slot-sigil'
+        el.className = `trait slot-${t.upgrade.slot}`
         el.innerHTML = `
           <span class="ticon">${t.upgrade.icon}</span>
           <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
+          <span class="tslot">${SLOT_LABEL[t.upgrade.slot]}</span>
           <span class="tlv">×${t.count}</span>`
         sigilSection.appendChild(el)
       }
@@ -411,7 +412,7 @@ export class HUD {
   }
 
   /**
-   * 탄약 표시 갱신. lastBulletTrait가 true면 '최후탄'(shot) 보유 중 —
+   * 탄약 표시 갱신. lastBulletTrait가 true면 '마지막 한발'(gun) 보유 중 —
    * 탄창의 마지막 1발(핍)에 강조 색을 준다.
    */
   setAmmo(ammo: number, mag: number, reloading: boolean, ratio: number, gunName?: string, lastBulletTrait = false) {
@@ -572,7 +573,7 @@ export class HUD {
 
   /**
    * badgeClass/badgeLabel은 호출부가 정한다 — 무기는 등급(rarity, 예: 'epic')을
-   * 그대로 쓰고, 특성은 슬롯(예: 'slot-slash' / '베기')을 쓴다. 특성 등급 축은
+   * 그대로 쓰고, 특성은 슬롯(예: 'slot-sword' / '검')을 쓴다. 특성 등급 축은
    * 슬롯제 도입 때 이미 폐기됐는데(가격도 핵심 90G/각인 45G로 슬롯 기준) 이
    * 카드가 여태 rarity를 그대로 출력해 각인은 뒤섞인 색, 핵심 특성은 전부
    * 같은 색(epic)으로 뜨는 표기 오류가 있었다(작업 지시 skill_slot_and_rarity).
@@ -622,7 +623,7 @@ export class HUD {
 
   /**
    * 상점 열기/갱신. badgeClass는 호출부가 정한다 — 무기/물약은 등급(rarity),
-   * 특성은 슬롯(예: 'slot-slash')을 넘긴다(Game.shopItemView() 참고).
+   * 특성은 슬롯(예: 'slot-sword')을 넘긴다(Game.shopItemView() 참고).
    */
   renderShop(
     items: { icon: string; name: string; desc: string; badgeClass: string; price: number; sold: boolean; tag?: string }[],

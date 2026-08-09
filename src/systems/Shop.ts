@@ -1,4 +1,4 @@
-import { Upgrade, rollChoices, CoreSlot } from './Upgrades'
+import { Upgrade, rollChoices, CoreSlot, isSigilSlot } from './Upgrades'
 import { WeaponDef, rollWeapons, Rarity } from './Weapons'
 
 export type ShopItem =
@@ -8,7 +8,7 @@ export type ShopItem =
 
 /** 무기 가격은 계속 등급 기준이다(작업 지시: 건드리지 말 것) */
 const PRICE: Record<Rarity, number> = { common: 35, rare: 60, epic: 95, legendary: 150 }
-/** 특성 가격은 등급이 아니라 슬롯 기준 — 핵심 슬롯(slash/shot/dash/skill) 90G, 각인 45G */
+/** 특성 가격은 등급이 아니라 슬롯 기준 — 핵심 슬롯(gun/sword/character) 90G, 각인 45G */
 const TRAIT_PRICE = { core: 90, sigil: 45 }
 export const REROLL_COST = 25
 
@@ -17,7 +17,7 @@ function jitter(base: number) {
 }
 
 function traitPrice(t: Upgrade) {
-  return jitter(t.slot === 'sigil' ? TRAIT_PRICE.sigil : TRAIT_PRICE.core)
+  return jitter(isSigilSlot(t.slot) ? TRAIT_PRICE.sigil : TRAIT_PRICE.core)
 }
 
 /**

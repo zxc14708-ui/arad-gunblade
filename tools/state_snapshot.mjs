@@ -104,16 +104,18 @@ function writeSnapshot(m) {
   L.push(rarityOrderNotes(GUNS, SWORDS))
   L.push('')
 
-  // ── 특성 (슬롯 기준 — 작업 지시 slot_system_phase1 이후 등급 축은 폐기) ──
-  const SLOT_ORDER = ['sigil', 'slash', 'shot', 'dash', 'skill']
+  // ── 특성 (슬롯 3축 기준 — 작업 지시 P8 커밋1, 등급 축은 여전히 폐기 상태) ──
+  const SIGIL_SLOTS = ['gun-sigil', 'sword-sigil', 'character-sigil']
+  const SLOT_ORDER = ['gun', 'sword', 'character', ...SIGIL_SLOTS]
   const bySlot = {}
   for (const slot of SLOT_ORDER) bySlot[slot] = POOL.filter((u) => u.slot === slot)
   // 조건부 판정: apply 본문이 mods 곱/합만 건드리는지, 트리거성 필드를 건드리는지로 나눈다.
   // 핵심 슬롯 특성은 apply()가 대부분 비어있고(발동 로직이 Player/Game의 조건부
-  // 판정 쪽에 있다) slot !== 'sigil' 자체가 이미 "조건부"라 트리거 필드 스캔과 별개로 넣는다.
+  // 판정 쪽에 있다) 각인 슬롯이 아닌 것 자체가 이미 "조건부"라 트리거 필드 스캔과 별개로 넣는다.
   const TRIGGER_FIELDS = ['explodeOnKill', 'dashStrike']
-  const conditional = POOL.filter((u) => u.slot !== 'sigil' || TRIGGER_FIELDS.some((f) => String(u.apply).includes(f)))
-  const sigils = bySlot.sigil
+  const isSigil = (u) => SIGIL_SLOTS.includes(u.slot)
+  const conditional = POOL.filter((u) => !isSigil(u) || TRIGGER_FIELDS.some((f) => String(u.apply).includes(f)))
+  const sigils = SIGIL_SLOTS.flatMap((s) => bySlot[s])
   L.push('## 특성')
   L.push('')
   L.push(`총 ${POOL.length}종 — ` + SLOT_ORDER.map((s) => `${s} ${bySlot[s].length}`).join(' / '))
