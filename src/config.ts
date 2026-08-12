@@ -232,6 +232,14 @@ export const CONFIG = {
     reloadEpicWindowBonus: 0.12,
     // '폭심' 에픽: 폭발로 죽은 적이 있으면 그 자리에서 한 번 더 연쇄 폭발한다
     // (Game.aoeDamage() 참고). 배율은 최초 폭발과 동일(연쇄 자체가 규칙 변경).
+
+    // ── 신규 각인 18종(작업 지시 P8c4) — 등급별 수치는 Upgrades.ts SIGIL_DEFS,
+    // 여긴 등급과 무관한 고정 튜닝값만 둔다 ──
+    // '연참 가속': 이 시간 이상 베기가 없으면 스택을 초기화한다(Player.update() 참고).
+    chainSlashResetIdle: 1.0,
+    // '잔재'(고유·레전더리): 잔상 공격체의 명중 간격(초, Game.updateRemnants() 참고).
+    remnantAttackInterval: 0.5,
+    remnantAttackRange: 7,
   },
 
   // 타격감 연출 (히트스톱/화면 흔들림/피격 플래시)

@@ -723,6 +723,23 @@ export class Enemy {
   }
 
   /**
+   * '혈흔'(고유·레전더리, 작업 지시 P8c4) — 남아있는 출혈 스택이 앞으로
+   * 줄 예정이던 피해 총량을 즉시 입히고 스택을 전부 없앤다. 각 스택의
+   * 잔여 피해는 "남은 지속시간 / 틱 간격 × 틱당 피해"로 근사한다(정수
+   * 틱 횟수가 아니라 연속값으로 근사 — 부분 틱도 비례해 반영된다).
+   */
+  detonateBleed(): number {
+    if (this.bleedStacks.length === 0) return 0
+    const total = this.bleedStacks.reduce(
+      (sum, remaining) => sum + (remaining / CONFIG.enemy.bleed.tickInterval) * CONFIG.enemy.bleed.tickDamage,
+      0,
+    )
+    this.bleedStacks = []
+    this.bleedTickTimer = 0
+    return total
+  }
+
+  /**
    * 감전 적용(작업 지시 P8 커밋2) — 중첩 없이 갱신(기절과 같은 방식)만
    * 한다. 보스도 면역이 아니다. 행동을 멈추지 않는다 — takeDamage()의
    * 받는 피해 배율로만 작용한다(경직류로 만들지 말라는 지시).

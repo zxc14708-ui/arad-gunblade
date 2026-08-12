@@ -2148,6 +2148,270 @@ const STEPS = [
     }),
   },
   {
+    name: 'sigil-p8c4',
+    needs: 'dungeon',
+    what: '신규 각인 18종(작업 지시 P8c4) — 상충 각인(총구 집중/검날 집중) 상호 무력화, 하이리스크(광전/광전사) 받는 피해 증가·혈탄 체력 소모, 혈흔 단독 작동, 총검일체 전환 판정, 역전 체력 20% 포화, 감전 갱신(비누적), 나머지 신규 각인의 mods 배선',
+    async run(p) {
+      await dismissLevelUp(p)
+      const reset = async () => p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.pos.set(0, 0, 0) // 아래 aimAtPoint()가 근처 좌표를 조준하므로 기준점을 고정한다
+        g.player.sigilGrades.clear()
+        g.player.recomputeSigilMods()
+        g.player.hp = g.player.stats.maxHp
+        g.player.invuln = 0
+        g.player.ammo = g.player.magSize
+        g.player.reloading = false
+        g.player.gunTimer = 0
+        g.player.swordTimer = 0
+      })
+      const out = {}
+
+      // ── mods 배선 스팟체크 — 각 신규 각인이 SIGIL_DEFS 수치대로 mods에
+      // 반영되는지(스위치문 오타/누락을 잡는다). 등급 하나씩만 표본으로 확인.
+      out.wiring = await p.evaluate(() => {
+        const g = window.__game
+        const chk = (id, grade) => {
+          g.player.sigilGrades.clear()
+          g.player.recomputeSigilMods()
+          g.player.applySigil(id, grade)
+          const m = { ...g.player.mods }
+          g.player.sigilGrades.clear()
+          g.player.recomputeSigilMods()
+          return m
+        }
+        return {
+          blood_bullet: chk('blood_bullet', 'epic'),
+          overheat: chk('overheat', 'epic'),
+          gun_focus: chk('gun_focus', 'epic'),
+          shock_bullet: chk('shock_bullet', 'epic'),
+          chain_reload: chk('chain_reload', 'legendary'),
+          zero_shot: chk('zero_shot', 'epic'),
+          berserk_blade: chk('berserk_blade', 'epic'),
+          chain_slash: chk('chain_slash', 'epic'),
+          sword_focus: chk('sword_focus', 'epic'),
+          bleed_blade: chk('bleed_blade', 'epic'),
+          blood_trace: chk('blood_trace', 'legendary'),
+          execute_blade: chk('execute_blade', 'epic'),
+          berserker: chk('berserker', 'epic'),
+          reversal: chk('reversal', 'epic'),
+          hybrid_stance: chk('hybrid_stance', 'epic'),
+          golden_weight: chk('golden_weight', 'epic'),
+          remnant: chk('remnant', 'legendary'),
+          last_stand: chk('last_stand', 'epic'),
+        }
+      })
+
+      // ── 상충 각인(총구 집중 × 검날 집중) — 완화 코드 없이 곱셈만으로 서로
+      // 거의 무력화하는지(1.45 × 0.70 ≈ 1.015, 완전한 1.0도 배가도 아니다) ──
+      await reset()
+      out.conflict = await p.evaluate(() => {
+        const g = window.__game
+        const baseGun = g.player.stats.gunDamage
+        const baseSword = g.player.stats.swordDamage
+        g.player.applySigil('gun_focus', 'epic')
+        g.player.applySigil('sword_focus', 'epic')
+        return { gunRatio: g.player.stats.gunDamage / baseGun, swordRatio: g.player.stats.swordDamage / baseSword }
+      })
+
+      // ── 하이리스크 대가 — 광전(검): 받는 피해 증가가 takeDamage()에 실제
+      // 적용되는지. 혈탄(총): 발사할 때마다 체력이 실제로 줄어드는지 ──
+      await reset()
+      out.berserkBladeDamageTaken = await p.evaluate(() => {
+        const g = window.__game
+        g.player.applySigil('berserk_blade', 'epic')
+        g.player.hp = 100
+        g.player.takeDamage(10)
+        return g.player.hp // 기대: 100 - 10*1.30 = 87
+      })
+      await reset()
+      await p.evaluate(() => {
+        window.__game.player.applySigil('blood_bullet', 'epic')
+        window.__game.player.hp = 50
+      })
+      out.hpBeforeShot = await p.evaluate(() => window.__game.player.hp)
+      await aimAtPoint(p, 0, 5) // 빈 공간 — 명중 여부와 무관하게 발사 자체의 체력 소모만 본다
+      await p.mouse.down()
+      // waitGame()(Node↔브라우저 왕복 폴링)은 gunCooldown(0.15게임초)처럼 좁은
+      // 창에서 왕복 지연 자체가 목표 시간을 넘겨버려 총알이 의도치 않게 2발
+      // 나갈 수 있다(QC로 실제 재현 — 체력 소모가 기대의 정확히 2배로 찍힘,
+      // reload-rhythm 스텝의 리듬 창 검증과 같은 이유). 탄약이 정확히 1발
+      // 줄어드는 순간까지만 페이지 내부 rAF로 기다려 왕복을 없앤다.
+      await waitUntilPage(p, '(g) => g.player.ammo < g.player.magSize')
+      await p.mouse.up()
+      out.hpAfterShot = await p.evaluate(() => window.__game.player.hp) // 기대: 50 - 2.5
+
+      // ── 광전사(하이리스크) — 최대 체력 감소 + 모든 피해 증가가 함께 적용 ──
+      await reset()
+      out.berserker = await p.evaluate(() => {
+        const g = window.__game
+        const baseMaxHp = g.player.stats.maxHp
+        const baseGunDamage = g.player.stats.gunDamage
+        g.player.applySigil('berserker', 'epic')
+        return { maxHpRatio: g.player.stats.maxHp / baseMaxHp, gunDamageRatio: g.player.stats.gunDamage / baseGunDamage }
+      })
+
+      // ── 혈흔(고유·레전더리) — 출혈 칼날 없이 단독 작동 + 재적중 시 잔여
+      // 피해 폭발(중첩되지 않고 항상 1중첩으로 리프레시) ──
+      await reset()
+      const bt = await p.evaluate(() => {
+        const g = window.__game
+        g.player.applySigil('blood_trace', 'legendary')
+        g.player.mods.critChance = -1 // 크리티컬 변동을 없애 피해량을 결정론적으로 만든다
+        g.player.recompute()
+        const e = g.debugSpawnEnemy('brute')
+        e.pos.set(g.player.pos.x, 0, g.player.pos.z + 2)
+        return { ex: e.pos.x, ez: e.pos.z, hp0: e.hp }
+      })
+      await aimAtPoint(p, bt.ex, bt.ez)
+      await p.evaluate(() => { window.__game.player.swordTimer = 0 })
+      await p.mouse.down({ button: 'right' })
+      await waitGame(p, 0.05)
+      await p.mouse.up({ button: 'right' })
+      const afterHit1 = await p.evaluate(() => {
+        const e = window.__game.enemies[0]
+        return { hp: e.hp, bleeding: e.bleeding, stacks: e.bleedStackCount }
+      })
+      await p.evaluate(() => { window.__game.player.swordTimer = 0 })
+      await p.mouse.down({ button: 'right' })
+      await waitGame(p, 0.05)
+      await p.mouse.up({ button: 'right' })
+      const afterHit2 = await p.evaluate(() => {
+        const e = window.__game.enemies[0]
+        return { hp: e.hp, bleeding: e.bleeding, stacks: e.bleedStackCount }
+      })
+      out.bloodTrace = { hp0: bt.hp0, afterHit1, afterHit2, delta1: bt.hp0 - afterHit1.hp, delta2: afterHit1.hp - afterHit2.hp }
+
+      // ── 총검일체 — "마지막으로 사용한 무기가 바뀌는 순간"만 버프 트리거
+      // (총→총, 아무것도→총 은 전환이 아니다) ──
+      await reset()
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.applySigil('hybrid_stance', 'legendary') // duration 2.5
+        g.player.lastWeaponUsed = null
+      })
+      await aimAtPoint(p, 0, 5)
+      await p.mouse.down()
+      await waitUntilPage(p, '(g) => g.player.ammo < g.player.magSize')
+      await p.mouse.up()
+      out.hybridAfterFirstShot = await p.evaluate(() => window.__game.player.hybridStanceTimer) // 기대: 0(전환 아님)
+      await p.evaluate(() => { window.__game.player.swordTimer = 0 })
+      await p.mouse.down({ button: 'right' })
+      await waitGame(p, 0.05)
+      await p.mouse.up({ button: 'right' })
+      out.hybridAfterSwitch = await p.evaluate(() => window.__game.player.hybridStanceTimer) // 기대: >0(총→검 전환)
+
+      // ── 역전 — 체력 20% 이하에서 포화(그 이하로 낮춰도 더 오르지 않음) ──
+      await reset()
+      const reversalBase = await p.evaluate(() => {
+        const g = window.__game
+        g.player.applySigil('reversal', 'legendary') // maxDmgFrac 0.36
+        g.player.hp = g.player.stats.maxHp
+        g.player.recompute()
+        return g.player.stats.gunDamage
+      })
+      const at50 = await p.evaluate(() => {
+        const g = window.__game
+        g.player.hp = g.player.stats.maxHp * 0.5
+        g.player.recompute()
+        return g.player.stats.gunDamage
+      })
+      const at20 = await p.evaluate(() => {
+        const g = window.__game
+        g.player.hp = g.player.stats.maxHp * 0.2
+        g.player.recompute()
+        return g.player.stats.gunDamage
+      })
+      const at5 = await p.evaluate(() => {
+        const g = window.__game
+        g.player.hp = g.player.stats.maxHp * 0.05
+        g.player.recompute()
+        return g.player.stats.gunDamage
+      })
+      out.reversal = { base: reversalBase, at50, at20, at5 }
+
+      // ── 감전 — 연사(짧은 간격으로 여러 번 재적용)해도 지속시간이 갱신될
+      // 뿐 누적되지 않는다(기관단총처럼 초당 14발이어도 영구 감전이 안 된다) ──
+      await reset()
+      out.shockRefresh = await p.evaluate(() => {
+        const g = window.__game
+        const e = g.debugSpawnEnemy('imp')
+        e.applyShock(2)
+        e.applyShock(2)
+        e.applyShock(2) // 연사 3회를 흉내
+        return { shockTimer: e.shockTimer, stunned: e.stunned, shocked: e.shocked }
+      })
+
+      await reset()
+      await p.evaluate((result) => { window.__qcSigilP8c4Result = result }, out)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcSigilP8c4Result
+      if (!r) return '결과 없음'
+
+      // 배선 스팟체크
+      const w = r.wiring
+      if (Math.abs(w.blood_bullet.gunDamage - 1.55) > 0.01) return `혈탄 에픽 총 피해 배율이 다름 (${w.blood_bullet.gunDamage} / 기대 1.55)`
+      if (Math.abs(w.blood_bullet.hpCostPerShot - 2.5) > 0.01) return `혈탄 에픽 발사당 체력 소모가 다름 (${w.blood_bullet.hpCostPerShot} / 기대 2.5)`
+      if (Math.abs(w.overheat.overheatStackFrac - 0.04) > 0.001 || w.overheat.overheatMaxStacks !== 10) return `과열 에픽 스택 파라미터가 다름`
+      if (Math.abs(w.gun_focus.gunDamage - 1.45) > 0.01 || Math.abs(w.gun_focus.swordDamage - 0.70) > 0.01) return `총구 집중 에픽 배율이 다름`
+      if (Math.abs(w.shock_bullet.shockOnHitChance - 0.85) > 0.001 || Math.abs(w.shock_bullet.shockOnHitDuration - 3.0) > 0.001) return `감전 탄환 에픽 파라미터가 다름`
+      if (!w.chain_reload.chainReloadOwned) return `연쇄 장전 소유 플래그가 안 켜짐`
+      if (Math.abs(w.zero_shot.zeroShotPerSecond - 0.08) > 0.001 || Math.abs(w.zero_shot.zeroShotCap - 0.40) > 0.001) return `영점 사격 파라미터가 다름`
+      if (Math.abs(w.berserk_blade.swordDamage - 1.55) > 0.01 || Math.abs(w.berserk_blade.damageTakenMult - 1.30) > 0.01) return `광전 에픽 배율이 다름`
+      if (Math.abs(w.chain_slash.chainSlashCutFrac - 0.05) > 0.001 || w.chain_slash.chainSlashMaxStacks !== 10) return `연참 가속 에픽 파라미터가 다름`
+      if (Math.abs(w.sword_focus.swordDamage - 1.45) > 0.01 || Math.abs(w.sword_focus.gunDamage - 0.70) > 0.01) return `검날 집중 에픽 배율이 다름`
+      if (w.bleed_blade.bleedOnHitStacks !== 3) return `출혈 칼날 에픽 중첩 수가 다름 (${w.bleed_blade.bleedOnHitStacks} / 기대 3)`
+      if (!w.blood_trace.bloodTraceOwned) return `혈흔 소유 플래그가 안 켜짐`
+      if (!w.execute_blade.executeBladeOwned || Math.abs(w.execute_blade.executeThreshold - 0.30) > 0.001 || Math.abs(w.execute_blade.executeBossFrac - 0.06) > 0.001) return `일도양단 파라미터가 다름`
+      if (Math.abs(w.berserker.maxHpMult - 0.70) > 0.01 || Math.abs(w.berserker.damageTakenMult - 1.28) > 0.01 || Math.abs(w.berserker.allDamageMult - 1.38) > 0.01) return `광전사 에픽 배율이 다름`
+      if (Math.abs(w.reversal.reversalMaxDmgFrac - 0.48) > 0.01 || Math.abs(w.reversal.reversalMaxSpeedFrac - 0.32) > 0.01) return `역전 에픽 파라미터가 다름`
+      if (Math.abs(w.hybrid_stance.hybridStanceDuration - 3.0) > 0.01 || Math.abs(w.hybrid_stance.hybridStanceDmgFrac - 0.48) > 0.01) return `총검일체 에픽 파라미터가 다름`
+      if (Math.abs(w.golden_weight.goldWeightRate - 0.03) > 0.001 || Math.abs(w.golden_weight.goldWeightCap - 0.50) > 0.001) return `황금의 무게 에픽 파라미터가 다름`
+      if (!w.remnant.remnantOwned || Math.abs(w.remnant.remnantDmgFrac - 0.5) > 0.01) return `잔재 파라미터가 다름`
+      if (!w.last_stand.lastStandOwned || Math.abs(w.last_stand.lastStandBuffFrac - 0.5) > 0.01) return `최후의 저항 파라미터가 다름`
+
+      // 상충 각인
+      if (!(r.conflict.gunRatio > 0.95 && r.conflict.gunRatio < 1.1)) return `총구 집중+검날 집중 동시 보유 시 총 피해 배율이 거의 상쇄되지 않음 (${r.conflict.gunRatio.toFixed(3)} / 기대 약 1.015, 참고: 절반씩 보정 같은 완화 로직이 있으면 안 됨)`
+      if (!(r.conflict.swordRatio > 0.95 && r.conflict.swordRatio < 1.1)) return `총구 집중+검날 집중 동시 보유 시 검 피해 배율이 거의 상쇄되지 않음 (${r.conflict.swordRatio.toFixed(3)} / 기대 약 1.015)`
+
+      // 하이리스크 대가
+      if (Math.abs(r.berserkBladeDamageTaken - 87) > 0.5) return `광전 에픽 보유 중 받는 피해 증가가 실제로 적용되지 않음 (100→${r.berserkBladeDamageTaken} / 기대 87)`
+      const hpDropped = r.hpBeforeShot - r.hpAfterShot
+      if (Math.abs(hpDropped - 2.5) > 0.3) return `혈탄 에픽 — 발사 1회당 체력 소모가 기대(2.5)와 다름 (${hpDropped.toFixed(2)})`
+      if (!(r.berserker.maxHpRatio < 0.75 && r.berserker.maxHpRatio > 0.65)) return `광전사 에픽 최대 체력 감소가 적용되지 않음 (배율 ${r.berserker.maxHpRatio.toFixed(3)} / 기대 약 0.70)`
+      if (!(r.berserker.gunDamageRatio > 1.3 && r.berserker.gunDamageRatio < 1.45)) return `광전사 에픽 "모든 피해 증가"가 총 피해에 적용되지 않음 (배율 ${r.berserker.gunDamageRatio.toFixed(3)} / 기대 약 1.38)`
+
+      // 혈흔 단독 작동
+      const bt = r.bloodTrace
+      if (!bt.afterHit1.bleeding || bt.afterHit1.stacks !== 1) return `혈흔 — 출혈 칼날 없이 단독으로 출혈을 걸지 못함(1타 후 stacks=${bt.afterHit1.stacks})`
+      if (bt.afterHit2.stacks !== 1) return `혈흔 — 재적중 후에도 출혈 스택은 항상 1이어야 함(폭발+리프레시, 중첩 아님) — 실제 ${bt.afterHit2.stacks}`
+      if (!(bt.delta2 > bt.delta1 * 1.15)) return `혈흔 — 이미 출혈 중인 적을 다시 베었을 때 잔여 피해 폭발이 감지되지 않음 (1타 ${bt.delta1.toFixed(1)}, 2타 ${bt.delta2.toFixed(1)})`
+
+      // 총검일체 전환 판정
+      if (r.hybridAfterFirstShot > 0.01) return `총검일체 — 최초 발사(아무 무기도 안 쓴 상태→총)인데 버프가 발동함, "전환"이 아니어야 한다`
+      if (!(r.hybridAfterSwitch > 2.0)) return `총검일체 — 총→검으로 실제 전환했는데 버프가 발동하지 않음 (타이머 ${r.hybridAfterSwitch})`
+
+      // 역전 포화
+      const rv = r.reversal
+      if (Math.abs(rv.base - 1) > 0.001 && false) { /* base는 gunDamage 절대값이라 비율 비교로 대체 */ }
+      const ratio50 = rv.at50 / rv.base
+      const ratio20 = rv.at20 / rv.base
+      const ratio5 = rv.at5 / rv.base
+      if (!(ratio50 > 1.1 && ratio50 < ratio20)) return `역전 — 체력 50%의 보너스가 20%보다 작아야 하는데 그렇지 않음 (50%:${ratio50.toFixed(3)}, 20%:${ratio20.toFixed(3)})`
+      if (Math.abs(ratio20 - 1.36) > 0.02) return `역전 — 체력 20%에서 최대 보너스(+36%)에 도달하지 않음 (${ratio20.toFixed(3)})`
+      if (Math.abs(ratio5 - ratio20) > 0.01) return `역전 — 체력 5%가 20%보다 보너스가 더 커짐(포화되지 않음, 20%:${ratio20.toFixed(3)}, 5%:${ratio5.toFixed(3)})`
+
+      // 감전 갱신(비누적)
+      if (Math.abs(r.shockRefresh.shockTimer - 2) > 0.05) return `감전 — 연사로 3회 재적용했는데 지속시간이 갱신이 아니라 누적됨(${r.shockRefresh.shockTimer} / 기대 2, 3배면 6)`
+      if (r.shockRefresh.stunned) return `감전이 경직(행동 정지)을 유발함 — 감전은 받는 피해 증가만이어야 하고 기절과 달라야 한다`
+      if (!r.shockRefresh.shocked) return '감전이 적용되지 않음'
+
+      return null
+    }),
+  },
+  {
     name: 'elite-ward-thorns',
     needs: 'dungeon',
     what: '엘리트 접두사 — 보호막(피격 흡수) / 가시(근접 반사 25%)',

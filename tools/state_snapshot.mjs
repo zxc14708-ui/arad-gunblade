@@ -111,13 +111,22 @@ function writeSnapshot(m) {
   for (const slot of SLOT_ORDER) bySlot[slot] = POOL.filter((u) => u.slot === slot)
   // 조건부 판정: 핵심 슬롯 특성은 apply()가 대부분 비어있고(발동 로직이
   // Player/Game의 조건부 판정 쪽에 있다) 각인 슬롯이 아닌 것 자체가 이미
-  // "조건부"라 트리거 필드 스캔과 별개로 넣는다. 각인은 등급 5단계 도입
+  // "조건부"라 트리거 목록 스캔과 별개로 넣는다. 각인은 등급 5단계 도입
   // (P8 커밋3) 이후 apply()가 전부 no-op이라(실제 적용은 SIGIL_DEFS +
   // Player.recomputeSigilMods) apply() 본문을 파싱해 트리거성을 가려내는
-  // 옛 방식이 더는 안 통한다 — SIGIL_DEFS.field로 직접 판정한다.
-  const TRIGGER_SIGIL_FIELDS = ['explodeOnKill', 'dashStrike']
+  // 옛 방식이 안 통한다. SIGIL_DEFS가 P8c4에서 각인마다 다른 파라미터
+  // 이름을 쓰는 구조로 바뀌어(공용 `field` 하나가 아니라 id별 분기,
+  // Player.recomputeSigilMods 참고) 필드명으로 자동 판별할 수 없어졌다 —
+  // "이벤트/상태에 반응하는" 각인 id를 직접 나열한다(연속 처치·명중·전환·
+  // 체력·골드처럼 매 순간 조건을 다시 평가하는 것 vs 등급만큼 상시 적용되는
+  // 단순 배수/가산을 구분하는 기준).
+  const TRIGGER_SIGIL_IDS = [
+    'lg_detonator', 'overheat', 'shock_bullet', 'chain_reload', 'zero_shot',
+    'chain_slash', 'bleed_blade', 'blood_trace', 'execute_blade',
+    'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'last_stand',
+  ]
   const isSigil = (u) => SIGIL_SLOTS.includes(u.slot)
-  const conditional = POOL.filter((u) => !isSigil(u) || TRIGGER_SIGIL_FIELDS.includes(SIGIL_DEFS[u.id]?.field))
+  const conditional = POOL.filter((u) => !isSigil(u) || TRIGGER_SIGIL_IDS.includes(u.id))
   const sigils = SIGIL_SLOTS.flatMap((s) => bySlot[s])
   L.push('## 특성')
   L.push('')
@@ -128,7 +137,7 @@ function writeSnapshot(m) {
   L.push(`나머지 ${POOL.length - conditional.length}종은 상시 배수·가산이다.`)
   L.push(`상태이상(작업 지시 P8 커밋2): 기절(적용 각인 없음, 시스템만) · 출혈(중첩형, 스택당 ${CONFIG.enemy.bleed.tickDamage} 피해/${CONFIG.enemy.bleed.tickInterval}s, 지속 ${CONFIG.enemy.bleed.duration}s) · 감전(갱신형, 받는 피해 ×${CONFIG.enemy.shock.damageTakenMult}, 지속 ${CONFIG.enemy.shock.duration}s) — 아직 이를 거는 각인은 없다.`)
   L.push('')
-  L.push('### 각인 등급별 수치 (초안 — 승인 전, 작업 지시 P8 커밋3)')
+  L.push('### 각인 등급별 수치 (작업 지시 P8 커밋3 초안 7종 + P8c4 승인 18종, 25종 전체)')
   L.push('')
   L.push(`| 각인 | ${GRADES.map((g) => GRADE_LABEL[g]).join(' | ')} | 에픽 규칙 변경 |`)
   L.push(`|---|${GRADES.map(() => '---:').join('|')}|---|`)

@@ -56,6 +56,10 @@ export class Game {
   /** 룸 입장 시 순차 스폰 대기열 */
   private spawnQueue: RoomEnemy[] = []
   private slowZones: { position: THREE.Vector3; radius: number; timer: number; multiplier: number; ring: THREE.Mesh }[] = []
+  /** '잔재'(고유·레전더리, 작업 지시 P8c4) — 처치 지점에 남는 잔상 공격체.
+   * 자체 스프라이트 없이 주기적으로 가장 가까운 적을 타격만 한다(간단한
+   * 원거리 판정으로 구현 — 이동/추적 없이 고정 위치에서 사거리 안을 친다). */
+  private remnants: { pos: THREE.Vector3; timer: number; tickTimer: number; damage: number }[] = []
   private spawnTimer = 0
   /** 방 입장 직후 스폰을 미루는 유예 시간 — 문 열자마자 맞는 것을 막는다 */
   private entrySafeTimer = 0
@@ -262,6 +266,7 @@ export class Game {
       z.ring.geometry.dispose()
     })
     this.slowZones = []
+    this.remnants = []
     this.projectiles.clear()
     this.pickups.clear()
     this.effects.clear()
@@ -1090,6 +1095,9 @@ export class Game {
     this.entrySafeTimer = Math.max(0, this.entrySafeTimer - worldDt)
 
     // ── 플레이어 ──
+    // '황금의 무게'(작업 지시 P8c4) — 현재 골드를 매 프레임 알려준다. Player.update()
+    // 끝에서 recompute()가 이 값을 읽어 동적 피해 배수에 반영한다.
+    this.player.setGold(this.run.gold)
     const { bullets, slash, startedReload, reloadTriggerAttempt, reloadRhythm } = this.player.update(playerDt, this.input, this.aimGround)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
@@ -1203,6 +1211,7 @@ export class Game {
     // ── 적 / 투사체 / 픽업 ──
     this.assignSurroundSlots()
     this.updateEnemies(worldDt)
+    this.updateRemnants(worldDt)
     // 플레이어 총알은 playerDt(항상 정상 속도), 적 총알은 worldDt(히트스톱
     // 대상)로 각각 갱신한다 — 작업 지시 P6 커밋1-1/1-3.
     this.projectiles.update(playerDt, worldDt, this.room.bounds, this.player.pos)
@@ -1247,6 +1256,7 @@ export class Game {
     const damageEvent = this.player.consumeDamageEvent()
     if (damageEvent === 'ward') this.hud.banner_('수호막이 피해를 막았습니다!')
     else if (damageEvent === 'revive') this.hud.banner_('불굴 발동 — 체력 50%로 부활!')
+    else if (damageEvent === 'lastStand') this.hud.banner_('최후의 저항 — 체력 1로 생존, 피해량 급증!')
     else if (damageEvent === 'dashBlock' && this.player.coreSlots.get('character') === 'afterimage' && this.player.tryRefreshDashOnBlock()) {
       // '잔영' — 대시 무적으로 흘렸을 때만(피격 후 무적은 dashBlock을 만들지 않는다),
       // 대시 1회당 최대 1회(tryRefreshDashOnBlock 자체가 가드). 적 탄환 피격
@@ -1461,6 +1471,32 @@ export class Game {
     }
   }
 
+  /**
+   * '잔재'(고유·레전더리, 작업 지시 P8c4) — 처치 지점에 남는 잔상이 지속시간
+   * 동안 주기적으로 사거리 안 가장 가까운 적을 공격한다. 이동·추적은 하지
+   * 않는다(간단한 고정 포탑형 구현) — work order는 "대신 공격"까지만 요구할
+   * 뿐 이동 방식은 지정하지 않았다.
+   */
+  private updateRemnants(dt: number) {
+    for (let i = this.remnants.length - 1; i >= 0; i--) {
+      const r = this.remnants[i]
+      r.timer -= dt
+      if (r.timer <= 0) {
+        this.remnants.splice(i, 1)
+        continue
+      }
+      r.tickTimer -= dt
+      if (r.tickTimer > 0) continue
+      r.tickTimer = CONFIG.traits.remnantAttackInterval
+      const target = this.nearestUnhitEnemy(r.pos, CONFIG.traits.remnantAttackRange, new Set())
+      if (!target) continue
+      target.takeDamage(r.damage, 'ranged')
+      this.effects.hitImpact(target.pos.x, target.pos.z, 1.2)
+      this.effects.damageNumber(new THREE.Vector3(target.pos.x, 1.6, target.pos.z), r.damage, false)
+      this.effects.burst(r.pos.clone().setY(1), 0xd0a0ff, 4, 3)
+    }
+  }
+
   /** 보스 돌진·슬램에 맞은 플레이어를 공격 중심의 바깥까지 밀어낸다. */
   private pushPlayerAway(fromX: number, fromZ: number, targetDistance: number) {
     const dx = this.player.pos.x - fromX
@@ -1562,6 +1598,10 @@ export class Game {
           const closeRange = this.player.coreSlots.get('gun') === 'close_range' && travelDist <= CONFIG.traits.closeRangeDist
           const dmg = rangeBonus ? b.damage * CONFIG.combat.gunRangeBonusMult : closeRange ? b.damage * CONFIG.traits.closeRangeMult : b.damage
           e.takeDamage(dmg, 'ranged', b.crit)
+          // '감전 탄환'(작업 지시 P8c4) — 명중 시 확률로 감전 부여.
+          if (this.player.mods.shockOnHitChance > 0 && Math.random() < this.player.mods.shockOnHitChance) {
+            e.applyShock(this.player.mods.shockOnHitDuration)
+          }
           b.hitSet.add(e.id)
           this.audio.hit()
           this.triggerHitstop(b.crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit)
@@ -1724,7 +1764,39 @@ export class Game {
     let hitAny = false
     for (const e of hits) {
       hitAny = true
+      // '혈흔'(고유·레전더리, 작업 지시 P8c4) — 피해 적용 전에 판정한다:
+      // 이미 출혈 중이던 적이면 그 잔여 피해를 먼저 터뜨린다(단독 작동 —
+      // '출혈 칼날' 없이도 이 각인 자신이 매 타격마다 1중첩을 건다).
+      if (this.player.mods.bloodTraceOwned) {
+        if (e.bleeding) {
+          const burst = e.detonateBleed()
+          if (burst > 0) {
+            e.takeDamage(burst, 'bleed')
+            this.effects.damageNumber(new THREE.Vector3(e.pos.x, 2.0, e.pos.z), Math.round(burst), false)
+            this.effects.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xff3b3b, 8, 5)
+          }
+        }
+        e.applyBleed(CONFIG.enemy.bleed.duration)
+      }
+      // '출혈 칼날'(작업 지시 P8c4) — 베기 적중 시 등급별 중첩 부여.
+      if (this.player.mods.bleedOnHitStacks > 0) {
+        for (let s = 0; s < this.player.mods.bleedOnHitStacks; s++) {
+          e.applyBleed(CONFIG.enemy.bleed.duration * this.player.mods.bleedOnHitDurationMult)
+        }
+      }
       const reflected = e.takeDamage(finalDamage, 'melee', crit)
+      // '일도양단'(고유·에픽, 작업 지시 P8c4) — 피해 적용 후 판정한다(방금
+      // 이 타격으로 낮아진 체력 기준). 일반 적은 즉사(다음 프레임
+      // updateEnemies()가 일반 사망 경로로 처리 — killEnemy()를 여기서
+      // 직접 부르지 않는다), 보스·엘리트는 최대 체력 비례 고정 피해를 더 준다.
+      if (this.player.mods.executeBladeOwned && e.alive) {
+        if (!e.elite && e.kind !== 'boss' && e.hp / e.maxHp <= this.player.mods.executeThreshold) {
+          e.hp = 0
+          e.alive = false
+        } else if (e.elite || e.kind === 'boss') {
+          e.takeDamage(e.maxHp * this.player.mods.executeBossFrac, 'melee')
+        }
+      }
       e.knockback(pos.x, pos.z, knockback)
       this.audio.hit(true)
       this.triggerHitstop((crit ? CONFIG.effects.hitstopCrit : CONFIG.effects.hitstopHit) * fxScale)
@@ -1822,6 +1894,18 @@ export class Game {
 
     if (this.player.mods.explodeOnKill > 0 && (!fromExplosion || this.player.mods.detonatorChain)) {
       this.aoeDamage(e.pos.x, e.pos.z, 3.2, this.player.mods.explodeOnKill, 0xffa040, true)
+    }
+    // '잔재'(고유·레전더리, 작업 지시 P8c4) — 처치 지점에 잔상을 남긴다.
+    // 피해는 "현재 총 피해"의 비율로 고정한다(work order 확정 문구) — 처치
+    // 시점의 gunDamage 스냅샷이라 잔상이 유지되는 동안 플레이어 스탯이
+    // 바뀌어도(예: 무기 교체) 흔들리지 않는다.
+    if (this.player.mods.remnantOwned) {
+      this.remnants.push({
+        pos: e.pos.clone(),
+        timer: this.player.mods.remnantDuration,
+        tickTimer: 0,
+        damage: this.player.stats.gunDamage * this.player.mods.remnantDmgFrac,
+      })
     }
     if (e.kind === 'boss') {
       this.boss = null
