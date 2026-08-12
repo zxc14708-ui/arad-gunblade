@@ -4,8 +4,8 @@ import { Input } from '../core/Input'
 import { CharacterSprite } from './CharacterSprite'
 import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
 import { MetaBonuses } from '../systems/MetaProgression'
-import type { CoreSlot, UpgradeSlot } from '../systems/Upgrades'
-import { isSigilSlot } from '../systems/Upgrades'
+import type { CoreSlot, UpgradeSlot, Grade } from '../systems/Upgrades'
+import { isSigilSlot, GRADES, gradeAbove, SIGIL_DEFS } from '../systems/Upgrades'
 
 /** 무기 정의 × 특성 배수로 산출되는 실효 스탯 */
 export interface PlayerStats {
@@ -58,6 +58,9 @@ export interface Mods {
   // 검 적중 시 장전 (기본 메커니즘 — 발도장전은 이 값들을 강화한다)
   swordReloadAmount: number // 검이 적을 맞히면 장전되는 총알 수 (기본 1)
   swordReloadBurstBonus: number // >0이면 검으로 장전한 직후 발사하는 총알 N발의 피해 배율 보너스
+  // 각인 등급 5단계(작업 지시 P8 커밋3) — 에픽 전용 규칙 변경 2종
+  reloadRhythmWindowBonus: number // '신속 장전' 에픽 — 리듬 재장전 성공 구간 폭에 가산(비율)
+  detonatorChain: boolean // '폭심' 에픽 — 폭발로 죽은 적이 있으면 그 자리에서 한 번 더 연쇄 폭발
 }
 
 function freshMods(): Mods {
@@ -69,6 +72,7 @@ function freshMods(): Mods {
     // '발도장전'(lg_quickdraw)이 기본 메커니즘으로 승격됐다(작업 지시
     // slot_system_phase1 커밋 3) — 검 적중 직후 총알 3발에 항상 +30% 피해.
     swordReloadAmount: 1, swordReloadBurstBonus: 0.3,
+    reloadRhythmWindowBonus: 0, detonatorChain: false,
   }
 }
 
@@ -100,9 +104,11 @@ export class Player {
   hp = 0
   stats: PlayerStats
   mods: Mods = freshMods()
-  /** 런 동안 획득한 각인(sigil)별 스택 수. 핵심 슬롯 특성은 여기 들어가지 않는다. */
-  traitStacks = new Map<string, number>()
-  /** 핵심 슬롯(slash/shot/dash/skill) → 보유 중인 특성 id. 슬롯당 1개만 보유한다. */
+  /** 런 동안 획득한 각인(sigil)별 등급(작업 지시 P8 커밋3 — 스택 폐지, 등급으로
+   * 일원화). 각인 하나당 등급 하나만 존재한다 — 승급은 이 맵의 값을 교체할
+   * 뿐, 누적하지 않는다. 핵심 슬롯 특성은 여기 들어가지 않는다(등급이 없다). */
+  sigilGrades = new Map<string, Grade>()
+  /** 핵심 슬롯(gun/sword/character) → 보유 중인 특성 id. 슬롯당 1개만 보유한다. */
   coreSlots = new Map<CoreSlot, string>()
   gun: GunDef = START_GUN
   sword: SwordDef = START_SWORD
@@ -198,29 +204,72 @@ export class Player {
     if (this.hp > 0) this.hp = Math.min(this.hp, this.stats.maxHp)
   }
 
-  traitStackCount(id: string) {
-    return this.traitStacks.get(id) ?? 0
-  }
-
   hasCoreSlotTrait(id: string) {
     for (const v of this.coreSlots.values()) if (v === id) return true
     return false
   }
 
   /**
-   * 각인은 스택 상한 미만이면 계속 획득 가능(기존 방식). 핵심 슬롯 특성은
-   * 슬롯당 1개뿐이라 "이미 이 특성을 보유 중이 아님"이 곧 획득 가능 조건이다
-   * (다른 특성으로 슬롯을 교체하는 것은 별도 UI가 처리한다).
+   * 각인은 이미 에픽이 아닌 한 계속 획득/승급 가능(작업 지시 P8 커밋3 —
+   * 스택 상한을 등급 상한으로 교체). 핵심 슬롯 특성은 슬롯당 1개뿐이라
+   * "이미 이 특성을 보유 중이 아님"이 곧 획득 가능 조건이다(다른 특성으로
+   * 슬롯을 교체하는 것은 별도 UI가 처리한다).
    */
-  canAcquireTrait(u: { id: string; slot: UpgradeSlot; maxStacks: number }) {
-    if (isSigilSlot(u.slot)) return this.traitStackCount(u.id) < u.maxStacks
+  canAcquireTrait(u: { id: string; slot: UpgradeSlot }) {
+    if (isSigilSlot(u.slot)) return this.sigilGrades.get(u.id) !== 'epic'
     return !this.hasCoreSlotTrait(u.id)
   }
 
-  recordTrait(id: string) {
-    const next = this.traitStackCount(id) + 1
-    this.traitStacks.set(id, next)
-    return next
+  /**
+   * 각인 획득/승급(작업 지시 P8 커밋3). 스택처럼 누적 apply()를 반복
+   * 호출하지 않는다 — sigilGrades에 등급만 갱신하고 recomputeSigilMods()가
+   * "현재 보유한 모든 각인의 현재 등급"으로 관련 mods 필드를 매번 처음부터
+   * 다시 계산한다. 이미 보유한 등급보다 낮거나 같은 등급을 넘기면 무시한다
+   * (제안 생성 쪽이 항상 상위 등급만 제안하지만, 방어적으로 한 번 더 막는다).
+   */
+  applySigil(id: string, grade: Grade) {
+    const cur = this.sigilGrades.get(id)
+    if (cur && !gradeAbove(grade, cur)) return
+    this.sigilGrades.set(id, grade)
+    this.recomputeSigilMods()
+    // '강인한 육체'(hp) 고유 취지 유지 — 이 각인을 획득/승급했을 때만 완전 회복한다
+    // (다른 각인을 고를 때마다 매번 풀피가 되는 부수효과를 만들지 않는다).
+    if (id === 'hp' && this.hp > 0) this.hp = this.stats.maxHp
+  }
+
+  /**
+   * 각인 기여분을 전부 초기화한 뒤 sigilGrades에 있는 모든 각인을 현재
+   * 등급 값으로 다시 더한다 — "승급"이 이전 등급의 효과 위에 쌓이면 안
+   * 되기 때문에(등급은 스택이 아니다), 매번 전체를 재구성한다.
+   */
+  private recomputeSigilMods() {
+    const m = this.mods
+    m.maxHp = 0
+    m.critChance = 0
+    m.critMult = 2
+    m.lifesteal = 0
+    m.explodeOnKill = 0
+    m.moveSpeed = 1
+    m.reloadTime = 1
+    m.reloadRhythmWindowBonus = 0
+    m.detonatorChain = false
+    for (const [id, grade] of this.sigilGrades) {
+      const def = SIGIL_DEFS[id]
+      if (!def) continue
+      const v = def.values[grade]
+      switch (def.field) {
+        case 'maxHp': m.maxHp += v; break
+        case 'critChance': m.critChance += v; break
+        case 'critMult': m.critMult += v; break
+        case 'lifesteal': m.lifesteal += v; break
+        case 'explodeOnKill': m.explodeOnKill += v; break
+        case 'moveSpeedFrac': m.moveSpeed *= 1 + v; break
+        case 'reloadTimeCutFrac': m.reloadTime *= 1 - v; break
+      }
+      if (grade === 'epic' && id === 'reload') m.reloadRhythmWindowBonus = CONFIG.traits.reloadEpicWindowBonus
+      if (grade === 'epic' && id === 'lg_detonator') m.detonatorChain = true
+    }
+    this.recompute()
   }
 
   /** 핵심 슬롯에 특성을 채운다(교체 포함) — 슬롯당 항상 1개만 남는다. */
@@ -329,7 +378,9 @@ export class Player {
     // 성공 구간 폭은 이 무기의 장전 시간에 비례해 늘어난다(장전이 긴 무기일수록
     // 여유롭게) — 위치(중심)는 무기와 무관하게 항상 고정이라 학습 가능하다.
     const cfg = CONFIG.player.reloadRhythm
-    const width = Math.min(cfg.windowWidthMax, cfg.windowWidthBase + this.stats.reloadTime * cfg.windowWidthPerSecond)
+    // '신속 장전' 에픽(작업 지시 P8 커밋3) — 성공 구간 폭에 가산(비율). 다른
+    // 등급에서는 mods.reloadRhythmWindowBonus가 0이라 기존 동작과 같다.
+    const width = Math.min(cfg.windowWidthMax, cfg.windowWidthBase + this.stats.reloadTime * cfg.windowWidthPerSecond) + this.mods.reloadRhythmWindowBonus
     this.rhythmWindowStart = Math.max(0, cfg.windowCenterRatio - width / 2)
     this.rhythmWindowEnd = Math.min(1, cfg.windowCenterRatio + width / 2)
     return true

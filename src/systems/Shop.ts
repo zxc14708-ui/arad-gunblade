@@ -1,4 +1,4 @@
-import { Upgrade, rollChoices, CoreSlot, isSigilSlot } from './Upgrades'
+import { Upgrade, rollChoices, CoreSlot, isSigilSlot, Grade } from './Upgrades'
 import { WeaponDef, rollWeapons, Rarity } from './Weapons'
 
 export type ShopItem =
@@ -27,22 +27,22 @@ function traitPrice(t: Upgrade) {
 export class Shop {
   items: ShopItem[] = []
   rerollCount = 0
-  private traitStacks: ReadonlyMap<string, number>
+  private sigilGrades: ReadonlyMap<string, Grade>
   private coreSlots: ReadonlyMap<CoreSlot, string>
 
   constructor(
     excludeWeaponIds: string[] = [],
-    traitStacks: ReadonlyMap<string, number> = new Map(),
+    sigilGrades: ReadonlyMap<string, Grade> = new Map(),
     coreSlots: ReadonlyMap<CoreSlot, string> = new Map(),
   ) {
-    this.traitStacks = traitStacks
+    this.sigilGrades = sigilGrades
     this.coreSlots = coreSlots
-    this.restock(excludeWeaponIds, traitStacks, coreSlots)
+    this.restock(excludeWeaponIds, sigilGrades, coreSlots)
   }
 
-  restock(excludeWeaponIds: string[] = [], traitStacks = this.traitStacks, coreSlots = this.coreSlots) {
+  restock(excludeWeaponIds: string[] = [], sigilGrades = this.sigilGrades, coreSlots = this.coreSlots) {
     const weapons = rollWeapons(2, excludeWeaponIds)
-    const traits = rollChoices(2, traitStacks, coreSlots)
+    const traits = rollChoices(2, sigilGrades, coreSlots)
     this.items = [
       ...weapons.map<ShopItem>((w) => ({ type: 'weapon', def: w, price: jitter(PRICE[w.rarity]), sold: false })),
       ...traits.map<ShopItem>((t) => ({ type: 'trait', def: t, price: traitPrice(t), sold: false })),
@@ -55,8 +55,8 @@ export class Shop {
     return REROLL_COST + this.rerollCount * 15
   }
 
-  reroll(excludeWeaponIds: string[] = [], traitStacks = this.traitStacks, coreSlots = this.coreSlots) {
+  reroll(excludeWeaponIds: string[] = [], sigilGrades = this.sigilGrades, coreSlots = this.coreSlots) {
     this.rerollCount++
-    this.restock(excludeWeaponIds, traitStacks, coreSlots)
+    this.restock(excludeWeaponIds, sigilGrades, coreSlots)
   }
 }

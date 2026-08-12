@@ -31,7 +31,7 @@ const checkOnly = process.argv.includes('--check')
 const ENTRY = `
 export { CONFIG } from './src/config'
 export { GUNS, SWORDS } from './src/systems/Weapons'
-export { POOL } from './src/systems/Upgrades'
+export { POOL, SIGIL_DEFS, GRADES, GRADE_LABEL, describeSigil } from './src/systems/Upgrades'
 export { DEFS } from './src/entities/Enemy'
 export { STAGES } from './src/systems/RunState'
 export { ELITE_AFFIXES, ELITE_AFFIX } from './src/systems/EliteAffixes'
@@ -66,8 +66,8 @@ try {
 // ── 문서 생성 ─────────────────────────────────────────────────────────────
 
 function writeSnapshot(m) {
-  const { CONFIG, GUNS, SWORDS, POOL, DEFS, STAGES, ELITE_AFFIXES } = m
-  for (const [name, value] of Object.entries({ CONFIG, GUNS, SWORDS, POOL, DEFS, STAGES, ELITE_AFFIXES })) {
+  const { CONFIG, GUNS, SWORDS, POOL, DEFS, STAGES, ELITE_AFFIXES, SIGIL_DEFS, GRADES, GRADE_LABEL, describeSigil } = m
+  for (const [name, value] of Object.entries({ CONFIG, GUNS, SWORDS, POOL, DEFS, STAGES, ELITE_AFFIXES, SIGIL_DEFS, GRADES, GRADE_LABEL, describeSigil })) {
     if (!value) throw new Error(`export 누락: ${name} — 파일 상단 주석의 출처 목록 참고`)
   }
 
@@ -109,21 +109,35 @@ function writeSnapshot(m) {
   const SLOT_ORDER = ['gun', 'sword', 'character', ...SIGIL_SLOTS]
   const bySlot = {}
   for (const slot of SLOT_ORDER) bySlot[slot] = POOL.filter((u) => u.slot === slot)
-  // 조건부 판정: apply 본문이 mods 곱/합만 건드리는지, 트리거성 필드를 건드리는지로 나눈다.
-  // 핵심 슬롯 특성은 apply()가 대부분 비어있고(발동 로직이 Player/Game의 조건부
-  // 판정 쪽에 있다) 각인 슬롯이 아닌 것 자체가 이미 "조건부"라 트리거 필드 스캔과 별개로 넣는다.
-  const TRIGGER_FIELDS = ['explodeOnKill', 'dashStrike']
+  // 조건부 판정: 핵심 슬롯 특성은 apply()가 대부분 비어있고(발동 로직이
+  // Player/Game의 조건부 판정 쪽에 있다) 각인 슬롯이 아닌 것 자체가 이미
+  // "조건부"라 트리거 필드 스캔과 별개로 넣는다. 각인은 등급 5단계 도입
+  // (P8 커밋3) 이후 apply()가 전부 no-op이라(실제 적용은 SIGIL_DEFS +
+  // Player.recomputeSigilMods) apply() 본문을 파싱해 트리거성을 가려내는
+  // 옛 방식이 더는 안 통한다 — SIGIL_DEFS.field로 직접 판정한다.
+  const TRIGGER_SIGIL_FIELDS = ['explodeOnKill', 'dashStrike']
   const isSigil = (u) => SIGIL_SLOTS.includes(u.slot)
-  const conditional = POOL.filter((u) => !isSigil(u) || TRIGGER_FIELDS.some((f) => String(u.apply).includes(f)))
+  const conditional = POOL.filter((u) => !isSigil(u) || TRIGGER_SIGIL_FIELDS.includes(SIGIL_DEFS[u.id]?.field))
   const sigils = SIGIL_SLOTS.flatMap((s) => bySlot[s])
   L.push('## 특성')
   L.push('')
   L.push(`총 ${POOL.length}종 — ` + SLOT_ORDER.map((s) => `${s} ${bySlot[s].length}`).join(' / '))
-  L.push(`각인(sigil) 스택 상한: ${sigils.length ? sigils[0].maxStacks : '해당 없음'} · 핵심 슬롯은 슬롯당 1개(스택 없음)`)
+  L.push(`각인 등급 5단계(작업 지시 P8 커밋3, 스택 폐지): ${GRADES.map((g) => GRADE_LABEL[g]).join(' → ')} · 핵심 슬롯은 등급 없음(슬롯당 1개)`)
   L.push('')
   L.push(`조건부·트리거형 ${conditional.length}종: ${conditional.map((u) => u.name).join(', ')}`)
   L.push(`나머지 ${POOL.length - conditional.length}종은 상시 배수·가산이다.`)
   L.push(`상태이상(작업 지시 P8 커밋2): 기절(적용 각인 없음, 시스템만) · 출혈(중첩형, 스택당 ${CONFIG.enemy.bleed.tickDamage} 피해/${CONFIG.enemy.bleed.tickInterval}s, 지속 ${CONFIG.enemy.bleed.duration}s) · 감전(갱신형, 받는 피해 ×${CONFIG.enemy.shock.damageTakenMult}, 지속 ${CONFIG.enemy.shock.duration}s) — 아직 이를 거는 각인은 없다.`)
+  L.push('')
+  L.push('### 각인 등급별 수치 (초안 — 승인 전, 작업 지시 P8 커밋3)')
+  L.push('')
+  L.push(`| 각인 | ${GRADES.map((g) => GRADE_LABEL[g]).join(' | ')} | 에픽 규칙 변경 |`)
+  L.push(`|---|${GRADES.map(() => '---:').join('|')}|---|`)
+  for (const u of sigils) {
+    const def = SIGIL_DEFS[u.id]
+    if (!def) continue
+    const cells = GRADES.map((g) => describeSigil(u.id, g).split(/[,—]/)[0])
+    L.push(`| ${u.name} | ${cells.join(' | ')} | ${def.epicRule ?? '-'} |`)
+  }
   L.push('')
 
   // ── 적 ──

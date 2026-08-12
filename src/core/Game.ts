@@ -11,7 +11,7 @@ import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
 import { Pickups } from '../systems/Pickups'
 import { Effects } from '../systems/Effects'
-import { rollChoices, Upgrade, forgeSwapCandidates, upgradeById, CoreSlot, isSigilSlot } from '../systems/Upgrades'
+import { rollChoices, Upgrade, forgeSwapCandidates, upgradeById, CoreSlot, isSigilSlot, nodeGradeFor, rollNodeSigilRewards } from '../systems/Upgrades'
 import { Shop, ShopItem } from '../systems/Shop'
 import { AudioManager } from '../systems/Audio'
 import { ELITE_AFFIX } from '../systems/EliteAffixes'
@@ -363,7 +363,7 @@ export class Game {
     // 상점 방: 상인 + 제련소 (분수는 별도 — 상점방 포함 여러 방에 배치될 수 있다)
     if (plan.kind === 'shop' || plan.kind === 'rest') {
       if (!this.shopRooms.has(plan.id)) {
-        this.shopRooms.set(plan.id, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks, this.player.coreSlots))
+        this.shopRooms.set(plan.id, new Shop([this.player.gun.id, this.player.sword.id], this.player.sigilGrades, this.player.coreSlots))
       }
       this.interactables.push(new Interactable('merchant', -6, -1, plan.kind === 'rest' ? '보스전 상점' : '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
@@ -426,7 +426,7 @@ export class Game {
     this.run.markCurrentCleared()
     this.hud.setMinimap(this.run.minimap())
     if (this.curPlan?.kind === 'boss') {
-      this.onStageClear()
+      this.grantBossStageReward()
     } else if (this.curPlan?.kind === 'elite') {
       this.grantEliteReward()
     } else if (this.curPlan?.kind === 'trait') {
@@ -441,14 +441,17 @@ export class Game {
   }
 
   /**
-   * '각인' 노드(작업 지시 P7 커밋2) — 전투 후 각인 하나를 자동으로 지급한다.
-   * 상자(openChest)와 달리 확률로 골드가 나오는 대신 항상 특성이 나온다.
+   * '각인' 노드(작업 지시 P7 커밋2, 등급 보상은 P8 커밋3) — 전투 후 각인
+   * 하나를 자동으로 지급한다. 상자(openChest)와 달리 확률로 골드가 나오는
+   * 대신 항상 특성이 나온다. 등급은 nodeGradeFor(stage, 'trait') — 노드
+   * 보정 없음(표 그대로).
    */
   private grantTraitReward() {
     this.state = 'reward'
     this.input.clearAll()
     this.audio.levelup()
-    const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
+    const grade = nodeGradeFor(this.run.stage, 'trait')
+    const choices = rollNodeSigilRewards(3, grade, this.player.sigilGrades, this.player.coreSlots)
     if (choices.length === 0) {
       this.state = 'play'
       this.hud.banner_('획득 가능한 특성이 없습니다')
@@ -468,11 +471,11 @@ export class Game {
   }
 
   /**
-   * '상위 전투' 노드(작업 지시 P7 커밋2) — 원문은 "상위 등급 각인 획득"이지만
-   * 각인 등급 체계가 아직 없다(RunState.makePlan의 hardCombat 분기 주석
-   * 참고 — P6 커밋4/5가 이 작업 다음에 온다). 등급 대신 엘리트와 같은 4장
-   * 선택 + 약간의 골드로 "더 나은 보상"을 표현했다. 등급이 생기면 대체돼야
-   * 한다 — 최종 보고에서 별도로 짚는다.
+   * '상위 전투' 노드(작업 지시 P7 커밋2) — 등급 체계가 없던 시절엔 4장
+   * 선택 + 골드로 "더 나은 보상"을 흉내 냈는데, 이번 커밋(P8 커밋3)의
+   * 노드 등급 표가 정확히 이 노드를 "기본 등급 +1, 3장"으로 지정하므로
+   * 그 임시방편을 정식 등급 보상으로 대체한다 — 카드 수는 표대로 3장이다
+   * (예전의 4장은 폐기; 4장은 엘리트 전용이라는 게 표의 명시적 구분이다).
    */
   private grantHardCombatReward() {
     this.state = 'reward'
@@ -480,7 +483,8 @@ export class Game {
     this.audio.levelup()
     const gold = 20 + this.run.depth * 8
     this.run.addGold(gold)
-    const choices = rollChoices(4, this.player.traitStacks, this.player.coreSlots)
+    const grade = nodeGradeFor(this.run.stage, 'hardCombat')
+    const choices = rollNodeSigilRewards(3, grade, this.player.sigilGrades, this.player.coreSlots)
     if (choices.length === 0) {
       this.state = 'play'
       this.hud.banner_(`골드 +${gold} · 획득 가능한 특성이 없습니다`)
@@ -499,7 +503,12 @@ export class Game {
     })
   }
 
-  /** Elite rooms grant a reward before exits are unlocked. */
+  /**
+   * 엘리트방 보상(작업 지시 P8 커밋3 노드 표 — 기본 등급 +1, 4장). 예전
+   * 주석이 "보스 보상 4장을 여기 잘못 적용했다"고 지적했던 부분은 이제
+   * 해소됐다 — 표가 엘리트를 명시적으로 4장으로 지정하고, 보스(스테이지
+   * 클리어)는 grantBossStageReward()로 별도 3장을 받는다.
+   */
   private grantEliteReward() {
     this.state = 'reward'
     this.input.clearAll()
@@ -507,11 +516,8 @@ export class Game {
     const gold = 35 + this.run.depth * 12
     this.run.addGold(gold)
     this.meta.grantEliteToken()
-    // "보스 보상은 3장이 아니라 4장"(작업 지시) — 이 저장소에는 보스 처치 시
-    // 특성을 고르는 흐름이 없고(스테이지 클리어는 onStageClear로 별도 처리),
-    // 특성 선택을 동반하는 유일한 고급 보상이 엘리트방 클리어라 여기에 적용했다.
-    // 문자 그대로 "보스" 보상이 아니므로 최종 보고에서 별도로 짚는다.
-    const choices = rollChoices(4, this.player.traitStacks, this.player.coreSlots)
+    const grade = nodeGradeFor(this.run.stage, 'elite')
+    const choices = rollNodeSigilRewards(4, grade, this.player.sigilGrades, this.player.coreSlots)
     if (choices.length === 0) {
       this.state = 'play'
       this.hud.banner_(`골드 +${gold} · 모험가 증표 +1 · 획득 가능한 특성이 없습니다`)
@@ -526,6 +532,32 @@ export class Game {
         this.hud.banner_('엘리트 보상 획득!')
         this.openDoors()
         this.clock.getDelta()
+      })
+    })
+  }
+
+  /**
+   * 보스방(스테이지 클리어) 각인 보상(작업 지시 P8 커밋3 노드 표 — 기본
+   * 등급 +1, 3장). 이 저장소엔 원래 보스 처치 시 각인 카드를 고르는 흐름
+   * 자체가 없었다(onStageClear가 메타 보상 화면만 보여줬다) — 노드 표가
+   * "보스(스테이지 클리어)"를 명시적인 각인 보상 노드로 지정했으므로 이
+   * 커밋에서 새로 추가했다. 카드를 고른 뒤에 기존 onStageClear() 흐름
+   * (메타 보상 화면)으로 이어진다.
+   */
+  private grantBossStageReward() {
+    this.state = 'reward'
+    this.input.clearAll()
+    this.audio.levelup()
+    const grade = nodeGradeFor(this.run.stage, 'boss')
+    const choices = rollNodeSigilRewards(3, grade, this.player.sigilGrades, this.player.coreSlots)
+    if (choices.length === 0) {
+      this.onStageClear()
+      return
+    }
+    this.hud.showLevelUp('보스 처치! 각인 획득', '특성 하나를 선택하세요', choices, (u) => {
+      this.offerTrait(u, () => {
+        this.audio.pick()
+        this.onStageClear()
       })
     })
   }
@@ -634,7 +666,7 @@ export class Game {
     this.state = 'levelup'
     this.input.clearAll()
     this.audio.levelup()
-    const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
+    const choices = rollChoices(3, this.player.sigilGrades, this.player.coreSlots)
     if (choices.length === 0) {
       this.startingTraitTaken = true
       altar.markUsed()
@@ -683,17 +715,18 @@ export class Game {
   }
 
   /**
-   * 던전 제련소 — 보유 특성 1개를 같은 등급의 다른 특성으로 교체(유료, 반복 사용
-   * 가능). 특성 효과는 apply()가 누적 연산만 하고 되돌릴 수 없는 구조라 "교체"는
-   * 스택 장부만 옮긴다 — 기존 특성 A의 스택을 1 내리고(효과는 유지) 새 특성 B의
-   * 스택을 1 올려 적용한다. 플레이어 파워가 줄어드는 일은 없다(마을/던전 제련소가
-   * 이미 "스택을 더 쌓는" 방식이라 이번 것도 같은 성질을 유지한 것 — DESIGN_LOG 참고).
+   * 던전 제련소 — 보유 특성 1개를 같은 축의 다른 특성으로 교체(유료, 반복 사용
+   * 가능). 각인은 등급 5단계(작업 지시 P8 커밋3) 도입으로 스택이 아니라
+   * 등급을 갖는다 — forgeSwapCandidates()가 "교체해도 힘이 줄지 않는다"는
+   * 기존 취지를 이어받아 새 각인을 from과 같은 등급으로 제안하고(offerSigil),
+   * from은 sigilGrades에서 완전히 지운다(스택 감산이 아니라 삭제 — 등급은
+   * 누적값이 아니라 단일값이라 "1 내린다"는 개념 자체가 없다).
    */
   private useDungeonForge(forge: Interactable) {
     const price = this.run.dungeonForgePrice
     const owned = [...this.acquired.values()]
       .map((a) => a.upgrade)
-      .filter((u) => forgeSwapCandidates(u.id, this.player.traitStacks, this.player.coreSlots).length > 0)
+      .filter((u) => forgeSwapCandidates(u.id, this.player.sigilGrades, this.player.coreSlots).length > 0)
     if (owned.length === 0) {
       this.hud.banner_('교체할 수 있는 특성이 없습니다')
       return
@@ -707,17 +740,18 @@ export class Game {
     this.input.clearAll()
     this.audio.levelup()
     this.hud.showLevelUp('제련소 — 교체할 특성', `${price} 골드 — 같은 슬롯의 다른 특성으로 교체합니다`, choices, (from) => {
-      const candidates = forgeSwapCandidates(from.id, this.player.traitStacks, this.player.coreSlots).sort(() => Math.random() - 0.5).slice(0, 3)
+      const candidates = forgeSwapCandidates(from.id, this.player.sigilGrades, this.player.coreSlots).sort(() => Math.random() - 0.5).slice(0, 3)
       this.hud.showLevelUp('제련소 — 무엇으로 교체할까요?', `${from.name} 을(를) 교체`, candidates, (to) => {
         if (!this.run.spendGold(price)) {
           this.state = 'play'
           return
         }
-        // 각인은 스택 장부만 옮긴다(교체해도 힘이 줄지 않는다). 핵심 슬롯은
-        // 애초에 슬롯당 1개뿐이라 setCoreSlot이 덮어쓰는 것 자체가 교체다.
+        // 각인은 from을 완전히 지운다(등급은 단일값이라 감산 개념이 없다) —
+        // 새로 적용될 to는 아래 applyTrait(to)가 from과 같은 등급으로 넣는다
+        // (교체해도 힘이 줄지 않는다는 취지 유지). 핵심 슬롯은 애초에 슬롯당
+        // 1개뿐이라 setCoreSlot이 덮어쓰는 것 자체가 교체다.
         if (isSigilSlot(from.slot)) {
-          const stack = Math.max(0, this.player.traitStacks.get(from.id) ?? 0)
-          this.player.traitStacks.set(from.id, stack > 0 ? stack - 1 : 0)
+          this.player.sigilGrades.delete(from.id)
         }
         const cur = this.acquired.get(from.id)
         if (cur) {
@@ -751,7 +785,7 @@ export class Game {
     if (Math.random() < 0.6) {
       this.state = 'levelup'
       this.input.clearAll()
-      const choices = rollChoices(3, this.player.traitStacks, this.player.coreSlots)
+      const choices = rollChoices(3, this.player.sigilGrades, this.player.coreSlots)
       if (choices.length === 0) {
         this.state = 'play'
         this.hud.banner_('획득 가능한 특성이 없습니다')
@@ -803,7 +837,7 @@ export class Game {
   private openShop() {
     const roomId = this.curPlan?.id
     if (roomId && !this.shopRooms.has(roomId)) {
-      this.shopRooms.set(roomId, new Shop([this.player.gun.id, this.player.sword.id], this.player.traitStacks, this.player.coreSlots))
+      this.shopRooms.set(roomId, new Shop([this.player.gun.id, this.player.sword.id], this.player.sigilGrades, this.player.coreSlots))
     }
     this.state = 'shop'
     this.input.clearAll()
@@ -888,7 +922,7 @@ export class Game {
     const shop = this.activeShop()
     if (!shop) return
     if (!this.run.spendGold(shop.rerollPrice)) return
-    shop.reroll([this.player.gun.id, this.player.sword.id], this.player.traitStacks, this.player.coreSlots)
+    shop.reroll([this.player.gun.id, this.player.sword.id], this.player.sigilGrades, this.player.coreSlots)
     this.audio.reload()
     this.renderShop()
   }
@@ -1226,8 +1260,18 @@ export class Game {
     if (!this.player.alive) this.gameOver()
   }
 
-  /** 광역 피해 — 섬광강타(dashStrike)/폭심(explodeOnKill)이 이 한 지점을 거친다. */
-  private aoeDamage(x: number, z: number, radius: number, damage: number, color: number) {
+  /**
+   * 광역 피해 — 섬광강타(dashStrike)/폭심(explodeOnKill)이 이 한 지점을 거친다.
+   * isExplosionSource가 참이면(폭심 발동) 이 폭발로 죽는 적에게 dieFromExplosion
+   * 플래그만 세운다 — 여기서 직접 killEnemy()+배열 제거를 하지 않는다.
+   * aoeDamage()는 updateEnemies()의 메인 순회(적 자연사가 다시 폭발을
+   * 유발하는 경우) 도중에도 불릴 수 있는데, 그 순회는 인덱스 기반이라
+   * 콜백 도중 배열을 직접 스플라이스하면 인덱스가 밀려 실제 크래시가 났다
+   * (Enemy.dieFromExplosion 주석 참고). 실제 제거·killEnemy() 호출은
+   * updateEnemies() 한 곳에서만 한다 — 이 폭발로 죽은 적도 그 루프가
+   * (같은 프레임 안에서, 아직 순회 전이면) 자연스럽게 찾아내 처리한다.
+   */
+  private aoeDamage(x: number, z: number, radius: number, damage: number, color: number, isExplosionSource = false) {
     this.effects.burst(new THREE.Vector3(x, 1, z), color, 18, 10)
     for (const e of this.enemies) {
       if (!e.alive) continue
@@ -1236,6 +1280,7 @@ export class Game {
         e.takeDamage(damage)
         e.knockback(x, z, 6)
         this.effects.damageNumber(new THREE.Vector3(e.pos.x, 1.6, e.pos.z), damage, false)
+        if (isExplosionSource && !e.alive) e.dieFromExplosion = true
       }
     }
   }
@@ -1286,7 +1331,7 @@ export class Game {
       }
 
       if (!e.alive) {
-        this.killEnemy(e)
+        this.killEnemy(e, e.dieFromExplosion)
         this.enemies.splice(i, 1)
       }
     }
@@ -1722,7 +1767,17 @@ export class Game {
     if (this.player.stats.lifesteal > 0) this.player.heal(damage * this.player.stats.lifesteal)
   }
 
-  private killEnemy(e: Enemy) {
+  /**
+   * fromExplosion: 이 죽음이 폭심(explodeOnKill)의 폭발 자체로 발생했는가.
+   * 아래 explodeOnKill 재기폭 분기가 fromExplosion을 확인하는 이유 —
+   * killEnemy()는 죽은 원인과 무관하게 매 킬마다 `mods.explodeOnKill > 0`이면
+   * 무조건 폭발시키므로, 손대지 않으면 폭발로 죽은 적이 다시 폭발을 켜고
+   * 그게 또 다른 적을 죽여 재귀적으로 무한 연쇄한다(모든 등급에서 이미
+   * 그렇게 동작하고 있었다 — QC로 확인 후 발견). '폭심'의 등급별 연쇄는
+   * 에픽 전용 규칙이어야 하므로(work order), 에픽이 아니면 폭발 유발 킬은
+   * 재기폭을 막는다 — 직접 처치(fromExplosion=false)는 항상 정상 발동한다.
+   */
+  private killEnemy(e: Enemy, fromExplosion = false) {
     this.triggerHitstop(e.kind === 'boss' ? CONFIG.effects.hitstopBossKill : CONFIG.effects.hitstopKill)
     this.effects.shake(CONFIG.effects.shakeKill)
     this.scene.remove(e.group)
@@ -1765,8 +1820,8 @@ export class Game {
     const gold = e.kind === 'boss' ? 120 + Math.floor(Math.random() * 60) : Math.max(2, Math.round(e.maxHp * 0.22))
     this.pickups.dropGold(e.pos.x, e.pos.z, gold)
 
-    if (this.player.mods.explodeOnKill > 0) {
-      this.aoeDamage(e.pos.x, e.pos.z, 3.2, this.player.mods.explodeOnKill, 0xffa040)
+    if (this.player.mods.explodeOnKill > 0 && (!fromExplosion || this.player.mods.detonatorChain)) {
+      this.aoeDamage(e.pos.x, e.pos.z, 3.2, this.player.mods.explodeOnKill, 0xffa040, true)
     }
     if (e.kind === 'boss') {
       this.boss = null
@@ -1779,15 +1834,21 @@ export class Game {
 
   private applyTrait(u: Upgrade) {
     if (!this.player.canAcquireTrait(u)) {
-      this.hud.banner_(isSigilSlot(u.slot) ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
+      this.hud.banner_(isSigilSlot(u.slot) ? '이 각인은 이미 최고 등급(에픽)입니다' : '이미 보유한 특성입니다')
       return false
     }
     this.audio.pick()
-    u.apply(this.player)
-    if (isSigilSlot(u.slot)) this.player.recordTrait(u.id)
-    else this.player.setCoreSlot(u.slot as CoreSlot, u.id)
+    if (isSigilSlot(u.slot)) {
+      // 각인은 u.grade가 항상 붙어 있다(rollChoices/rollNodeSigilRewards가
+      // 만든 제안만 여기 들어온다) — u.apply()는 각인에서 더 이상 쓰이지
+      // 않는다(작업 지시 P8 커밋3, Player.applySigil() 참고).
+      this.player.applySigil(u.id, u.grade!)
+    } else {
+      u.apply(this.player)
+      this.player.setCoreSlot(u.slot as CoreSlot, u.id)
+    }
     const cur = this.acquired.get(u.id)
-    if (cur) cur.count++
+    if (cur) { cur.count++; cur.upgrade = u }
     else this.acquired.set(u.id, { upgrade: u, count: 1 })
     this.hud.setHp(this.player.hp, this.player.stats.maxHp)
     return true

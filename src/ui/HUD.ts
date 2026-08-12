@@ -1,4 +1,4 @@
-import { Upgrade, SLOT_LABEL, CORE_SLOTS, isSigilSlot } from '../systems/Upgrades'
+import { Upgrade, SLOT_LABEL, CORE_SLOTS, isSigilSlot, GRADE_LABEL, GRADE_COLOR, GRADES } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
@@ -384,22 +384,25 @@ export class HUD {
     }
     box.appendChild(section)
 
-    // 각인은 3축(총/검/캐릭터)을 한 목록으로 합쳐 스택순 정렬한다 — 슬롯
-    // 배지 색(slot-gun-sigil 등)과 tslot 라벨로 축은 여전히 항목별로 읽힌다.
+    // 각인은 3축(총/검/캐릭터)을 한 목록으로 합쳐 등급 높은 순 정렬한다
+    // (작업 지시 P8 커밋3 — 스택 폐지, ×N 대신 등급 배지). 슬롯 배지 색
+    // (slot-gun-sigil 등)과 tslot 라벨로 축은 여전히 항목별로 읽힌다.
     const sigilSection = document.createElement('div')
     sigilSection.className = 'trait-section'
     sigilSection.innerHTML = '<div class="trait-section-head">각인</div>'
     if (sigils.length === 0) {
       sigilSection.innerHTML += '<div class="trait-empty">아직 획득한 각인이 없습니다. 전투·상자 보상으로 얻으세요.</div>'
     } else {
-      for (const t of [...sigils].sort((a, b) => b.count - a.count)) {
+      const gradeRank = (t: { upgrade: Upgrade }) => (t.upgrade.grade ? GRADES.indexOf(t.upgrade.grade) : -1)
+      for (const t of [...sigils].sort((a, b) => gradeRank(b) - gradeRank(a))) {
         const el = document.createElement('div')
         el.className = `trait slot-${t.upgrade.slot}`
+        const gradeLabel = t.upgrade.grade ? GRADE_LABEL[t.upgrade.grade] : ''
         el.innerHTML = `
           <span class="ticon">${t.upgrade.icon}</span>
           <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
           <span class="tslot">${SLOT_LABEL[t.upgrade.slot]}</span>
-          <span class="tlv">×${t.count}</span>`
+          <span class="tlv" style="color:${t.upgrade.grade ? GRADE_COLOR[t.upgrade.grade] : 'inherit'}">${gradeLabel}</span>`
         sigilSection.appendChild(el)
       }
     }
@@ -527,12 +530,19 @@ export class HUD {
     this.bossFill.style.width = Math.max(0, (hp / max) * 100) + '%'
   }
 
-  /** 특성 선택 (레벨업 / 보스 보상 공용) */
+  /**
+   * 특성 선택 (레벨업 / 보스 보상 공용). 각인 제안 카드는 u.grade가 붙어
+   * 있다(작업 지시 P8 커밋3) — tag로 등급 라벨을 보여준다(핵심 슬롯 카드는
+   * grade가 없어 tag도 비어있다).
+   */
   showLevelUp(head: string, sub: string, choices: Upgrade[], onPick: (u: Upgrade) => void) {
     this.q('#levelHead').textContent = head
     this.q('#levelSub').textContent = sub
     this.renderCards(
-      choices.map((u) => ({ icon: u.icon, name: u.name, desc: u.desc, badgeClass: `slot-${u.slot}`, badgeLabel: SLOT_LABEL[u.slot] })),
+      choices.map((u) => ({
+        icon: u.icon, name: u.name, desc: u.desc, badgeClass: `slot-${u.slot}`, badgeLabel: SLOT_LABEL[u.slot],
+        tag: u.grade ? GRADE_LABEL[u.grade] : undefined,
+      })),
       (i) => onPick(choices[i]),
     )
   }

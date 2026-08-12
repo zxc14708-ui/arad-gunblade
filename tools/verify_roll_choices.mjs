@@ -1,22 +1,23 @@
 /**
  * Upgrades.rollChoices() 구성 규칙을 정적으로(브라우저 없이) 검증한다.
  * 슬롯 3축 재편(작업 지시 P8 커밋1)으로 핵심 슬롯이 3개(gun/sword/character),
- * 각인이 축별 3개 풀(gun-sigil/sword-sigil/character-sigil)로 나뉜 뒤의
- * rollChoices() 전체 동작을 검증한다 — 예전(커밋1 이전) 버전은 "각인만 있는
- * 상태" 전용이라 지금 POOL과 맞지 않아 폐기했다.
+ * 각인이 축별 3개 풀(gun-sigil/sword-sigil/character-sigil)로 나뉘었고,
+ * 각인 등급 5단계(작업 지시 P8 커밋3)로 스택이 등급으로 바뀌면서
+ * rollChoices()의 두 번째 인자도 traitStacks(id→스택수)에서
+ * sigilGrades(id→Grade)로 바뀌었다 — 이 검증도 그에 맞춰 갱신한다.
  *
  * 검증하는 것:
- *   - 어떤 coreSlots/traitStacks 조합에서도 요청한 장수(count)만큼 항상 채워지는가
+ *   - 어떤 coreSlots/sigilGrades 조합에서도 요청한 장수(count)만큼 항상 채워지는가
  *   - 빈 핵심 슬롯이 있으면 최대 2장까지 그 슬롯 특성이 우선 배치되는가
- *   - 핵심 슬롯이 모두 찼을 때, 보유(스택 1 이상) 각인이 있으면 결과에
+ *   - 핵심 슬롯이 모두 찼을 때, 보유(승급 가능) 각인이 있으면 결과에
  *     최소 1장은 보유 각인을 포함하는가(확정 이득 규칙의 전신)
  *   - 각인 축(gun-sigil/sword-sigil/character-sigil)별 출현 비율 — 통과/실패
  *     기준은 아니고 보고 전용(축마다 보유 종수가 2/2/3으로 달라 완전 균등은
  *     기대치가 아니다)
  *
  * state_snapshot.mjs와 같은 방식으로 esbuild가 TS를 번들해 순수 node에서
- * POOL/rollChoices/CORE_SLOTS/SIGIL_SLOTS를 직접 import한다 — 게임 UI 없이
- * 로직만 표본추출한다.
+ * POOL/rollChoices/CORE_SLOTS/SIGIL_SLOTS/GRADES를 직접 import한다 — 게임
+ * UI 없이 로직만 표본추출한다.
  *
  * 사용: node tools/verify_roll_choices.mjs [표본수=2000]
  */
@@ -28,7 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const N = Number(process.argv[2] ?? 2000)
 
-const ENTRY = `export { POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot } from './src/systems/Upgrades'`
+const ENTRY = `export { POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot, GRADES } from './src/systems/Upgrades'`
 const entryPath = join(ROOT, '.roll-choices-entry.ts')
 const bundleDir = join(ROOT, '.roll-choices-tmp')
 const bundlePath = join(bundleDir, 'bundle.mjs')
@@ -47,14 +48,14 @@ try {
       rollupOptions: { external: ['three'] },
     },
   })
-  const { POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot } = await import(pathToFileURL(bundlePath).href)
-  run(POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot)
+  const { POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot, GRADES } = await import(pathToFileURL(bundlePath).href)
+  run(POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot, GRADES)
 } finally {
   rmSync(entryPath, { force: true })
   rmSync(bundleDir, { force: true, recursive: true })
 }
 
-function run(POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot) {
+function run(POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot, GRADES) {
   const count = 3
   const sigilIds = POOL.filter((u) => isSigilSlot(u.slot)).map((u) => u.id)
   const coreIdsBySlot = new Map(CORE_SLOTS.map((s) => [s, POOL.filter((u) => u.slot === s).map((u) => u.id)]))
@@ -76,21 +77,20 @@ function run(POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot) {
         coreSlots.set(slot, ids[Math.floor(Math.random() * ids.length)])
       }
     }
-    // traitStacks: 각인은 50% 확률로 1~2스택 보유 중(maxStacks=3 미만 유지).
-    // 핵심 슬롯 특성도 traitStacks에 들어갈 수 있다(획득 시 acquired 집계는
-    // 별도지만 canAcquireTrait 판정 자체는 traitStacks를 안 본다 — rollChoices는
-    // coreSlots만으로 핵심 슬롯 보유 여부를 판정하므로 여기선 sigil만 채운다).
-    const traitStacks = new Map()
+    // sigilGrades: 각인은 50% 확률로 보유 중 — 에픽 미만의 무작위 등급으로
+    // 채운다(에픽까지 보유하면 더 승급할 후보가 없어 "보유 각인 있음" 표본이
+    // 의미 없어진다 — GRADES 마지막 하나 전까지만 뽑는다).
+    const sigilGrades = new Map()
     for (const id of sigilIds) {
-      if (Math.random() < 0.5) traitStacks.set(id, 1 + Math.floor(Math.random() * 2))
+      if (Math.random() < 0.5) sigilGrades.set(id, GRADES[Math.floor(Math.random() * (GRADES.length - 1))])
     }
 
-    const choices = rollChoices(count, traitStacks, coreSlots)
+    const choices = rollChoices(count, sigilGrades, coreSlots)
 
     if (choices.length !== count) {
       underfilled++
       if (underfilledSamples.length < 5) {
-        underfilledSamples.push({ i, got: choices.length, want: count, coreSlots: [...coreSlots.entries()], traitStacks: [...traitStacks.entries()] })
+        underfilledSamples.push({ i, got: choices.length, want: count, coreSlots: [...coreSlots.entries()], sigilGrades: [...sigilGrades.entries()] })
       }
     }
 
@@ -108,13 +108,13 @@ function run(POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot) {
       }
     } else {
       // 핵심 슬롯이 모두 찼을 때 — 보유 각인이 있으면 최소 1장은 보유 각인 포함.
-      const hasOwned = [...traitStacks.keys()].some((id) => (traitStacks.get(id) ?? 0) > 0)
+      const hasOwned = sigilGrades.size > 0
       if (hasOwned) {
-        const gotOwned = choices.some((u) => (traitStacks.get(u.id) ?? 0) > 0)
+        const gotOwned = choices.some((u) => sigilGrades.has(u.id))
         if (!gotOwned) {
           missingOwnedPick++
           if (missingOwnedSamples.length < 5) {
-            missingOwnedSamples.push({ i, choices: choices.map((u) => u.id), traitStacks: [...traitStacks.entries()] })
+            missingOwnedSamples.push({ i, choices: choices.map((u) => u.id), sigilGrades: [...sigilGrades.entries()] })
           }
         }
       }
@@ -123,7 +123,7 @@ function run(POOL, rollChoices, CORE_SLOTS, SIGIL_SLOTS, isSigilSlot) {
     for (const u of choices) if (isSigilSlot(u.slot)) axisCount[u.slot]++
   }
 
-  console.log(`rollChoices() 표본 검증 — ${N}회 (핵심 슬롯 3축 + 각인 3축, 작업 지시 P8 커밋1)`)
+  console.log(`rollChoices() 표본 검증 — ${N}회 (핵심 슬롯 3축 + 각인 3축·5등급, 작업 지시 P8 커밋1/3)`)
   console.log(`  ${count}장 항상 채워짐: ${N - underfilled}/${N} (${underfilled}건 미달)`)
   console.log(`  빈 핵심 슬롯 우선 배치(최대 2장) 준수: 위반 ${emptySlotPriorityViolations}건`)
   console.log(`  핵심 슬롯 만석 시 보유 각인 최소 1장 포함: 위반 ${missingOwnedPick}건`)

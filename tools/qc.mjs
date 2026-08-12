@@ -1761,6 +1761,54 @@ const STEPS = [
     },
   },
   {
+    name: 'boss-stage-reward',
+    needs: 'dungeon',
+    what: '보스(스테이지 클리어) 각인 보상(작업 지시 P8 커밋3 노드 표) — 카드 3장(등급 태그 포함) 선택 후 기존 스테이지 클리어 화면으로 이어지는가. 이 저장소엔 원래 이 흐름 자체가 없었다(신규 추가)',
+    async run(p) {
+      await dismissLevelUp(p)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.sigilGrades.clear()
+      })
+      await p.evaluate(() => window.__game.grantBossStageReward())
+      await p.waitForTimeout(200)
+      const cards = await p.evaluate(() => {
+        const result = [...document.querySelectorAll('#cards .card')].map((c) => ({
+          tag: c.querySelector('.ctag')?.textContent ?? null,
+          open: document.querySelector('#levelOv')?.classList.contains('show'),
+        }))
+        window.__qcBossRewardCards = result
+        return result
+      })
+      if (cards.length > 0) await p.click('#cards .card')
+      await p.waitForTimeout(200)
+    },
+    check: async (p) => {
+      const cards = await p.evaluate(() => window.__qcBossRewardCards)
+      if (!cards || cards.length !== 3) return `보스 보상 카드가 3장이 아님 (${cards?.length})`
+      if (!cards[0].open) return '카드 선택 오버레이(#levelOv)가 열리지 않음'
+      if (!cards.every((c) => c.tag && ['노멀', '레어', '유니크', '레전더리', '에픽'].includes(c.tag))) {
+        return `카드에 등급 태그가 없거나 알 수 없는 값 (${JSON.stringify(cards.map((c) => c.tag))})`
+      }
+      const clearShown = await p.evaluate(() => document.querySelector('#clearOv')?.classList.contains('show'))
+      if (!clearShown) return '카드 선택 후 기존 스테이지 클리어 화면(#clearOv)으로 이어지지 않음'
+      return null
+    },
+    async after(p) {
+      await p.evaluate(() => {
+        document.querySelector('#clearOv')?.classList.remove('show')
+        const g = window.__game
+        g.state = 'play'
+        // 이 스텝에서 실제로 카드를 골라 각인을 하나 적용했다 — 뒤 스텝들이
+        // 깨끗한 상태를 기대하므로 여기서도 정리한다(plain recompute()가
+        // 아니라 recomputeSigilMods()로 mods까지 완전히 초기화).
+        g.player.sigilGrades.clear()
+        g.player.recomputeSigilMods()
+      })
+    },
+  },
+  {
     name: 'enemy-stun',
     needs: 'dungeon',
     what: '일반 적 기절(작업 지시 P7 커밋3) — 이동/공격/사격 정지, 지속시간 후 자동 해제, 보스는 applyStun() 면역',
@@ -1978,6 +2026,128 @@ const STEPS = [
     }),
   },
   {
+    name: 'sigil-grades',
+    needs: 'dungeon',
+    what: '각인 등급 5단계(작업 지시 P8 커밋3) — 승급은 누적이 아니라 교체, 강등 무시, 신속 장전 에픽(리듬 창 확대), 폭심 에픽(연쇄 폭발, 그 이하 등급은 단발)',
+    async run(p) {
+      await dismissLevelUp(p)
+      const r = await p.evaluate(async () => {
+        const g = window.__game
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        const out = {}
+
+        // ── 승급은 누적이 아니라 "그 등급 값으로 전면 재계산" ──
+        // sigilGrades만 비우고 plain recompute()를 부르면 mods의 각인
+        // 기여분(critChance/explodeOnKill/detonatorChain 등)은 안 지워진다
+        // (recompute()는 mods→stats만 재계산하지 sigilGrades→mods는 안 한다) —
+        // recomputeSigilMods()로 완전히 재구성해야 한다.
+        g.player.sigilGrades.clear()
+        g.player.recomputeSigilMods()
+        g.player.applySigil('crit', 'normal')
+        out.critAfterNormal = g.player.mods.critChance
+        g.player.applySigil('crit', 'unique')
+        out.critAfterUnique = g.player.mods.critChance
+        // 강등 시도 — 무시돼야 한다(등급이 그대로여야 함)
+        g.player.applySigil('crit', 'rare')
+        out.critAfterDowngradeAttempt = g.player.mods.critChance
+        out.gradeAfterDowngradeAttempt = g.player.sigilGrades.get('crit')
+
+        // ── 신속 장전 에픽 — 리듬 성공 구간이 넓어진다 ──
+        g.player.sigilGrades.delete('reload')
+        g.player.ammo = 0
+        g.player.reloading = false
+        g.player.applySigil('reload', 'normal')
+        g.player.startReload()
+        const normalWindow = g.player.reloadWindow.end - g.player.reloadWindow.start
+        g.player.reloading = false
+        g.player.ammo = 0
+        g.player.applySigil('reload', 'epic')
+        g.player.startReload()
+        const epicWindow = g.player.reloadWindow.end - g.player.reloadWindow.start
+        out.reloadWindowNormal = normalWindow
+        out.reloadWindowEpic = epicWindow
+
+        // ── 폭심 — 레전더리(비에픽)는 단발, 에픽은 연쇄 ──
+        // A(직접 처치) 폭발 반경(3.2) 안에 B, B 폭발 반경 안(A 기준으로는 밖)에 C.
+        const spawnChainTrio = () => {
+          g.debugClearEnemies()
+          const a = g.debugSpawnEnemy('imp')
+          a.pos.set(0, 0, -3)
+          const b = g.debugSpawnEnemy('imp')
+          b.pos.set(0, 0, -6) // A에서 거리 3 — A의 폭발 반경(3.2) 안
+          const c = g.debugSpawnEnemy('imp')
+          c.pos.set(0, 0, -9) // A에서 거리 6(밖) — B에서는 거리 3(안), 연쇄가 있어야만 죽는다
+          return { a, b, c }
+        }
+        // killEnemy()를 살아있는 적에 바로 부르면 안 된다 — aoeDamage()가
+        // this.enemies를 그대로 순회하며 아직 alive===true인 a 자신도
+        // 폭발 반경(중심, 거리 0)에 걸려 자기 자신에게도 피해를 입혀
+        // 이중 사망 처리가 된다(QC로 실제 재현 — 이후 스텝에서 미아가 된
+        // 적이 프레임 루프를 깨뜨렸다). 실제 게임 흐름(takeDamage → hp<=0
+        // → 다음 프레임 !e.alive 감지 → killEnemy+splice)을 그대로 따라
+        // hp/alive를 먼저 정리한 뒤 killEnemy를 부르고 직접 splice한다.
+        const killDirect = (e) => {
+          e.hp = 0
+          e.alive = false
+          g.killEnemy(e, false)
+          const idx = g.enemies.indexOf(e)
+          if (idx >= 0) g.enemies.splice(idx, 1)
+        }
+
+        // killDirect()는 e.alive=false로만 표시하고, 실제 aoeDamage/체인
+        // 처리는(dieFromExplosion 플래그를 통해) updateEnemies()의 다음
+        // 프레임 패스에서 일어난다(프로덕션 버그 수정 이후의 실제 흐름과
+        // 동일) — 따라서 게임 시계가 최소 한 프레임 이상 진행되길 기다린
+        // 뒤에 b/c의 생존 여부를 읽어야 한다.
+        g.player.sigilGrades.delete('lg_detonator')
+        g.player.applySigil('lg_detonator', 'legendary')
+        const trioLegendary = spawnChainTrio()
+        killDirect(trioLegendary.a)
+        {
+          const simT = g.simClock
+          while (g.simClock - simT < 0.1) await wait(30)
+        }
+        out.legendaryBSurvived = trioLegendary.b.alive
+        out.legendaryCSurvived = trioLegendary.c.alive
+
+        g.player.applySigil('lg_detonator', 'epic') // legendary→epic, 유효한 승급
+        const trioEpic = spawnChainTrio()
+        killDirect(trioEpic.a)
+        {
+          const simT = g.simClock
+          while (g.simClock - simT < 0.1) await wait(30)
+        }
+        out.epicBSurvived = trioEpic.b.alive
+        out.epicCSurvived = trioEpic.c.alive
+
+        g.debugClearEnemies()
+        g.player.sigilGrades.clear()
+        g.player.recomputeSigilMods() // mods.explodeOnKill/detonatorChain 등을 완전히 초기화 — 위 주석 참고
+        return out
+      })
+      await p.evaluate((result) => { window.__qcSigilGradeResult = result }, r)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcSigilGradeResult
+      if (!r) return '결과 없음'
+      if (Math.abs(r.critAfterNormal - 0.08) > 0.001) return `급소 간파 노멀 수치가 다름 (${r.critAfterNormal} / 기대 0.08)`
+      if (Math.abs(r.critAfterUnique - 0.15) > 0.001) return `급소 간파 유니크 승급 후 수치가 다름 (${r.critAfterUnique} / 기대 0.15) — 노멀+유니크가 누적됐다면 0.23`
+      if (Math.abs(r.critAfterDowngradeAttempt - r.critAfterUnique) > 0.001) return `레어로 강등 시도 후 수치가 바뀜 (${r.critAfterDowngradeAttempt}) — 강등은 무시돼야 한다`
+      if (r.gradeAfterDowngradeAttempt !== 'unique') return `강등 시도 후 등급이 유니크로 유지되지 않음 (${r.gradeAfterDowngradeAttempt})`
+
+      if (!(r.reloadWindowEpic > r.reloadWindowNormal)) {
+        return `신속 장전 에픽의 리듬 성공 구간이 노멀보다 넓지 않음 (노멀 ${r.reloadWindowNormal.toFixed(3)}, 에픽 ${r.reloadWindowEpic.toFixed(3)})`
+      }
+
+      if (r.legendaryBSurvived) return '폭심 레전더리 — 직접 처치의 폭발 반경 안(B)인데 죽지 않음'
+      if (!r.legendaryCSurvived) return '폭심 레전더리(에픽 아님)인데 연쇄가 일어나 C까지 죽음 — 비에픽은 단발이어야 한다'
+      if (r.epicBSurvived) return '폭심 에픽 — 1차 폭발 반경 안(B)인데 죽지 않음'
+      if (r.epicCSurvived) return '폭심 에픽인데 연쇄가 일어나지 않아 C가 생존함'
+
+      return null
+    }),
+  },
+  {
     name: 'elite-ward-thorns',
     needs: 'dungeon',
     what: '엘리트 접두사 — 보호막(피격 흡수) / 가시(근접 반사 25%)',
@@ -2101,7 +2271,7 @@ const STEPS = [
         // 클리어 화면의 '계속하기' 버튼이 호출하는 것과 동일한 enterTown()을
         // 직접 불러 마을 복귀 시점의 리셋 경계를 검증한다. 경험치/레벨은
         // 작업 지시 P7 커밋1에서 폐지됐다 — 남은 런 범위 상태만 검증한다.
-        g.player.recordTrait('qc-test-trait')
+        g.player.applySigil('qc-test-trait', 'normal')
         g.run.addGold(500)
         g.startingTraitTaken = true
         g.traitForgeUsed = true
@@ -2113,7 +2283,7 @@ const STEPS = [
     check: async (p) => {
       return p.evaluate(() => {
         const g = window.__game
-        if (g.player.traitStacks.size !== 0) return `특성 스택이 초기화되지 않음 (${g.player.traitStacks.size}개 남음)`
+        if (g.player.sigilGrades.size !== 0) return `각인 등급이 초기화되지 않음 (${g.player.sigilGrades.size}개 남음)`
         if (g.run.gold !== 0) return `골드가 초기화되지 않음 (${g.run.gold})`
         if (g.startingTraitTaken !== false) return '시작 특성 제단이 다시 사용 가능한 상태가 아님'
         if (g.traitForgeUsed !== false) return '제련소 런당 1회 플래그가 초기화되지 않음'
@@ -2181,8 +2351,8 @@ const STEPS = [
     async run(p) {
       const levelUp = await p.evaluate(() => {
         const g = window.__game
-        const sigil = { id: 'hp', name: '강인한 육체', desc: '', icon: '❤️', slot: 'character-sigil', maxStacks: 3, apply: () => {} }
-        const sword = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'sword', maxStacks: 1, apply: () => {} }
+        const sigil = { id: 'hp', name: '강인한 육체', desc: '', icon: '❤️', slot: 'character-sigil', grade: 'normal', apply: () => {} }
+        const sword = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'sword', apply: () => {} }
         g.hud.showLevelUp('레벨 업!', '', [sigil, sword], () => {})
         const cards = [...document.querySelectorAll('#cards .card')]
         const result = cards.map((c) => ({ className: c.className, crar: c.querySelector('.crar')?.textContent }))
@@ -2204,7 +2374,7 @@ const STEPS = [
       })
       const settings = await p.evaluate(() => {
         const g = window.__game
-        const sword = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'sword', maxStacks: 1, apply: () => {} }
+        const sword = { id: 'ilseom', name: '일섬', desc: '', icon: '💫', slot: 'sword', apply: () => {} }
         const prevAcquired = new Map(g.acquired)
         g.acquired.set('ilseom', { upgrade: sword, count: 1 })
         g.hud.openSettings(
@@ -2521,6 +2691,7 @@ let clockRate = null
 const assetReport = checkAssetIntegrity()
 checkStateSnapshot()
 checkRollChoices()
+checkNodeGradeRewards()
 
 let server = null
 let port = PORT
@@ -2569,7 +2740,7 @@ const page = await ctx.newPage()
 page.on('console', (m) => {
   if (m.type() === 'error') errors.push(`console: ${m.text()}`)
 })
-page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
+page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}\n${e.stack ?? ''}`))
 page.on('requestfailed', (r) => errors.push(`request: ${r.url()} — ${r.failure()?.errorText}`))
 
 await page.goto(target, { waitUntil: 'networkidle' })
@@ -2699,6 +2870,23 @@ function checkRollChoices() {
     const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
     console.log(out)
     errors.push('rollChoices() 구성 규칙 검증 실패 (tools/verify_roll_choices.mjs) — 위 출력 참조')
+  }
+}
+
+/**
+ * 노드 등급 보상 규칙(스테이지×노드 등급 표, 승급 상한, 확정 이득 1장)을
+ * 2000회 표본으로 정적 검증한다(브라우저 불필요). 각인 등급 5단계(작업 지시
+ * P8 커밋3)의 완료 기준 — tools/verify_node_grade_rewards.mjs 참고.
+ */
+function checkNodeGradeRewards() {
+  console.log('· 노드 등급 보상 규칙 검사 (tools/verify_node_grade_rewards.mjs)')
+  try {
+    const out = execSync('node tools/verify_node_grade_rewards.mjs 2000', { cwd: ROOT, encoding: 'utf-8' })
+    console.log(out)
+  } catch (e) {
+    const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
+    console.log(out)
+    errors.push('노드 등급 보상 규칙 검증 실패 (tools/verify_node_grade_rewards.mjs) — 위 출력 참조')
   }
 }
 

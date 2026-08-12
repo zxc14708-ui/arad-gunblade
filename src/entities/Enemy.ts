@@ -89,6 +89,19 @@ export class Enemy {
   elite: boolean
   affix: EliteAffix | undefined
   alive = true
+  /**
+   * 폭심(explodeOnKill) 폭발로 죽었는가(작업 지시 P8 커밋3) — Game.aoeDamage()가
+   * 죽음을 감지한 그 자리에서 killEnemy()+배열 제거를 직접 하지 않고 이
+   * 플래그만 세우는 이유: aoeDamage()는 Game.updateEnemies()의 메인 순회
+   * 루프 안(적이 자연사할 때 그 죽음이 다시 폭발을 유발하는 경우)에서도
+   * 불릴 수 있는데, 그 순회는 인덱스 기반(`for (let i = length-1; i>=0; i--)`)
+   * 이라 콜백 도중 배열을 직접 스플라이스하면 인덱스가 밀려 다른 원소를
+   * 잘못 제거하거나 범위를 벗어나 `enemies[i]`가 undefined가 되는 실제
+   * 크래시가 났다(QC로 재현: "Cannot read properties of undefined
+   * (reading 'update')"). 그래서 폭발은 이 플래그만 세우고, 실제 제거는
+   * 항상 메인 루프 한 곳에서만 한다 — 죽음 처리 경로가 하나로 통일된다.
+   */
+  dieFromExplosion = false
   contactTimer = 0
   shootTimer: number
   knockTimer = 0
