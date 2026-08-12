@@ -1,4 +1,4 @@
-import { Upgrade, SLOT_LABEL, CORE_SLOTS, isSigilSlot, GRADE_LABEL, GRADE_COLOR, GRADES } from '../systems/Upgrades'
+import { Upgrade, CoreSlot, SLOT_LABEL, CORE_SLOTS, isSigilSlot, GRADE_LABEL, GRADE_COLOR, GRADES } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
@@ -345,13 +345,13 @@ export class HUD {
   }
 
   /**
-   * 보유 각인 패널(작업 지시 P7 커밋1, P8 커밋1에서 3축으로 재편) — 경험치/
-   * 레벨이 사라지면서 각인 획득·승급이 유일한 성장 표시가 됐다. 핵심 슬롯
-   * (총/검/캐릭터)을 항목별로 항상 보여주고(빈 슬롯은 "비어있음"), 각인은
-   * 별도 섹션에 스택 수와 함께 나열해 슬롯(축)별 구분과 이름이 뚜렷이
-   * 읽히게 한다. 'skill' 슬롯은 액티브 스킬(Q/E/R) 전면 폐지(P6 커밋2) 이후
-   * 채울 특성이 없어 이번 3축 재편에서 완전히 제거했다 — CORE_SLOTS가 이제
-   * 정확히 3개뿐이라 이 패널에서 따로 걸러낼 필요도 없다.
+   * 보유 각인 패널(작업 지시 P7 커밋1, P8 커밋1에서 3축으로 재편, P8c4
+   * 커밋2에서 축 우선 재구성) — 각인이 25종으로 늘면서 기존의 "핵심 슬롯
+   * 섹션 하나 + 각인 전체를 등급순으로 섞은 섹션 하나" 구조는 "내 검 빌드가
+   * 어떻게 되어 있나"를 보려면 각인 목록 전체를 훑으며 배지 색을 눈으로
+   * 골라내야 했다(work order 지적 그대로). 축(총/검/캐릭터)을 최상위로
+   * 올려 3섹션으로 나누고, 각 섹션 안에 그 축의 핵심 슬롯 1개 + 각인들을
+   * 묶는다 — "이 축에 뭘 들고 있나"가 섹션 하나만 보면 끝난다.
    */
   private renderOwnedTraits(traits: { upgrade: Upgrade; count: number }[]) {
     const box = this.q('#traits')
@@ -359,54 +359,59 @@ export class HUD {
     box.innerHTML = ''
     count.textContent = traits.length > 0 ? `(${traits.length}종)` : ''
 
+    if (traits.length === 0) {
+      box.innerHTML = '<div class="trait-empty">아직 획득한 특성이 없습니다. 전투·상자 보상으로 얻으세요.</div>'
+      return
+    }
+
     const bySlot = new Map<string, { upgrade: Upgrade; count: number }>()
-    const sigils: { upgrade: Upgrade; count: number }[] = []
+    const sigilsByAxis = new Map<CoreSlot, { upgrade: Upgrade; count: number }[]>(CORE_SLOTS.map((s) => [s, []]))
     for (const t of traits) {
-      if (isSigilSlot(t.upgrade.slot)) sigils.push(t)
-      else bySlot.set(t.upgrade.slot, t)
-    }
-
-    const section = document.createElement('div')
-    section.className = 'trait-section'
-    section.innerHTML = '<div class="trait-section-head">핵심 슬롯</div>'
-    for (const slot of CORE_SLOTS) {
-      const t = bySlot.get(slot)
-      const el = document.createElement('div')
-      el.className = `trait slot-${slot}${t ? '' : ' trait-slot-empty'}`
-      el.innerHTML = t
-        ? `<span class="ticon">${t.upgrade.icon}</span>
-           <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
-           <span class="tslot">${SLOT_LABEL[slot]}</span>`
-        : `<span class="ticon">—</span>
-           <span class="tmain"><span class="tname">비어있음</span></span>
-           <span class="tslot">${SLOT_LABEL[slot]}</span>`
-      section.appendChild(el)
-    }
-    box.appendChild(section)
-
-    // 각인은 3축(총/검/캐릭터)을 한 목록으로 합쳐 등급 높은 순 정렬한다
-    // (작업 지시 P8 커밋3 — 스택 폐지, ×N 대신 등급 배지). 슬롯 배지 색
-    // (slot-gun-sigil 등)과 tslot 라벨로 축은 여전히 항목별로 읽힌다.
-    const sigilSection = document.createElement('div')
-    sigilSection.className = 'trait-section'
-    sigilSection.innerHTML = '<div class="trait-section-head">각인</div>'
-    if (sigils.length === 0) {
-      sigilSection.innerHTML += '<div class="trait-empty">아직 획득한 각인이 없습니다. 전투·상자 보상으로 얻으세요.</div>'
-    } else {
-      const gradeRank = (t: { upgrade: Upgrade }) => (t.upgrade.grade ? GRADES.indexOf(t.upgrade.grade) : -1)
-      for (const t of [...sigils].sort((a, b) => gradeRank(b) - gradeRank(a))) {
-        const el = document.createElement('div')
-        el.className = `trait slot-${t.upgrade.slot}`
-        const gradeLabel = t.upgrade.grade ? GRADE_LABEL[t.upgrade.grade] : ''
-        el.innerHTML = `
-          <span class="ticon">${t.upgrade.icon}</span>
-          <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
-          <span class="tslot">${SLOT_LABEL[t.upgrade.slot]}</span>
-          <span class="tlv" style="color:${t.upgrade.grade ? GRADE_COLOR[t.upgrade.grade] : 'inherit'}">${gradeLabel}</span>`
-        sigilSection.appendChild(el)
+      if (isSigilSlot(t.upgrade.slot)) {
+        // 각인 슬롯('gun-sigil' 등)에서 그 축('gun')만 떼어낸다.
+        const axis = t.upgrade.slot.replace('-sigil', '') as CoreSlot
+        sigilsByAxis.get(axis)!.push(t)
+      } else {
+        bySlot.set(t.upgrade.slot, t)
       }
     }
-    box.appendChild(sigilSection)
+    const gradeRank = (t: { upgrade: Upgrade }) => (t.upgrade.grade ? GRADES.indexOf(t.upgrade.grade) : -1)
+
+    for (const axis of CORE_SLOTS) {
+      const section = document.createElement('div')
+      section.className = 'trait-section'
+      section.innerHTML = `<div class="trait-axis-head axis-${axis}">${SLOT_LABEL[axis]}</div>`
+
+      const core = bySlot.get(axis)
+      const coreEl = document.createElement('div')
+      coreEl.className = `trait slot-${axis}${core ? '' : ' trait-slot-empty'}`
+      coreEl.innerHTML = core
+        ? `<span class="ticon">${core.upgrade.icon}</span>
+           <span class="tmain"><span class="tname">${core.upgrade.name}</span><span class="tdesc">${core.upgrade.desc}</span></span>`
+        : `<span class="ticon">—</span>
+           <span class="tmain"><span class="tname">비어있음</span></span>`
+      section.appendChild(coreEl)
+
+      const sigils = sigilsByAxis.get(axis)!
+      if (sigils.length === 0) {
+        const empty = document.createElement('div')
+        empty.className = 'trait-axis-sigil-empty'
+        empty.textContent = '각인 없음'
+        section.appendChild(empty)
+      } else {
+        for (const t of [...sigils].sort((a, b) => gradeRank(b) - gradeRank(a))) {
+          const el = document.createElement('div')
+          el.className = `trait slot-${t.upgrade.slot}`
+          const gradeLabel = t.upgrade.grade ? GRADE_LABEL[t.upgrade.grade] : ''
+          el.innerHTML = `
+            <span class="ticon">${t.upgrade.icon}</span>
+            <span class="tmain"><span class="tname">${t.upgrade.name}</span><span class="tdesc">${t.upgrade.desc}</span></span>
+            <span class="tlv" style="color:${t.upgrade.grade ? GRADE_COLOR[t.upgrade.grade] : 'inherit'}">${gradeLabel}</span>`
+          section.appendChild(el)
+        }
+      }
+      box.appendChild(section)
+    }
   }
 
   closeSettings() {

@@ -628,6 +628,24 @@ canvas.pixelated {
   color: #8a92a8;
   text-transform: uppercase;
 }
+/* 축 우선 재구성(작업 지시 P8c4 커밋2) — 섹션 헤더가 축 색을 대표하므로
+   항목마다 붙던 tslot 라벨을 대신한다. 기존 슬롯 배지 색(.trait.slot-*)을
+   그대로 재사용한다. */
+.trait-axis-head {
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.trait-axis-head.axis-gun { color: #4ade80; }
+.trait-axis-head.axis-sword { color: #ff5c5c; }
+.trait-axis-head.axis-character { color: #38d1d1; }
+.trait-axis-sigil-empty {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 4px 12px;
+}
 .trait-empty {
   font-size: 13px;
   color: #888;

@@ -2610,6 +2610,81 @@ const STEPS = [
     },
   },
   {
+    name: 'trait-panel-axis',
+    what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 25종을 전부 보유해도 패널이 화면을 넘지 않는가',
+    async run(p) {
+      const r = await p.evaluate(() => {
+        const g = window.__game
+        // POOL은 window에 노출돼 있지 않다 — trait-slot-badges 스텝과 같은
+        // 관례로, 패널이 실제로 소비하는 필드(id/name/desc/icon/slot/grade)만
+        // 갖춘 리터럴 객체를 직접 만든다. 핵심 슬롯은 축당 1개만 가질 수
+        // 있으므로 3개, 각인은 25종(작업 지시 P8c4로 완성된 전체 명단) 전부.
+        const core = [
+          { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', slot: 'gun', apply: () => {} },
+          { id: 'iaijutsu', name: '발도참', desc: '', icon: '🌸', slot: 'sword', apply: () => {} },
+          { id: 'mark', name: '표식', desc: '', icon: '🏷️', slot: 'character', apply: () => {} },
+        ]
+        const sigilIds = {
+          'gun-sigil': ['reload', 'crit', 'blood_bullet', 'overheat', 'gun_focus', 'shock_bullet', 'chain_reload', 'zero_shot'],
+          'sword-sigil': ['crit_dmg', 'lifesteal', 'berserk_blade', 'chain_slash', 'sword_focus', 'bleed_blade', 'blood_trace', 'execute_blade'],
+          'character-sigil': ['hp', 'speed', 'lg_detonator', 'berserker', 'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'last_stand'],
+        }
+        const grades = ['normal', 'rare', 'unique', 'legendary', 'epic']
+        const sigils = []
+        for (const [slot, ids] of Object.entries(sigilIds)) {
+          ids.forEach((id, i) => sigils.push({ id, name: id, desc: `${id} 설명`, icon: '✨', slot, grade: grades[i % grades.length], apply: () => {} }))
+        }
+        const traits = [...core, ...sigils].map((upgrade) => ({ upgrade, count: 1 }))
+        g.hud.openSettings(
+          traits,
+          { master: 1, music: 1, sfx: 1 },
+          { gun: g.player.gun.name, gunIcon: g.player.gun.icon, sword: g.player.sword.name, swordIcon: g.player.sword.icon },
+          true,
+          g.input.keyBindings,
+        )
+        const box = document.querySelector('#traits')
+        const heads = [...box.querySelectorAll('.trait-axis-head')].map((el) => el.textContent)
+        const sections = [...box.querySelectorAll('.trait-section')].map((sec) => ({
+          head: sec.querySelector('.trait-axis-head')?.textContent,
+          rows: sec.querySelectorAll('.trait').length,
+          hasEmptyLabel: !!sec.querySelector('.trait-axis-sigil-empty'),
+          hasTslot: sec.querySelectorAll('.tslot').length, // 항목별 축 라벨은 제거됐어야 한다
+        }))
+        const panel = document.querySelector('.settings-panel')
+        const panelRect = panel.getBoundingClientRect()
+        return {
+          heads,
+          sections,
+          totalRows: box.querySelectorAll('.trait').length,
+          panelWithinViewport: panelRect.bottom <= window.innerHeight + 1 && panelRect.top >= -1,
+          panelScrollable: panel.scrollHeight > panel.clientHeight,
+        }
+      })
+      await p.screenshot({ path: 'qc-out/trait-panel-axis-full.png' })
+      await p.evaluate(() => window.__game.hud.closeSettings())
+      await p.evaluate((result) => { window.__qcTraitPanelAxis = result }, r)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcTraitPanelAxis
+      if (!r) return '결과 없음'
+      if (r.heads.join(',') !== '총,검,캐릭터') return `축 섹션 순서/이름이 다름 (${r.heads.join(',')})`
+      if (r.sections.length !== 3) return `섹션 수가 3이 아님 (${r.sections.length})`
+      // 각 섹션 = 핵심 슬롯 1(있으면) + 그 축 각인 개수. 총/검=1+8=9, 캐릭터=1+9=10.
+      const expectedRows = [9, 9, 10]
+      for (let i = 0; i < 3; i++) {
+        if (r.sections[i].rows !== expectedRows[i]) {
+          return `${r.sections[i].head} 섹션 항목 수가 다름 (${r.sections[i].rows} / 기대 ${expectedRows[i]})`
+        }
+        if (r.sections[i].hasEmptyLabel) return `${r.sections[i].head} 섹션에 각인이 있는데 "각인 없음" 표시가 남아있음`
+        if (r.sections[i].hasTslot > 0) return `${r.sections[i].head} 섹션 항목에 축 라벨(tslot)이 남아있음 — 섹션 헤더와 중복`
+      }
+      if (r.totalRows !== 28) return `전체 항목 수가 다름 (${r.totalRows} / 기대 28 = 핵심 3 + 각인 25)`
+      if (!r.panelWithinViewport) return '25종을 전부 보유한 상태에서 패널이 화면(뷰포트) 밖으로 넘침'
+      if (!r.panelScrollable) return '내용이 뷰포트보다 긴데 패널이 스크롤 가능 상태가 아님(overflow 설정 확인)'
+      return null
+    }),
+  },
+  {
     name: 'trait-slot-badges',
     what: '특성 rarity → 슬롯 배지 전환(작업 지시 skill_slot_and_rarity 커밋1) — 레벨업/상점/보유 목록은 슬롯으로, 무기 등급 표기는 그대로인가',
     async run(p) {
