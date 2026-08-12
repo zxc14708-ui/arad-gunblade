@@ -65,6 +65,37 @@ design confirmation if the defaults are wrong:
   since the two are the same code path and splitting them would have meant
   shipping a commit that still had the bug for one release.
 
+## New 18-sigil interpretation calls (P8c4)
+
+Work order `P8c4_prompt_sigils_and_panel.md` supplied final approved numeric
+values directly (including the 6 documented deviations from the chat-proposed
+draft), so no numbers here are drafts pending approval. A few implementation
+details were not specified and needed a call:
+
+- **'잔재'(remnant, legendary unique) echo behavior.** The work order only
+  says the echo "attacks in place of the player" for its duration at 50% of
+  current gun damage — it doesn't specify movement, targeting range, or
+  attack cadence. Implemented as a stationary turret at the kill position
+  (no movement/pathing) that retargets the nearest alive enemy within
+  `CONFIG.traits.remnantAttackRange` (7) every `remnantAttackInterval` (0.5s).
+  Flagged for review — a mobile/tracking echo is an equally valid reading.
+- **'황금의 무게'(golden_weight) scaling is continuous, not stepped.** "골드
+  200당 +N%" is implemented as `(gold / 200) * rate`, i.e. a smooth ramp
+  rather than snapping up only at each 200-gold threshold. Simpler and avoids
+  visible discontinuities; flagged in case stepped was intended.
+- **'혈흔'(blood_trace) detonation formula.** The work order's own rationale
+  section specifies the intent ("잔여 피해 폭발," tied to bleed's existing
+  numbers) but not an exact formula. Implemented as
+  `Σ(remaining_seconds / tickInterval) * tickDamage` per active stack —
+  a continuous approximation of "damage the bleed would still deal," cleared
+  after detonating. Not a discrete tick-count formula; flagged for review.
+- **"무기 전환" implementation detail.** The work order's definition (last
+  weapon used changes) is unambiguous, but note the trigger point: it fires
+  on the *first successful shot/swing after the change*, not the instant the
+  player releases one weapon's input — e.g. firing the gun while already
+  mid-swing-commit from a sword strike doesn't retroactively trigger it,
+  since `lastWeaponUsed` only updates inside the actual fire/swing blocks.
+
 ## Final weapon motion art
 
 - Current non-default weapons use temporary equipment, projectile, and melee
