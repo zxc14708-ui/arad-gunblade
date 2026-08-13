@@ -2348,6 +2348,69 @@ const STEPS = [
     }),
   },
   {
+    name: 'conflict-triple',
+    needs: 'dungeon',
+    what: '상충 각인 3종 실제 피해 배수(작업 지시 P10 커밋3-4) — 총구 집중×검날 집중(곱셈, 서로 거의 상쇄)· 총검일체 추가(별도 배율 계층, 덧셈 항) 조합 3가지',
+    async run(p) {
+      await dismissLevelUp(p)
+      const out = await p.evaluate(() => {
+        const g = window.__game
+        const reset = () => {
+          g.player.sigilGrades.clear()
+          g.player.recomputeSigilMods()
+          g.player.hybridStanceTimer = 0
+        }
+        // 1. 총구 집중 단독(에픽) — 총 +45%, 검 -30%
+        reset()
+        g.player.applySigil('gun_focus', 'epic')
+        g.player.recompute()
+        const gunOnly = { gunDamage: g.player.stats.gunDamage, swordDamage: g.player.stats.swordDamage }
+
+        // 2. 총구 집중 × 검날 집중(둘 다 에픽) — m.gunDamage/m.swordDamage에
+        // 곱셈으로 누적(1.45×0.70=1.015, 순서 무관)
+        reset()
+        g.player.applySigil('gun_focus', 'epic')
+        g.player.applySigil('sword_focus', 'epic')
+        g.player.recompute()
+        const gunSword = { gunDamage: g.player.stats.gunDamage, swordDamage: g.player.stats.swordDamage }
+
+        // 3. 위 둘 + 총검일체 발동(에픽, dmgFrac 0.48) — dynamicAllMult에
+        // 덧셈으로 들어가는 별도 배율 계층이라 위 곱셈 결과에 다시 곱해진다
+        reset()
+        g.player.applySigil('gun_focus', 'epic')
+        g.player.applySigil('sword_focus', 'epic')
+        g.player.applySigil('hybrid_stance', 'epic')
+        g.player.recompute()
+        g.player.hybridStanceTimer = 3.0
+        g.player.updateDynamicStats() // private — TS 컴파일 타임 전용, 런타임엔 그냥 메서드
+        const triple = { gunDamage: g.player.stats.gunDamage, swordDamage: g.player.stats.swordDamage }
+
+        reset()
+        g.player.recompute()
+        const base = { gunDamage: g.player.stats.gunDamage, swordDamage: g.player.stats.swordDamage }
+        return { base, gunOnly, gunSword, triple }
+      })
+      await p.evaluate((result) => { window.__qcConflictTriple = result }, out)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcConflictTriple
+      if (!r) return '결과 없음'
+      const gunOnlyRatio = r.gunOnly.gunDamage / r.base.gunDamage
+      if (Math.abs(gunOnlyRatio - 1.45) > 0.02) return `총구 집중 단독 배율이 다름 (${gunOnlyRatio.toFixed(3)} / 기대 1.45)`
+      const gunSwordGunRatio = r.gunSword.gunDamage / r.base.gunDamage
+      const gunSwordSwordRatio = r.gunSword.swordDamage / r.base.swordDamage
+      if (Math.abs(gunSwordGunRatio - 1.015) > 0.02) return `총구+검날 집중 동시 보유 시 총 피해 배율이 곱셈(1.45×0.70=1.015)과 다름 (${gunSwordGunRatio.toFixed(3)})`
+      if (Math.abs(gunSwordSwordRatio - 1.015) > 0.02) return `총구+검날 집중 동시 보유 시 검 피해 배율이 곱셈(1.45×0.70=1.015)과 다름 (${gunSwordSwordRatio.toFixed(3)})`
+      const tripleGunRatio = r.triple.gunDamage / r.base.gunDamage
+      const tripleSwordRatio = r.triple.swordDamage / r.base.swordDamage
+      // 기대: 1.015 × (1+0.48) ≈ 1.502 — 곱셈(총구×검날)에 총검일체의
+      // 덧셈 배율 계층이 다시 곱해지는 형태(위 recomputeSigilMods() 주석 참고)
+      if (Math.abs(tripleGunRatio - 1.502) > 0.03) return `상충 3종(총구+검날+총검일체) 동시 보유 시 총 피해 배율이 기대(약 1.502)와 다름 (${tripleGunRatio.toFixed(3)})`
+      if (Math.abs(tripleSwordRatio - 1.502) > 0.03) return `상충 3종 동시 보유 시 검 피해 배율이 기대(약 1.502)와 다름 (${tripleSwordRatio.toFixed(3)})`
+      return null
+    }),
+  },
+  {
     name: 'elite-ward-thorns',
     needs: 'dungeon',
     what: '엘리트 접두사 — 보호막(피격 흡수) / 가시(근접 반사 25%)',

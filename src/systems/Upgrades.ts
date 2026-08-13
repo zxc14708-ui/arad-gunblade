@@ -82,7 +82,13 @@ interface SigilDef {
   desc: (v: Record<string, number>, grade: Grade) => string
 }
 
-const pct = (v: number) => `${Math.round(v * 100)}%`
+// 소수 첫째 자리까지 표시 — 정수 반올림만 쓰면 인접 등급의 실제 값이
+// 달라도(예: 2.5%와 3%) 화면엔 같은 정수로 뭉개져 보였다(작업 지시 P10
+// 커밋3-1에서 발견 — 저장값 자체는 항상 소수로 정확했다, 표시 전용 버그).
+const pct = (v: number) => {
+  const p = Math.round(v * 1000) / 10
+  return `${Number.isInteger(p) ? p : p.toFixed(1)}%`
+}
 
 export const SIGIL_DEFS: Record<string, SigilDef> = {
   // ══════ 기존 7종(P8 커밋3) ══════

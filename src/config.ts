@@ -219,11 +219,14 @@ export const CONFIG = {
 
     // ── 신규 각인 18종(작업 지시 P8c4) — 등급별 수치는 Upgrades.ts SIGIL_DEFS,
     // 여긴 등급과 무관한 고정 튜닝값만 둔다 ──
-    // '연참 가속': 이 시간 이상 베기가 없으면 스택을 초기화한다(Player.update() 참고).
-    chainSlashResetIdle: 1.0,
     // '잔재'(고유·레전더리): 잔상 공격체의 명중 간격(초, Game.updateRemnants() 참고).
     remnantAttackInterval: 0.5,
     remnantAttackRange: 7,
+    // 잔재 추종(작업 지시 P10 커밋3-2 — 고정 포탑에서 플레이어 추종형으로 변경).
+    // 공격 주기·사거리·피해 배율(위 값들, mods.remnantDmgFrac)은 각인 승인
+    // 수치라 그대로 두고, 이동 관련 두 값만 새로 추가한다(초안, 보고 대상).
+    remnantFollowRadius: 2.5,
+    remnantMoveSpeed: 11,
   },
 
   // 타격감 연출 (히트스톱/화면 흔들림/피격 플래시)

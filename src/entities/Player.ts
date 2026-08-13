@@ -318,6 +318,11 @@ export class Player {
     const zeroShotFrac = m.zeroShotPerSecond > 0 ? Math.min(m.zeroShotCap, this.zeroShotTimer * m.zeroShotPerSecond) : 0
     // "모든 피해"류 동적 가산은 총/검 양쪽에 함께 곱한다 — 영점 사격만 총 축
     // 전용이라 별도로 gunDamage에만 더한다.
+    // hybridFrac(총검일체)은 gun_focus/sword_focus(m.gunDamage/m.swordDamage에
+    // 곱셈으로 누적, recomputeSigilMods() 참고)와 달리 여기 덧셈 항으로
+    // 들어간다 — 셋을 동시에 들면 (gun_focus×sword_focus로 정해진 base) ×
+    // (1+hybridFrac+...) 형태가 된다. 완화·상쇄 로직이 아니라 서로 다른
+    // 배율 계층(정적 mods 곱셈 vs 동적 상황 가산)이 겹치는 것뿐이다.
     const dynamicAllMult = 1 + reversalDmgFrac + goldWeightFrac + hybridFrac
     this.stats.gunDamage = this.baseGunDamage * dynamicAllMult * (1 + zeroShotFrac)
     this.stats.swordDamage = this.baseSwordDamage * dynamicAllMult
@@ -457,6 +462,18 @@ export class Player {
           m.overheatStackFrac = v.stackFrac
           m.overheatMaxStacks = v.maxStacks
           break
+        // 상충 각인 연산 검증(작업 지시 P10 커밋3-4) — gun_focus·sword_focus는
+        // 둘 다 m.gunDamage/m.swordDamage에 *=(곱셈)로 누적된다. sigilGrades는
+        // Map이라 순회 순서가 등급 부여 순서지만, 곱셈은 교환법칙이 성립해
+        // 어느 쪽을 먼저 걸어도 최종 배율은 같다(에픽×에픽 기준
+        // 1.45×0.70=1.015 — 상쇄에 가깝지만 정확히 1.0은 아니다, 완화 로직
+        // 없음이 의도). hybrid_stance(총검일체)는 이 둘과 다른 방식으로
+        // 상충한다 — m.gunDamage/m.swordDamage가 아니라 dynamicAllMult(아래
+        // updateDynamicStats() 참고)에 덧셈으로 들어가는 별도 배수라, 최종
+        // 배율은 (gun_focus×sword_focus로 정해진 기준값) × (1+hybridFrac)
+        // 형태로 곱셈-덧셈이 섞인다. 세 각인을 모두 에픽으로 동시에 들고
+        // hybrid_stance가 발동 중이면 최종 배율은 약 1.015×1.48≈1.50이
+        // 되는 게 의도한 결과다(QC 'conflict-triple' 스텝에서 실측 검증).
         case 'gun_focus':
           m.gunDamage *= 1 + v.gunFrac
           m.swordDamage *= 1 - v.swordPenalty
@@ -767,10 +784,12 @@ export class Player {
     this.aimPauseTimer += dt
     // '급전환' 버프 지속시간
     if (this.quickSwitchTimer > 0) this.quickSwitchTimer -= dt
-    // '연참 가속' — 일정 시간 베기가 없으면 스택을 초기화한다.
+    // '연참 가속' — 베기가 없는 채로 "현재 검 쿨타임의 2배"가 지나면 스택을
+    // 초기화한다(작업 지시 P10 커밋3-3 — 이전엔 무기 상태와 무관한 고정
+    // 1.0초였다. 검 쿨타임이 짧아지는 각인/버프를 들면 유예도 함께 짧아진다).
     if (this.chainSlashStacks > 0) {
       this.chainSlashIdleTimer += dt
-      if (this.chainSlashIdleTimer >= CONFIG.traits.chainSlashResetIdle) this.chainSlashStacks = 0
+      if (this.chainSlashIdleTimer >= this.stats.swordCooldown * 2) this.chainSlashStacks = 0
     }
     // '총검일체'/'속사 전환' 버프 지속시간
     if (this.hybridStanceTimer > 0) this.hybridStanceTimer -= dt

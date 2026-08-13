@@ -59,7 +59,7 @@ export class Game {
   /** '잔재'(고유·레전더리, 작업 지시 P8c4) — 처치 지점에 남는 잔상 공격체.
    * 자체 스프라이트 없이 주기적으로 가장 가까운 적을 타격만 한다(간단한
    * 원거리 판정으로 구현 — 이동/추적 없이 고정 위치에서 사거리 안을 친다). */
-  private remnants: { pos: THREE.Vector3; timer: number; tickTimer: number; damage: number }[] = []
+  private remnants: { pos: THREE.Vector3; timer: number; tickTimer: number; damage: number; slot: number }[] = []
   private spawnTimer = 0
   /** 방 입장 직후 스폰을 미루는 유예 시간 — 문 열자마자 맞는 것을 막는다 */
   private entrySafeTimer = 0
@@ -1471,19 +1471,40 @@ export class Game {
   }
 
   /**
-   * '잔재'(고유·레전더리, 작업 지시 P8c4) — 처치 지점에 남는 잔상이 지속시간
-   * 동안 주기적으로 사거리 안 가장 가까운 적을 공격한다. 이동·추적은 하지
-   * 않는다(간단한 고정 포탑형 구현) — work order는 "대신 공격"까지만 요구할
-   * 뿐 이동 방식은 지정하지 않았다.
+   * '잔재'(고유·레전더리, 작업 지시 P8c4 → 이동 방식은 P10 커밋3-2) — 처치
+   * 지점에 남는 잔상이 지속시간 동안 플레이어를 일정 거리 두고 따라다니며
+   * 주기적으로 사거리 안 가장 가까운 적을 공격한다. 공격 주기·사거리·피해
+   * 배율은 각인 승인 수치라 그대로 두고 이동만 새로 추가했다.
+   *
+   * 여러 개가 동시에 존재할 때 겹치지 않도록 원거리 적 각도 슬롯 포위
+   * (assignSurroundSlots(), 작업 지시 P6 커밋1-2)와 같은 방식을 재사용한다 —
+   * 배열 인덱스로 매 프레임 균등 각도를 다시 매겨(살아있는 잔재만 대상이라
+   * 소멸 시 자동 재배정) 플레이어 주위 원 위의 서로 다른 지점을 목표로 잡는다.
    */
   private updateRemnants(dt: number) {
-    for (let i = this.remnants.length - 1; i >= 0; i--) {
+    const n = this.remnants.length
+    for (let i = n - 1; i >= 0; i--) {
       const r = this.remnants[i]
       r.timer -= dt
       if (r.timer <= 0) {
         this.remnants.splice(i, 1)
         continue
       }
+      r.slot = (i / n) * Math.PI * 2
+      const targetX = this.player.pos.x + Math.cos(r.slot) * CONFIG.traits.remnantFollowRadius
+      const targetZ = this.player.pos.z + Math.sin(r.slot) * CONFIG.traits.remnantFollowRadius
+      const dx = targetX - r.pos.x
+      const dz = targetZ - r.pos.z
+      const dist = Math.hypot(dx, dz)
+      const step = CONFIG.traits.remnantMoveSpeed * dt
+      if (dist > step) {
+        r.pos.x += (dx / dist) * step
+        r.pos.z += (dz / dist) * step
+      } else {
+        r.pos.x = targetX
+        r.pos.z = targetZ
+      }
+
       r.tickTimer -= dt
       if (r.tickTimer > 0) continue
       r.tickTimer = CONFIG.traits.remnantAttackInterval
@@ -1904,6 +1925,7 @@ export class Game {
         timer: this.player.mods.remnantDuration,
         tickTimer: 0,
         damage: this.player.stats.gunDamage * this.player.mods.remnantDmgFrac,
+        slot: 0,
       })
     }
     if (e.kind === 'boss') {
