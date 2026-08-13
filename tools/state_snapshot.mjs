@@ -137,7 +137,7 @@ function writeSnapshot(m) {
   L.push(`나머지 ${POOL.length - conditional.length}종은 상시 배수·가산이다.`)
   L.push(`상태이상(작업 지시 P8 커밋2): 기절(적용 각인 없음, 시스템만) · 출혈(중첩형, 스택당 ${CONFIG.enemy.bleed.tickDamage} 피해/${CONFIG.enemy.bleed.tickInterval}s, 지속 ${CONFIG.enemy.bleed.duration}s) · 감전(갱신형, 받는 피해 ×${CONFIG.enemy.shock.damageTakenMult}, 지속 ${CONFIG.enemy.shock.duration}s) — 아직 이를 거는 각인은 없다.`)
   L.push('')
-  L.push('### 각인 등급별 수치 (작업 지시 P8 커밋3 초안 7종 + P8c4 승인 18종, 25종 전체)')
+  L.push(`### 각인 등급별 수치 (작업 지시 P8 커밋3 초안 7종 + P8c4 승인 18종 + P10 커밋2 교체 3종, ${sigils.length}종 전체)`)
   L.push('')
   L.push(`| 각인 | ${GRADES.map((g) => GRADE_LABEL[g]).join(' | ')} | 에픽 규칙 변경 |`)
   L.push(`|---|${GRADES.map(() => '---:').join('|')}|---|`)

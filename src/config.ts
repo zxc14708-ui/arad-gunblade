@@ -6,7 +6,6 @@
 export const COLORS = {
   // 던파 총검사(Gunblade) 컬러 스킴 — 참조 이미지 기반
   coat: 0xf3ede2, // 흰 롱코트
-  coatShadow: 0xd8cfc0,
   hair: 0xc9b98f, // 은발/금발 톤
   skin: 0xd7a98a,
   vest: 0x4a5a3c, // 녹색 조끼
@@ -18,9 +17,7 @@ export const COLORS = {
 
   // 환경
   floor: 0x1b1e2b,
-  floorGrid: 0x323a52,
   wall: 0x3a4157,
-  wallTop: 0x525b78,
   fog: 0x0a0c14,
   ambient: 0x404a66,
 
@@ -39,8 +36,6 @@ export const COLORS = {
 }
 
 export const CONFIG = {
-  arenaRadius: 26,
-
   player: {
     speed: 9,
     radius: 0.7,
@@ -56,7 +51,6 @@ export const CONFIG = {
     damage: 12,
     cooldown: 0.15, // 발사 간격 (M1911 세미오토)
     bulletSpeed: 42,
-    bulletLife: 1.1,
     spread: 0.03,
     pierce: 0,
     magSize: 7, // M1911 탄창 (7발)
@@ -110,10 +104,6 @@ export const CONFIG = {
   },
 
   spawn: {
-    firstWaveDelay: 1.2,
-    betweenWaves: 3.0,
-    baseCount: 5,
-    countPerWave: 2,
     // 방 하나에서 등장하는 적 수. 전투 템포를 높이되 방 크기에 맞춰 1.6배로 제한한다.
     roomDensity: 1.6,
   },

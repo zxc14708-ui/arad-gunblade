@@ -75,10 +75,13 @@ details were not specified and needed a call:
 - **'잔재'(remnant, legendary unique) echo behavior.** The work order only
   says the echo "attacks in place of the player" for its duration at 50% of
   current gun damage — it doesn't specify movement, targeting range, or
-  attack cadence. Implemented as a stationary turret at the kill position
-  (no movement/pathing) that retargets the nearest alive enemy within
-  `CONFIG.traits.remnantAttackRange` (7) every `remnantAttackInterval` (0.5s).
-  Flagged for review — a mobile/tracking echo is an equally valid reading.
+  attack cadence. Originally implemented as a stationary turret at the kill
+  position (no movement/pathing); **P10 커밋3-2 explicitly changed this to
+  a player-following echo** (fixed follow radius, reuses the ranged-enemy
+  angle-slot pattern so multiple echoes don't overlap) — attack cadence/
+  range/damage fraction untouched. Follow radius/speed are new drafts
+  (`CONFIG.traits.remnantFollowRadius`/`remnantMoveSpeed`), not approved
+  numbers — flagged for review same as any other numeric draft.
 - **'황금의 무게'(golden_weight) scaling is continuous, not stepped.** "골드
   200당 +N%" is implemented as `(gold / 200) * rate`, i.e. a smooth ramp
   rather than snapping up only at each 200-gold threshold. Simpler and avoids
@@ -95,6 +98,61 @@ details were not specified and needed a call:
   player releases one weapon's input — e.g. firing the gun while already
   mid-swing-commit from a sword strike doesn't retroactively trigger it,
   since `lastWeaponUsed` only updates inside the actual fire/swing blocks.
+
+## 결정 근거 기록 (작업 지시 P10 커밋4 — 수치는 STATE_SNAPSHOT.md가 정본)
+
+- **액티브 스킬(Q/E/R) 폐지 근거 — 확인 안 됨.** `c4fc0ac`(P6 커밋2)가
+  Q/E/R과 종속 슬롯 특성 4종을 코드에서 제거한 사실은 확인되지만, 폐지
+  사유를 적은 기록은 저장소 어디에도 없다(추가 당시 근거는
+  `docs/archive/DESIGN_LOG_2026-07.md`의 "C4. 액티브 스킬이 없다 — 던파
+  팬 게임의 정체성과 가장 크게 어긋나는 지점"으로 남아있는데, 이후 폐지
+  결정은 같은 파일에 대응 기록이 없다). 원 작업 지시서(P6_prompt)가
+  저장소에 보관돼 있지 않아 커밋 메시지만으로는 재구성할 수 없다 —
+  근거 불명으로 기록만 남긴다.
+- **리듬 재장전 폐지 근거(P10 커밋1).** `8dd489b`(P6 커밋3)로 도입한
+  R 두 번 눌러 성공 창을 맞추는 리듬 판정이 "체감상 의미가 크지
+  않다"는 사용자 판단으로 폐지됐다(P10 작업 지시서 원문). 재장전
+  자체(R 수동, 소진 시 자동)는 그대로 유지하고, 발도장전처럼 리듬과
+  무관한 다른 게이지 메커니즘은 손대지 않았다.
+- **경험치 체계 폐지 근거(P7 커밋1, `571082b`).** `Player.level/xp`는
+  스탯을 올리지도 무언가를 해금하지도 않는, 특성 선택 횟수를 세는
+  장치에 불과했다 — 그 역할은 같은 작업의 다음 커밋(선형 분기 맵의
+  각인/상위전투 노드)이 대신 맡았다. 특성 획득 경로가 상자/엘리트/
+  제련소뿐이던 중간 상태를 거쳐, 맵 노드 도입으로 대체됐다.
+- **각인 등급 부활 근거(P8 커밋3, `a3ea4ac`).** 특성 등급(rarity)
+  축은 슬롯제 도입 때(`f634eb8`) 이미 한 번 폐기됐다 — 신규 슬롯
+  특성은 전부 'epic'으로 통일돼 있고 각인은 등급이 뒤섞여 있어 카드
+  색이 아무 정보도 전달하지 못했기 때문이다. P8 커밋3은 이 개념을
+  슬롯 특성이 아니라 "각인"에만 한정해 되살렸다 — 각인은 슬롯 특성과
+  달리 같은 각인을 런 중 반복해서 다시 만나므로, 스택 대신 승급
+  (노멀→...→에픽)이라는 반복 가능한 성장 축으로 쓸 수 있다는 점이
+  핵심 차이다.
+- **회복 노드(마을 분수) 제거 근거(P7 커밋2, `0f66916`).** 선형 분기
+  맵 도입과 함께 마을 분수를 제거했다 — 마을에 입장하면 이미 완전
+  회복되므로, 마을 분수는 같은 효과를 내는 회복 수단의 순수한 중복
+  이었다. 던전 내 회복은 그대로 유지되며(맵 구조 자체가 'recover'
+  노드와 보스 준비방 유료 분수를 배치 규칙으로 보장), 되돌아가기
+  폐지(모든 방 연결이 parent→child 단방향이라 구조적으로 이전 방에
+  돌아갈 수 없다)도 같은 커밋의 산출물이다.
+
+## 보류 항목 (작업 지시 P10 커밋4)
+
+다음 세 항목은 저장소·문서 어디에도 결정된 방향이 없다 — 이 세션에서
+새로 판단하지 않고 그대로 보류로 남긴다:
+
+- **전직(4종) 시스템.** 캐릭터가 특정 조건에서 4가지 전직 중 하나를
+  택하는 구조 자체가 아직 설계되지 않았다. 무기 3종(총/검/캐릭터
+  각인 축)과의 관계, 전직별 고유 각인/슬롯 유무 등 기본 골격부터
+  필요하다.
+- **무기 계열 고정.** 런 중 무기를 자유롭게 교체할 수 있는 현재
+  구조를, 시작 시 하나의 무기 계열(권총/기관단총/... 중 하나)로
+  고정하는 모드로 바꿀지 여부. 각인 3축(총/검/캐릭터) 설계와 충돌
+  가능성이 있어 먼저 검토가 필요하다.
+- **캐릭터 팔레트 리컬러.** `tools/quantize_sheet.py`/`recolor_sheet.py`
+  파이프라인은 존재하지만(P4/P4b), 실제 적용 대상(플레이어 색상
+  베리에이션 vs. 몬스터 팔레트 스왑)과 몇 종을 만들지가 결정되지
+  않았다. `measure_sprites.py`의 팔레트 파이프라인 검사도 현재
+  "아키타입 0개 — 검사 스킵" 상태다(`npm run qc` 로그 참고).
 
 ## Final weapon motion art
 
