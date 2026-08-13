@@ -1963,24 +1963,27 @@ const STEPS = [
         // 프레임 패스에서 일어난다(프로덕션 버그 수정 이후의 실제 흐름과
         // 동일) — 따라서 게임 시계가 최소 한 프레임 이상 진행되길 기다린
         // 뒤에 b/c의 생존 여부를 읽어야 한다.
+        // 벽시계 상한(5s) — simClock이 멈추면(모달/루프 정지) 원인 없이
+        // 영원히 대기하던 걸 막는다(waitGame()의 안전 상한과 같은 목적,
+        // 여기는 페이지 내부라 Node의 waitGame()을 그대로 못 쓴다).
+        const waitSimOrTimeout = async (target) => {
+          const simT = g.simClock
+          const wallT0 = performance.now()
+          while (g.simClock - simT < target && performance.now() - wallT0 < 5000) await wait(30)
+        }
+
         g.player.sigilGrades.delete('lg_detonator')
         g.player.applySigil('lg_detonator', 'legendary')
         const trioLegendary = spawnChainTrio()
         killDirect(trioLegendary.a)
-        {
-          const simT = g.simClock
-          while (g.simClock - simT < 0.1) await wait(30)
-        }
+        await waitSimOrTimeout(0.1)
         out.legendaryBSurvived = trioLegendary.b.alive
         out.legendaryCSurvived = trioLegendary.c.alive
 
         g.player.applySigil('lg_detonator', 'epic') // legendary→epic, 유효한 승급
         const trioEpic = spawnChainTrio()
         killDirect(trioEpic.a)
-        {
-          const simT = g.simClock
-          while (g.simClock - simT < 0.1) await wait(30)
-        }
+        await waitSimOrTimeout(0.1)
         out.epicBSurvived = trioEpic.b.alive
         out.epicCSurvived = trioEpic.c.alive
 
@@ -2032,6 +2035,11 @@ const STEPS = [
         g.player.reloading = false
         g.player.gunTimer = 0
         g.player.swordTimer = 0
+        // '예비 탄창'(작업 지시 P10) — sigilGrades.clear()로는 안 지워지는
+        // 별도 인스턴스 상태다. 이전 서브테스트(배선 스팟체크 포함)에서
+        // applySigil('reserve_mag', ...)를 부르면 충전이 1 늘어난 채
+        // 남는다 — 매번 여기서 확실히 0으로 되돌린다.
+        g.player.reserveMagCharges = 0
       })
       const out = {}
 
@@ -2053,7 +2061,8 @@ const STEPS = [
           overheat: chk('overheat', 'epic'),
           gun_focus: chk('gun_focus', 'epic'),
           shock_bullet: chk('shock_bullet', 'epic'),
-          chain_reload: chk('chain_reload', 'legendary'),
+          rapid_reload: chk('rapid_reload', 'epic'),
+          reserve_mag: chk('reserve_mag', 'legendary'),
           zero_shot: chk('zero_shot', 'epic'),
           berserk_blade: chk('berserk_blade', 'epic'),
           chain_slash: chk('chain_slash', 'epic'),
@@ -2066,7 +2075,7 @@ const STEPS = [
           hybrid_stance: chk('hybrid_stance', 'epic'),
           golden_weight: chk('golden_weight', 'epic'),
           remnant: chk('remnant', 'legendary'),
-          last_stand: chk('last_stand', 'epic'),
+          undaunted: chk('undaunted', 'epic'),
         }
       })
 
@@ -2210,6 +2219,47 @@ const STEPS = [
         return { shockTimer: e.shockTimer, stunned: e.stunned, shocked: e.shocked }
       })
 
+      // ── 예비 탄창 — 획득 즉시 충전 1, 충전 소모로 재장전 즉시 완료,
+      // 충전이 없으면 평범한 재장전으로 대체 ──
+      await reset()
+      out.reserveMag = await p.evaluate(() => {
+        const g = window.__game
+        g.player.applySigil('reserve_mag', 'legendary') // 획득 즉시 충전 1
+        const chargesAfterAcquire = g.player.reserveMagChargesLeft
+        g.player.ammo = 0
+        g.player.reloading = false
+        g.player.startReload() // 충전 소모 — 즉시 완료
+        const instantAmmo = g.player.ammo
+        const instantReloading = g.player.reloading
+        const chargesAfterUse = g.player.reserveMagChargesLeft
+        g.player.ammo = 0
+        g.player.reloading = false
+        g.player.startReload() // 충전 없음 — 평범한 재장전
+        return { chargesAfterAcquire, instantAmmo, instantReloading, chargesAfterUse, normalReloading: g.player.reloading }
+      })
+
+      // ── 속사 전환 — 재장전 완료 직후 사격 쿨타임이 실제로 줄어드는지 ──
+      await reset()
+      out.rapidReload = await p.evaluate(() => {
+        const g = window.__game
+        g.player.applySigil('rapid_reload', 'epic') // duration 3.5, cutFrac 0.45
+        const baseCooldown = g.player.stats.gunCooldown
+        g.player.rapidReloadTimer = 3.5 // onReloadComplete()가 하는 일을 직접 흉내
+        g.player.recompute()
+        return { baseCooldown, reducedCooldown: g.player.stats.gunCooldown }
+      })
+
+      // ── 불굴 — 받는 피해 증가 적용 후 최대 체력 20%로 상한, 무적은 아님 ──
+      await reset()
+      out.undaunted = await p.evaluate(() => {
+        const g = window.__game
+        g.player.applySigil('undaunted', 'epic') // capFrac 0.20
+        g.player.hp = g.player.stats.maxHp
+        g.player.invuln = 0
+        g.player.takeDamage(100000) // 상한이 없다면 즉사할 만큼 큰 피해
+        return { hpAfter: g.player.hp, maxHp: g.player.stats.maxHp, alive: g.player.alive }
+      })
+
       await reset()
       await p.evaluate((result) => { window.__qcSigilP8c4Result = result }, out)
     },
@@ -2224,7 +2274,8 @@ const STEPS = [
       if (Math.abs(w.overheat.overheatStackFrac - 0.04) > 0.001 || w.overheat.overheatMaxStacks !== 10) return `과열 에픽 스택 파라미터가 다름`
       if (Math.abs(w.gun_focus.gunDamage - 1.45) > 0.01 || Math.abs(w.gun_focus.swordDamage - 0.70) > 0.01) return `총구 집중 에픽 배율이 다름`
       if (Math.abs(w.shock_bullet.shockOnHitChance - 0.85) > 0.001 || Math.abs(w.shock_bullet.shockOnHitDuration - 3.0) > 0.001) return `감전 탄환 에픽 파라미터가 다름`
-      if (!w.chain_reload.chainReloadOwned) return `연쇄 장전 소유 플래그가 안 켜짐`
+      if (Math.abs(w.rapid_reload.rapidReloadDuration - 3.5) > 0.01 || Math.abs(w.rapid_reload.rapidReloadCutFrac - 0.45) > 0.01) return `속사 전환 에픽 파라미터가 다름`
+      if (!w.reserve_mag.reserveMagOwned || w.reserve_mag.reserveMagMaxCharges !== 3) return `예비 탄창 파라미터가 다름`
       if (Math.abs(w.zero_shot.zeroShotPerSecond - 0.08) > 0.001 || Math.abs(w.zero_shot.zeroShotCap - 0.40) > 0.001) return `영점 사격 파라미터가 다름`
       if (Math.abs(w.berserk_blade.swordDamage - 1.55) > 0.01 || Math.abs(w.berserk_blade.damageTakenMult - 1.30) > 0.01) return `광전 에픽 배율이 다름`
       if (Math.abs(w.chain_slash.chainSlashCutFrac - 0.05) > 0.001 || w.chain_slash.chainSlashMaxStacks !== 10) return `연참 가속 에픽 파라미터가 다름`
@@ -2237,7 +2288,7 @@ const STEPS = [
       if (Math.abs(w.hybrid_stance.hybridStanceDuration - 3.0) > 0.01 || Math.abs(w.hybrid_stance.hybridStanceDmgFrac - 0.48) > 0.01) return `총검일체 에픽 파라미터가 다름`
       if (Math.abs(w.golden_weight.goldWeightRate - 0.03) > 0.001 || Math.abs(w.golden_weight.goldWeightCap - 0.50) > 0.001) return `황금의 무게 에픽 파라미터가 다름`
       if (!w.remnant.remnantOwned || Math.abs(w.remnant.remnantDmgFrac - 0.5) > 0.01) return `잔재 파라미터가 다름`
-      if (!w.last_stand.lastStandOwned || Math.abs(w.last_stand.lastStandBuffFrac - 0.5) > 0.01) return `최후의 저항 파라미터가 다름`
+      if (!w.undaunted.undauntedOwned || Math.abs(w.undaunted.undauntedCapFrac - 0.20) > 0.01) return `불굴 파라미터가 다름`
 
       // 상충 각인
       if (!(r.conflict.gunRatio > 0.95 && r.conflict.gunRatio < 1.1)) return `총구 집중+검날 집중 동시 보유 시 총 피해 배율이 거의 상쇄되지 않음 (${r.conflict.gunRatio.toFixed(3)} / 기대 약 1.015, 참고: 절반씩 보정 같은 완화 로직이 있으면 안 됨)`
@@ -2274,6 +2325,24 @@ const STEPS = [
       if (Math.abs(r.shockRefresh.shockTimer - 2) > 0.05) return `감전 — 연사로 3회 재적용했는데 지속시간이 갱신이 아니라 누적됨(${r.shockRefresh.shockTimer} / 기대 2, 3배면 6)`
       if (r.shockRefresh.stunned) return `감전이 경직(행동 정지)을 유발함 — 감전은 받는 피해 증가만이어야 하고 기절과 달라야 한다`
       if (!r.shockRefresh.shocked) return '감전이 적용되지 않음'
+
+      // 예비 탄창 — 획득 즉시 충전 1, 소모 시 즉시 완료, 소진 후엔 평범한 재장전
+      const rm = r.reserveMag
+      if (rm.chargesAfterAcquire !== 1) return `예비 탄창 — 획득 즉시 충전이 1이 아님 (${rm.chargesAfterAcquire})`
+      if (rm.instantReloading) return '예비 탄창 — 충전 소모 시 재장전이 즉시 완료되지 않음(reloading이 여전히 true)'
+      if (rm.instantAmmo !== 7) return `예비 탄창 — 충전 소모 후 탄약이 가득 차지 않음 (${rm.instantAmmo})`
+      if (rm.chargesAfterUse !== 0) return `예비 탄창 — 사용 후 충전이 줄지 않음 (${rm.chargesAfterUse})`
+      if (!rm.normalReloading) return '예비 탄창 — 충전 소진 후에도 평범한 재장전으로 대체되지 않음'
+
+      // 속사 전환 — 재장전 완료 직후 사격 쿨타임이 실제로 줄어드는지
+      const rr = r.rapidReload
+      const rrRatio = rr.reducedCooldown / rr.baseCooldown
+      if (Math.abs(rrRatio - 0.55) > 0.02) return `속사 전환 에픽 — 사격 쿨타임 감소가 기대(-45%)와 다름 (배율 ${rrRatio.toFixed(3)})`
+
+      // 불굴 — 받는 피해가 최대 체력의 20%로 상한되지만 무적은 아님(즉사하지 않되 hp가 깎임)
+      const ud = r.undaunted
+      if (Math.abs(ud.hpAfter - ud.maxHp * 0.8) > 0.5) return `불굴 — 받는 피해 상한이 적용되지 않음 (100000 피해 후 hp ${ud.hpAfter} / 기대 ${(ud.maxHp * 0.8).toFixed(1)})`
+      if (!ud.alive) return '불굴 — 상한이 적용됐어야 하는데 사망함(무적이 아니라 상한이므로 큰 피해라도 20%로 깎여 죽지 않아야 한다)'
 
       return null
     }),
@@ -2478,23 +2547,23 @@ const STEPS = [
   },
   {
     name: 'trait-panel-axis',
-    what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 25종을 전부 보유해도 패널이 화면을 넘지 않는가',
+    what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 26종을 전부 보유해도 패널이 화면을 넘지 않는가',
     async run(p) {
       const r = await p.evaluate(() => {
         const g = window.__game
         // POOL은 window에 노출돼 있지 않다 — trait-slot-badges 스텝과 같은
         // 관례로, 패널이 실제로 소비하는 필드(id/name/desc/icon/slot/grade)만
         // 갖춘 리터럴 객체를 직접 만든다. 핵심 슬롯은 축당 1개만 가질 수
-        // 있으므로 3개, 각인은 25종(작업 지시 P8c4로 완성된 전체 명단) 전부.
+        // 있으므로 3개, 각인은 26종(작업 지시 P10c2로 완성된 전체 명단) 전부.
         const core = [
           { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', slot: 'gun', apply: () => {} },
           { id: 'iaijutsu', name: '발도참', desc: '', icon: '🌸', slot: 'sword', apply: () => {} },
           { id: 'mark', name: '표식', desc: '', icon: '🏷️', slot: 'character', apply: () => {} },
         ]
         const sigilIds = {
-          'gun-sigil': ['reload', 'crit', 'blood_bullet', 'overheat', 'gun_focus', 'shock_bullet', 'chain_reload', 'zero_shot'],
+          'gun-sigil': ['reload', 'crit', 'blood_bullet', 'overheat', 'gun_focus', 'shock_bullet', 'rapid_reload', 'reserve_mag', 'zero_shot'],
           'sword-sigil': ['crit_dmg', 'lifesteal', 'berserk_blade', 'chain_slash', 'sword_focus', 'bleed_blade', 'blood_trace', 'execute_blade'],
-          'character-sigil': ['hp', 'speed', 'lg_detonator', 'berserker', 'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'last_stand'],
+          'character-sigil': ['hp', 'speed', 'lg_detonator', 'berserker', 'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'undaunted'],
         }
         const grades = ['normal', 'rare', 'unique', 'legendary', 'epic']
         const sigils = []
@@ -2536,8 +2605,8 @@ const STEPS = [
       if (!r) return '결과 없음'
       if (r.heads.join(',') !== '총,검,캐릭터') return `축 섹션 순서/이름이 다름 (${r.heads.join(',')})`
       if (r.sections.length !== 3) return `섹션 수가 3이 아님 (${r.sections.length})`
-      // 각 섹션 = 핵심 슬롯 1(있으면) + 그 축 각인 개수. 총/검=1+8=9, 캐릭터=1+9=10.
-      const expectedRows = [9, 9, 10]
+      // 각 섹션 = 핵심 슬롯 1(있으면) + 그 축 각인 개수. 총=1+9=10, 검=1+8=9, 캐릭터=1+9=10.
+      const expectedRows = [10, 9, 10]
       for (let i = 0; i < 3; i++) {
         if (r.sections[i].rows !== expectedRows[i]) {
           return `${r.sections[i].head} 섹션 항목 수가 다름 (${r.sections[i].rows} / 기대 ${expectedRows[i]})`
@@ -2545,8 +2614,8 @@ const STEPS = [
         if (r.sections[i].hasEmptyLabel) return `${r.sections[i].head} 섹션에 각인이 있는데 "각인 없음" 표시가 남아있음`
         if (r.sections[i].hasTslot > 0) return `${r.sections[i].head} 섹션 항목에 축 라벨(tslot)이 남아있음 — 섹션 헤더와 중복`
       }
-      if (r.totalRows !== 28) return `전체 항목 수가 다름 (${r.totalRows} / 기대 28 = 핵심 3 + 각인 25)`
-      if (!r.panelWithinViewport) return '25종을 전부 보유한 상태에서 패널이 화면(뷰포트) 밖으로 넘침'
+      if (r.totalRows !== 29) return `전체 항목 수가 다름 (${r.totalRows} / 기대 29 = 핵심 3 + 각인 26)`
+      if (!r.panelWithinViewport) return '26종을 전부 보유한 상태에서 패널이 화면(뷰포트) 밖으로 넘침'
       if (!r.panelScrollable) return '내용이 뷰포트보다 긴데 패널이 스크롤 가능 상태가 아님(overflow 설정 확인)'
       return null
     }),

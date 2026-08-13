@@ -162,10 +162,19 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     },
     desc: (v) => `사격 명중 시 ${pct(v.chance)} 확률로 감전(${v.duration}s)`,
   },
-  chain_reload: {
+  // '연쇄 장전'(chain_reload)은 리듬 재장전 폐지로 전제가 사라져 폐지했다
+  // (작업 지시 P10 커밋2) — '예비 탄창'(reserve_mag)으로 대체.
+  reserve_mag: {
     unique: 'legendary',
-    values: { legendary: { magMultiplier: 2 } },
-    desc: () => '재장전이 완료될 때마다 탄창 2회분을 채운다 (고유·레전더리)',
+    values: { legendary: { maxCharges: 3 } },
+    desc: (v) => `재장전이 즉시 완료된다. 런당 사용 횟수 제한(최대 ${v.maxCharges}) — 상인 노드·보스 준비방에서 충전 (고유·레전더리)`,
+  },
+  rapid_reload: {
+    values: {
+      normal: { duration: 2.0, cutFrac: 0.12 }, rare: { duration: 2.3, cutFrac: 0.18 }, unique: { duration: 2.6, cutFrac: 0.25 },
+      legendary: { duration: 3.0, cutFrac: 0.34 }, epic: { duration: 3.5, cutFrac: 0.45 },
+    },
+    desc: (v) => `재장전 직후 ${v.duration}s간 사격 쿨타임 -${pct(v.cutFrac)}`,
   },
   zero_shot: {
     unique: 'epic',
@@ -248,10 +257,12 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     values: { legendary: { duration: 3, dmgFrac: 0.5 } },
     desc: (v) => `처치 시 ${v.duration}초간 잔상이 남아 현재 총 피해의 ${pct(v.dmgFrac)}로 대신 공격 (고유·레전더리)`,
   },
-  last_stand: {
+  // '최후의 저항'(last_stand)은 효과가 약하고 런당 1회라 존재감이 없어
+  // 폐지했다(작업 지시 P10 커밋2) — '불굴'(undaunted)로 대체.
+  undaunted: {
     unique: 'epic',
-    values: { epic: { buffDuration: 30, buffFrac: 0.5 } },
-    desc: (v) => `치명상 시 체력 1로 생존(런당 1회), 이후 ${v.buffDuration}초간 모든 피해 +${pct(v.buffFrac)} (고유·에픽)`,
+    values: { epic: { capFrac: 0.20 } },
+    desc: (v) => `받는 피해가 최대 체력의 ${pct(v.capFrac)}를 넘으면 ${pct(v.capFrac)}로 제한된다(무적 아님, 상시 작동) (고유·에픽)`,
   },
 }
 
@@ -297,21 +308,33 @@ export function describeSigil(id: string, grade: Grade): string {
  *
  * 각인 등급 5단계(작업 지시 P8 커밋3) — 스택 폐지, 등급으로 일원화. 신규
  * 각인 18종(작업 지시 P8c4) — 총/검/캐릭터 축 각 4종 + 고유 2종(레전더리1·
- * 에픽1). 각인 25종 전부 `apply`는 더 이상 쓰이지 않는다(no-op) — 실제
- * 적용은 Player.applySigil(id, grade)가 SIGIL_DEFS를 등급으로 조회해 mods를
+ * 에픽1). 각인 전부 `apply`는 더 이상 쓰이지 않는다(no-op) — 실제 적용은
+ * Player.applySigil(id, grade)가 SIGIL_DEFS를 등급으로 조회해 mods를
  * "누적"이 아니라 "그 등급 값으로 전면 재계산"한다(Player.recomputeSigilMods
  * 참고) — 승급이 이전 등급 효과 위에 쌓이면 안 되기 때문이다. 핵심 슬롯
  * 12종은 등급이 없으므로 apply()가 그대로 유일한 적용 경로다(규칙 2).
+ *
+ * 각인 3종 교체(작업 지시 P10 커밋2) — 리듬 재장전 폐지로 전제가 사라진
+ * '연쇄 장전'(gun 고유·레전더리)과 존재감이 약했던 '최후의 저항'(character
+ * 고유·에픽)을 폐지하고 '예비 탄창'(gun 고유·레전더리)·'불굴'(character
+ * 고유·에픽)로 각각 대체, '속사 전환'(gun 일반 각인)을 신규 추가했다.
+ * 작업 지시 표제는 "각인 25종 유지(총 8/검 8/캐릭터 9)"라고 적었지만,
+ * 실제 이 커밋의 항목별 폐지 2종(연쇄 장전·최후의 저항) + 신규 3종(예비
+ * 탄창·불굴·속사 전환)을 그대로 반영하면 순증 +1이라 총 26종(gun 9/sword
+ * 8/character 9)이 된다 — 지시문 자체의 산술 불일치이며, 표제 숫자를
+ * 맞추려 신규 각인 중 하나를 임의로 빼지 않고 항목별 지시를 그대로
+ * 따랐다(작업 지시: "예상과 다르면 임의 해석하지 말고 보고하라").
  */
 const RAW_POOL: Upgrade[] = [
-  // ── 총 각인(gun-sigil) 6종 — 등급 5단계, apply는 no-op(Player.applySigil 참고) ──
+  // ── 총 각인(gun-sigil) 9종 — 등급 5단계, apply는 no-op(Player.applySigil 참고) ──
   { id: 'reload', name: '신속 장전', desc: describeSigil('reload', 'normal'), icon: '🔁', slot: 'gun-sigil', apply: () => {} },
   { id: 'crit', name: '급소 간파', desc: describeSigil('crit', 'normal'), icon: '💥', slot: 'gun-sigil', apply: () => {} },
   { id: 'blood_bullet', name: '혈탄(血彈)', desc: describeSigil('blood_bullet', 'normal'), icon: '🩸', slot: 'gun-sigil', apply: () => {} },
   { id: 'overheat', name: '과열', desc: describeSigil('overheat', 'normal'), icon: '🔥', slot: 'gun-sigil', apply: () => {} },
   { id: 'gun_focus', name: '총구 집중', desc: describeSigil('gun_focus', 'normal'), icon: '🎯', slot: 'gun-sigil', apply: () => {} },
   { id: 'shock_bullet', name: '감전 탄환', desc: describeSigil('shock_bullet', 'normal'), icon: '⚡', slot: 'gun-sigil', apply: () => {} },
-  { id: 'chain_reload', name: '연쇄 장전', desc: describeSigil('chain_reload', 'legendary'), icon: '🔗', slot: 'gun-sigil', apply: () => {} },
+  { id: 'rapid_reload', name: '속사 전환', desc: describeSigil('rapid_reload', 'normal'), icon: '💨', slot: 'gun-sigil', apply: () => {} },
+  { id: 'reserve_mag', name: '예비 탄창', desc: describeSigil('reserve_mag', 'legendary'), icon: '🧰', slot: 'gun-sigil', apply: () => {} },
   { id: 'zero_shot', name: '영점 사격', desc: describeSigil('zero_shot', 'epic'), icon: '🧊', slot: 'gun-sigil', apply: () => {} },
 
   // ── 검 각인(sword-sigil) 6종 ──
@@ -335,7 +358,7 @@ const RAW_POOL: Upgrade[] = [
   { id: 'hybrid_stance', name: '총검일체', desc: describeSigil('hybrid_stance', 'normal'), icon: '🎭', slot: 'character-sigil', apply: () => {} },
   { id: 'golden_weight', name: '황금의 무게', desc: describeSigil('golden_weight', 'normal'), icon: '💰', slot: 'character-sigil', apply: () => {} },
   { id: 'remnant', name: '잔재', desc: describeSigil('remnant', 'legendary'), icon: '👻', slot: 'character-sigil', apply: () => {} },
-  { id: 'last_stand', name: '최후의 저항', desc: describeSigil('last_stand', 'epic'), icon: '🕊️', slot: 'character-sigil', apply: () => {} },
+  { id: 'undaunted', name: '불굴', desc: describeSigil('undaunted', 'epic'), icon: '🛡️', slot: 'character-sigil', apply: () => {} },
 
   // ── 핵심 슬롯: sword(4종, 구 slash — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
   { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'sword',
@@ -512,7 +535,7 @@ export function nodeGradeFor(stage: number, kind: RewardNodeKind): Grade {
  * 맵 노드(각인/상위 전투/엘리트/보스) 보상 각인 선택지(작업 지시 P8 커밋3,
  * 고유 각인은 P8c4에서 추가). count는 3(엘리트는 4).
  *
- * 일반 각인(19종)의 후보는 "그 노드 등급(nodeGrade)에 아직 못 미친" 것만 —
+ * 일반 각인(20종)의 후보는 "그 노드 등급(nodeGrade)에 아직 못 미친" 것만 —
  * 미보유면 nodeGrade로 직행, 보유 중이면 nodeGrade로 승급(현재 등급이
  * nodeGrade보다 낮을 때만 후보) — 이미 nodeGrade 이상이면 후보에서 빠진다
  * (상한 규칙, 더 낮은 노드로는 채울 수 없다).
@@ -529,7 +552,7 @@ export function nodeGradeFor(stage: number, kind: RewardNodeKind): Grade {
  * 실제 승급이라 항상 이득이지만(스택 상한 개념이 사라져 손해 볼 카드가
  * 없다), 핵심 슬롯 교체 후보는 "다른 걸로 바꾸는" 선택이라 이득이 보장되지
  * 않는다 — 그래서 순서상 각인을 항상 먼저 채운다.
- * 각인 19종(고유 제외)을 전부 nodeGrade 이상으로 이미 보유한 극단적인 경우
+ * 각인 20종(고유 제외)을 전부 nodeGrade 이상으로 이미 보유한 극단적인 경우
  * (일반 각인 후보가 0개, 고유도 없거나 이미 보유)에는 작업 지시에 명시된
  * 대체 규칙이 없어, 핵심 슬롯 후보(빈 슬롯 → 교체 후보 순)로 채운다 —
  * 아무 보상도 없는 것보다는 낫다는 판단이며, 별도 규칙이 필요하면 설계

@@ -372,6 +372,14 @@ export class Game {
       }
       this.interactables.push(new Interactable('merchant', -6, -1, plan.kind === 'rest' ? '보스전 상점' : '상인과 거래').addTo(this.scene))
       this.interactables.push(new Interactable('dungeonForge', 0, 4, this.dungeonForgeLabel()).addTo(this.scene))
+      // '예비 탄창'(고유·레전더리, 작업 지시 P10) — 상인 노드(shop)와 보스
+      // 준비방(rest) 최초 입장 시 충전(방 단위로 1회, run.usedObjects가
+      // 방마다 독립이라 재방문해도 다시 충전되지 않는다 — 상자/분수와 같은
+      // 관례). 미보유면 grantReserveMagCharge()가 아무 일도 하지 않는다.
+      if (!this.run.isObjectUsed('reserve-mag-charge')) {
+        this.run.markObjectUsed('reserve-mag-charge')
+        this.player.grantReserveMagCharge()
+      }
     }
 
     // 회복 분수 — RunState.generateMap()이 맵 생성 시점에 hasFountain을 정해
@@ -1242,12 +1250,12 @@ export class Game {
       this.player.gun.name,
       this.player.coreSlots.get('gun') === 'last_bullet',
     )
+    this.hud.setReserveMag(this.player.reserveMagChargesLeft, this.player.reserveMagMaxCharges)
     this.hud.setStats(this.mode === 'town' ? 0 : this.run.depth, this.kills, this.run.gold)
 
     const damageEvent = this.player.consumeDamageEvent()
     if (damageEvent === 'ward') this.hud.banner_('수호막이 피해를 막았습니다!')
     else if (damageEvent === 'revive') this.hud.banner_('불굴 발동 — 체력 50%로 부활!')
-    else if (damageEvent === 'lastStand') this.hud.banner_('최후의 저항 — 체력 1로 생존, 피해량 급증!')
     else if (damageEvent === 'dashBlock' && this.player.coreSlots.get('character') === 'afterimage' && this.player.tryRefreshDashOnBlock()) {
       // '잔영' — 대시 무적으로 흘렸을 때만(피격 후 무적은 dashBlock을 만들지 않는다),
       // 대시 1회당 최대 1회(tryRefreshDashOnBlock 자체가 가드). 적 탄환 피격

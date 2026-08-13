@@ -121,9 +121,9 @@ function writeSnapshot(m) {
   // 체력·골드처럼 매 순간 조건을 다시 평가하는 것 vs 등급만큼 상시 적용되는
   // 단순 배수/가산을 구분하는 기준).
   const TRIGGER_SIGIL_IDS = [
-    'lg_detonator', 'overheat', 'shock_bullet', 'chain_reload', 'zero_shot',
+    'lg_detonator', 'overheat', 'shock_bullet', 'rapid_reload', 'reserve_mag', 'zero_shot',
     'chain_slash', 'bleed_blade', 'blood_trace', 'execute_blade',
-    'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'last_stand',
+    'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'undaunted',
   ]
   const isSigil = (u) => SIGIL_SLOTS.includes(u.slot)
   const conditional = POOL.filter((u) => !isSigil(u) || TRIGGER_SIGIL_IDS.includes(u.id))

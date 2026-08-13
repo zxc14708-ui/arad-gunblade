@@ -491,6 +491,13 @@ canvas.pixelated {
   padding: 0 4px;
   color: var(--gold);
 }
+/* '예비 탄창'(작업 지시 P10) 잔여 충전 — 미보유 시 HUD.setReserveMag()가 hidden 처리. */
+.reserve-mag {
+  font-size: 10px;
+  color: #7dd9a0;
+  margin-top: 2px;
+  font-weight: bold;
+}
 .hud-ammo.reloading .ammo-text {
   color: #ff9a5a;
   animation: reloadPulse 0.5s ease-in-out infinite;

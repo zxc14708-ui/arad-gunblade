@@ -102,6 +102,7 @@ export class HUD {
         <div class="ammo-pips" id="ammoPips"></div>
         <div class="ammo-text" id="ammoText">7 / 7</div>
         <div class="ammo-label"><span id="gunName">M1911</span> · <kbd>R</kbd> 장전</div>
+        <div class="reserve-mag" id="reserveMag" hidden></div>
       </div>
 
       <div class="hud-dash">
@@ -444,6 +445,21 @@ export class HUD {
     if (gunName) this.q('#gunName').textContent = gunName
     this.ammoBox.classList.toggle('reloading', reloading)
     this.ammoText.textContent = reloading ? `장전 중… ${Math.round(ratio * 100)}%` : `${ammo} / ${mag}`
+  }
+
+  /**
+   * '예비 탄창'(고유·레전더리, 작업 지시 P10) 잔여 충전 표시 — 자원
+   * 관리가 성립하려면 잔여 횟수가 항상 보여야 한다(work order 명시).
+   * 미보유(max===0)면 요소 자체를 숨긴다.
+   */
+  setReserveMag(charges: number, max: number) {
+    const el = this.q<HTMLDivElement>('#reserveMag')
+    if (max <= 0) {
+      el.hidden = true
+      return
+    }
+    el.hidden = false
+    el.textContent = `🧰 예비 탄창 ${charges}/${max}`
   }
 
   setStats(wave: number, kills: number, gold: number) {

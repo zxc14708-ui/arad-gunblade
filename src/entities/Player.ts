@@ -80,7 +80,6 @@ export interface Mods {
   executeBladeOwned: boolean // '일도양단'(고유)
   executeThreshold: number // 이 체력 비율 이하 일반 적 즉사
   executeBossFrac: number // 보스·엘리트에게 최대 체력의 이 비율만큼 고정 피해
-  chainReloadOwned: boolean // '연쇄 장전'(고유) — 재장전 완료 시 탄창 2회분 충전
   zeroShotPerSecond: number // '영점 사격'(고유) — 정지 시간당 총 피해 가산율
   zeroShotCap: number
   reversalMaxDmgFrac: number // 역전 — 체력 20% 이하에서 포화하는 최대 피해/이속 가산(동적, recompute()가 매 프레임 재계산)
@@ -92,9 +91,14 @@ export interface Mods {
   remnantOwned: boolean // '잔재'(고유) — Game.killEnemy()가 읽어 잔상 공격체를 스폰한다
   remnantDuration: number
   remnantDmgFrac: number
-  lastStandOwned: boolean // '최후의 저항'(고유) — Player.takeDamage()에서 소비한다(런당 1회)
-  lastStandBuffDuration: number
-  lastStandBuffFrac: number
+
+  // ══════ 각인 3종 교체(작업 지시 P10 커밋2) ══════
+  reserveMagOwned: boolean // '예비 탄창'(고유) — Player.startReload()에서 충전 소모로 즉시 완료
+  reserveMagMaxCharges: number
+  rapidReloadDuration: number // '속사 전환' — 재장전 완료 직후 지속시간/사격 쿨타임 감산(동적)
+  rapidReloadCutFrac: number
+  undauntedOwned: boolean // '불굴'(고유) — Player.takeDamage()에서 받는 피해를 최대 체력 비율로 상한
+  undauntedCapFrac: number
 }
 
 function freshMods(): Mods {
@@ -111,11 +115,13 @@ function freshMods(): Mods {
     overheatStackFrac: 0, overheatMaxStacks: 0, chainSlashCutFrac: 0, chainSlashMaxStacks: 0,
     shockOnHitChance: 0, shockOnHitDuration: 0, bleedOnHitStacks: 0, bleedOnHitDurationMult: 1,
     bloodTraceOwned: false, executeBladeOwned: false, executeThreshold: 0, executeBossFrac: 0,
-    chainReloadOwned: false, zeroShotPerSecond: 0, zeroShotCap: 0,
+    zeroShotPerSecond: 0, zeroShotCap: 0,
     reversalMaxDmgFrac: 0, reversalMaxSpeedFrac: 0, hybridStanceDuration: 0, hybridStanceDmgFrac: 0,
     goldWeightRate: 0, goldWeightCap: 0,
     remnantOwned: false, remnantDuration: 0, remnantDmgFrac: 0,
-    lastStandOwned: false, lastStandBuffDuration: 0, lastStandBuffFrac: 0,
+    reserveMagOwned: false, reserveMagMaxCharges: 0,
+    rapidReloadDuration: 0, rapidReloadCutFrac: 0,
+    undauntedOwned: false, undauntedCapFrac: 0,
   }
 }
 
@@ -159,7 +165,7 @@ export class Player {
   private revivesRemaining = 0
   private wardReady = false
   /** 마지막 피격의 영구 성장 이벤트. HUD 연출에서만 읽고 게임 로직에는 의존하지 않는다. */
-  lastDamageEvent: 'none' | 'ward' | 'hit' | 'revive' | 'dead' | 'dashBlock' | 'lastStand' = 'none'
+  lastDamageEvent: 'none' | 'ward' | 'hit' | 'revive' | 'dead' | 'dashBlock' = 'none'
 
   alive = true
 
@@ -215,9 +221,12 @@ export class Player {
   /** "마지막으로 사용한 무기" — 총검일체의 "전환" 정의(work order 확정):
    * 총을 쏘다 베면 전환, 베다가 쏘면 전환이다. */
   private lastWeaponUsed: 'gun' | 'sword' | null = null
-  /** '최후의 저항' — 런당 1회 소비. */
-  private lastStandUsedThisRun = false
-  private lastStandBuffTimer = 0
+  /** '예비 탄창'(고유·레전더리, 작업 지시 P10) — 런 동안 보유한 충전 수.
+   * Game이 상인 노드·보스 준비방 최초 입장 시 grantReserveMagCharge()로
+   * 채운다(상한은 mods.reserveMagMaxCharges). */
+  private reserveMagCharges = 0
+  /** '속사 전환' — 재장전 완료 직후 남은 버프 지속시간. */
+  private rapidReloadTimer = 0
 
   constructor(meta: MetaBonuses = { gunDamageMultiplier: 1, swordDamageMultiplier: 1, maxHpFlat: 0, revives: 0, wardReady: false }) {
     this.meta = meta
@@ -236,6 +245,7 @@ export class Player {
   private baseGunDamage = 0
   private baseSwordDamage = 0
   private baseMoveSpeed = 0
+  private baseGunCooldown = 0
 
   /**
    * 무기 정의 × 특성 배수 → 실효 스탯 재계산. mods(등급별 정적 수치)가
@@ -244,10 +254,10 @@ export class Player {
    * 배제하는 관례가 있어서, 이 메서드를 아무 때나(예: 매 프레임) 다시
    * 부르면 그 덮어쓴 값이 원상복구돼버린다 — 실제로 QC에서 재현됐다(리듬
    * 장전 보너스 검증이 강제로 꺼둔 크리티컬이 되살아나 피해량이 들쭉날쭉
-   * 해졌다). 신규 각인 18종(작업 지시 P8c4) 중 매 순간 값이 바뀌는 것
-   * (역전/총검일체/황금의 무게/영점 사격/최후의 저항)은 updateDynamicStats()가
-   * 담당한다 — 이 메서드가 매번 stats 전체를 새로 만들지 않고 gunDamage/
-   * swordDamage/moveSpeed 세 필드만 건드리는 이유가 바로 그 격리다.
+   * 해졌다). 매 순간 값이 바뀌는 각인(역전/총검일체/황금의 무게/영점
+   * 사격/속사 전환)은 updateDynamicStats()가 담당한다 — 이 메서드가 매번
+   * stats 전체를 새로 만들지 않고 gunDamage/swordDamage/moveSpeed/
+   * gunCooldown 네 필드만 건드리는 이유가 바로 그 격리다.
    */
   recompute() {
     const m = this.mods
@@ -280,16 +290,17 @@ export class Player {
     this.baseGunDamage = this.stats.gunDamage
     this.baseSwordDamage = this.stats.swordDamage
     this.baseMoveSpeed = this.stats.moveSpeed
+    this.baseGunCooldown = this.stats.gunCooldown
     this.updateDynamicStats() // 방금 정한 기준값에도 현재 동적 보너스를 바로 반영
   }
 
   /**
-   * 신규 각인 18종(작업 지시 P8c4) 중 체력·골드·타이머처럼 매 프레임 값이
-   * 바뀌는 동적 보너스만 갱신한다 — Player.update()가 매 프레임 끝에서
-   * 부른다. gunDamage/swordDamage/moveSpeed 세 필드만 baseGunDamage 등
-   * "정적 기준값 × 이 순간의 배수"로 다시 쓸 뿐, stats의 다른 필드(critChance
-   * 등)는 절대 건드리지 않는다 — recompute()와의 역할 분리가 이 메서드의
-   * 존재 이유다(주석 위 recompute() 참고).
+   * 체력·골드·타이머처럼 매 프레임 값이 바뀌는 동적 각인 보너스만 갱신한다
+   * — Player.update()가 매 프레임 끝에서 부른다. gunDamage/swordDamage/
+   * moveSpeed/gunCooldown 네 필드만 baseGunDamage 등 "정적 기준값 × 이
+   * 순간의 배수"로 다시 쓸 뿐, stats의 다른 필드(critChance 등)는 절대
+   * 건드리지 않는다 — recompute()와의 역할 분리가 이 메서드의 존재
+   * 이유다(주석 위 recompute() 참고).
    */
   private updateDynamicStats() {
     const m = this.mods
@@ -304,14 +315,16 @@ export class Player {
     const reversalSpeedFrac = m.reversalMaxSpeedFrac * reversalT
     const goldWeightFrac = m.goldWeightRate > 0 ? Math.min(m.goldWeightCap, (this.currentGold / 200) * m.goldWeightRate) : 0
     const hybridFrac = this.hybridStanceTimer > 0 ? m.hybridStanceDmgFrac : 0
-    const lastStandFrac = this.lastStandBuffTimer > 0 ? m.lastStandBuffFrac : 0
     const zeroShotFrac = m.zeroShotPerSecond > 0 ? Math.min(m.zeroShotCap, this.zeroShotTimer * m.zeroShotPerSecond) : 0
     // "모든 피해"류 동적 가산은 총/검 양쪽에 함께 곱한다 — 영점 사격만 총 축
     // 전용이라 별도로 gunDamage에만 더한다.
-    const dynamicAllMult = 1 + reversalDmgFrac + goldWeightFrac + hybridFrac + lastStandFrac
+    const dynamicAllMult = 1 + reversalDmgFrac + goldWeightFrac + hybridFrac
     this.stats.gunDamage = this.baseGunDamage * dynamicAllMult * (1 + zeroShotFrac)
     this.stats.swordDamage = this.baseSwordDamage * dynamicAllMult
     this.stats.moveSpeed = this.baseMoveSpeed * (1 + reversalSpeedFrac)
+    // '속사 전환'(작업 지시 P10) — 재장전 완료 직후 지속시간 동안 사격 쿨타임 감소.
+    const rapidReloadMult = this.rapidReloadTimer > 0 ? 1 - m.rapidReloadCutFrac : 1
+    this.stats.gunCooldown = this.baseGunCooldown * rapidReloadMult
   }
 
   /** Game이 매 프레임 현재 런 골드를 알려준다 — '황금의 무게'가 이 값을 읽는다. */
@@ -356,6 +369,11 @@ export class Player {
     // '강인한 육체'(hp) 고유 취지 유지 — 이 각인을 획득/승급했을 때만 완전 회복한다
     // (다른 각인을 고를 때마다 매번 풀피가 되는 부수효과를 만들지 않는다).
     if (id === 'hp' && this.hp > 0) this.hp = this.stats.maxHp
+    // '예비 탄창'(고유·레전더리, 작업 지시 P10) — 획득 즉시 충전 1회를 준다.
+    // 그러지 않으면 다음 상인 노드·보스 준비방까지 순수하게 죽은 각인이다
+    // (고유 각인 규칙: "다른 각인에 의존하면 안 나올 때 죽은 각인이 된다"는
+    // P8c4의 취지를 여기도 그대로 적용한다).
+    if (id === 'reserve_mag' && !cur) this.reserveMagCharges = Math.min(this.mods.reserveMagMaxCharges, this.reserveMagCharges + 1)
   }
 
   /**
@@ -396,7 +414,6 @@ export class Player {
     m.executeBladeOwned = false
     m.executeThreshold = 0
     m.executeBossFrac = 0
-    m.chainReloadOwned = false
     m.zeroShotPerSecond = 0
     m.zeroShotCap = 0
     m.reversalMaxDmgFrac = 0
@@ -408,9 +425,12 @@ export class Player {
     m.remnantOwned = false
     m.remnantDuration = 0
     m.remnantDmgFrac = 0
-    m.lastStandOwned = false
-    m.lastStandBuffDuration = 0
-    m.lastStandBuffFrac = 0
+    m.reserveMagOwned = false
+    m.reserveMagMaxCharges = 0
+    m.rapidReloadDuration = 0
+    m.rapidReloadCutFrac = 0
+    m.undauntedOwned = false
+    m.undauntedCapFrac = 0
 
     for (const [id, grade] of this.sigilGrades) {
       const def = SIGIL_DEFS[id]
@@ -445,7 +465,14 @@ export class Player {
           m.shockOnHitChance = v.chance
           m.shockOnHitDuration = v.duration
           break
-        case 'chain_reload': m.chainReloadOwned = true; break
+        case 'reserve_mag':
+          m.reserveMagOwned = true
+          m.reserveMagMaxCharges = v.maxCharges
+          break
+        case 'rapid_reload':
+          m.rapidReloadDuration = v.duration
+          m.rapidReloadCutFrac = v.cutFrac
+          break
         case 'zero_shot':
           m.zeroShotPerSecond = v.perSecond
           m.zeroShotCap = v.cap
@@ -496,10 +523,9 @@ export class Player {
           m.remnantDuration = v.duration
           m.remnantDmgFrac = v.dmgFrac
           break
-        case 'last_stand':
-          m.lastStandOwned = true
-          m.lastStandBuffDuration = v.buffDuration
-          m.lastStandBuffFrac = v.buffFrac
+        case 'undaunted':
+          m.undauntedOwned = true
+          m.undauntedCapFrac = v.capFrac
           break
       }
     }
@@ -603,10 +629,38 @@ export class Player {
   }
   private startReload() {
     if (this.reloading || this.ammo >= this.magSize) return false
+    this.overheatStacks = 0 // '과열'(작업 지시 P8c4) — 재장전 시 스택 초기화
+    // '예비 탄창'(고유·레전더리, 작업 지시 P10) — 충전이 남아있으면 재장전을
+    // 즉시 완료한다(장전 시간 0). 충전이 없으면 평범한 재장전으로 대체한다.
+    if (this.mods.reserveMagOwned && this.reserveMagCharges > 0) {
+      this.reserveMagCharges--
+      this.ammo = this.magSize
+      this.reloading = false
+      this.onReloadComplete()
+      return true
+    }
     this.reloading = true
     this.reloadTimer = this.stats.reloadTime
-    this.overheatStacks = 0 // '과열'(작업 지시 P8c4) — 재장전 시 스택 초기화
     return true
+  }
+
+  /** '속사 전환'(작업 지시 P10) — 재장전이 어떤 경로로든 완료될 때(수동/자동/예비 탄창) 공통으로 호출한다. */
+  private onReloadComplete() {
+    if (this.mods.rapidReloadDuration > 0) this.rapidReloadTimer = this.mods.rapidReloadDuration
+  }
+
+  /** '예비 탄창' 잔여 충전 수 — HUD 표시용. 미보유면 0. */
+  get reserveMagChargesLeft() {
+    return this.mods.reserveMagOwned ? this.reserveMagCharges : 0
+  }
+  get reserveMagMaxCharges() {
+    return this.mods.reserveMagMaxCharges
+  }
+
+  /** Game이 상인 노드·보스 준비방 최초 입장 시 호출 — 상한을 넘지 않는다. */
+  grantReserveMagCharge() {
+    if (!this.mods.reserveMagOwned) return
+    this.reserveMagCharges = Math.min(this.mods.reserveMagMaxCharges, this.reserveMagCharges + 1)
   }
 
   /**
@@ -718,18 +772,17 @@ export class Player {
       this.chainSlashIdleTimer += dt
       if (this.chainSlashIdleTimer >= CONFIG.traits.chainSlashResetIdle) this.chainSlashStacks = 0
     }
-    // '총검일체'/'최후의 저항' 버프 지속시간
+    // '총검일체'/'속사 전환' 버프 지속시간
     if (this.hybridStanceTimer > 0) this.hybridStanceTimer -= dt
-    if (this.lastStandBuffTimer > 0) this.lastStandBuffTimer -= dt
+    if (this.rapidReloadTimer > 0) this.rapidReloadTimer -= dt
 
     // M1911 장전 처리(리듬 판정은 P10 커밋1에서 폐지 — R 수동 재장전, 소진 시 자동 재장전만 남는다)
     if (this.reloading) {
       this.reloadTimer -= dt
       if (this.reloadTimer <= 0) {
         this.reloading = false
-        // '연쇄 장전'(고유·레전더리, 작업 지시 P8c4) — 정상 완료 시 탄창
-        // 2회분을 채운다(오버플로 허용 — 다음 재장전까지 두 배 더 쏠 수 있다).
-        this.ammo = this.mods.chainReloadOwned ? this.magSize * 2 : this.magSize
+        this.ammo = this.magSize
+        this.onReloadComplete()
       }
     } else if (input.consumeAction('reload')) {
       // 수동 장전 시작 (R)
@@ -848,8 +901,8 @@ export class Player {
     }
 
     this.syncMesh(dt)
-    // 동적 각인(역전/총검일체/황금의 무게/영점 사격/최후의 저항, 작업 지시
-    // P8c4) — gunDamage/swordDamage/moveSpeed 세 필드만 갱신한다(전체
+    // 동적 각인(역전/총검일체/황금의 무게/영점 사격/속사 전환) —
+    // gunDamage/swordDamage/moveSpeed/gunCooldown 네 필드만 갱신한다(전체
     // recompute()를 매 프레임 부르면 QC 하네스가 직접 덮어쓴 다른 stats
     // 필드가 되살아난다 — 위 recompute()/updateDynamicStats() 주석 참고).
     this.updateDynamicStats()
@@ -899,7 +952,12 @@ export class Player {
     // 광전/광전사(하이리스크, 작업 지시 P8c4) — 받는 피해 증가가 실제로
     // 적용되는지가 QC 요구사항이다. 여기 한 곳에서만 곱해 모든 피해원
     // (총알/근접/광역/장판)에 공통 적용된다.
-    this.hp -= amount * this.mods.damageTakenMult
+    let effective = amount * this.mods.damageTakenMult
+    // '불굴'(고유·에픽, 작업 지시 P10) — 받는 피해 증가를 적용한 뒤에
+    // 상한을 건다(work order 명시 순서). 무적이 아니라 한 방의 크기만
+    // 제한할 뿐, 누적 피해(여러 번 맞으면 그만큼 깎임)는 그대로다.
+    if (this.mods.undauntedOwned) effective = Math.min(effective, this.stats.maxHp * this.mods.undauntedCapFrac)
+    this.hp -= effective
     this.invuln = CONFIG.player.invulnAfterHit
     this.hitFlash = 0.15
     if (this.hp <= 0) {
@@ -908,15 +966,6 @@ export class Player {
         this.hp = this.stats.maxHp * 0.5
         this.invuln = CONFIG.player.invulnAfterHit
         this.lastDamageEvent = 'revive'
-      } else if (this.mods.lastStandOwned && !this.lastStandUsedThisRun) {
-        // '최후의 저항'(고유·에픽, 작업 지시 P8c4) — 런당 1회, 체력 1로
-        // 생존 후 지속시간 동안 모든 피해 증가(dynamicAllMult가 recompute()
-        // 에서 lastStandBuffTimer를 읽어 매 프레임 반영한다).
-        this.lastStandUsedThisRun = true
-        this.hp = 1
-        this.invuln = CONFIG.player.invulnAfterHit
-        this.lastStandBuffTimer = this.mods.lastStandBuffDuration
-        this.lastDamageEvent = 'lastStand'
       } else {
         this.hp = 0
         this.alive = false
