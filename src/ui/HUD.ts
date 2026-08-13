@@ -116,7 +116,7 @@ export class HUD {
         <div class="subtitle">던전앤파이터 팬 게임 · 총검사</div>
         <div class="helptext">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp; <kbd>마우스</kbd> 조준<br/>
-          <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>R</kbd> 장전(리듬 성공 시 즉시 완료+보너스) &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
+          <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>R</kbd> 장전 &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
           <kbd>Shift</kbd> 대시 (무적) &nbsp;·&nbsp; <kbd>E</kbd> 상호작용 &nbsp;·&nbsp; <kbd>Tab</kbd> 설정<br/><br/>
           마을의 <b style="color:#c8b0ff">포탈</b>로 던전에 입장하라.<br/>
           방을 클리어하고 <b style="color:#ffd070">문</b>을 골라 전진 —

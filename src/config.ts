@@ -50,23 +50,6 @@ export const CONFIG = {
     dashCooldown: 0.7,
     dashIFrames: 0.22,
     invulnAfterHit: 0.6,
-
-    // R 리듬 장전(작업 지시 P6 커밋3) — 장전 진행 중 R을 한 번 더 누르면
-    // 성공 구간에서는 즉시 완료 + 다음 몇 발 피해 보너스, 구간 밖이면 약간의
-    // 지연 페널티. 위치(windowCenterRatio)는 무기와 무관하게 고정 — 학습
-    // 가능해야 한다. 폭(windowWidth*)만 무기별 reloadTime에 비례해 늘어난다
-    // (장전이 긴 무기일수록 여유 있게). 발도장전(검격 적중 시 장전)은 이
-    // 리듬 로직과 완전히 분리돼 있어 보너스를 받지 않는다 — Player.ts 참고.
-    reloadRhythm: {
-      windowCenterRatio: 0.7,
-      windowWidthBase: 0.12,
-      windowWidthPerSecond: 0.03,
-      windowWidthMax: 0.3,
-      successBonusMult: 0.3,
-      successBonusShots: 3,
-      failDelay: 0.25,
-      flashDuration: 0.35,
-    },
   },
 
   gun: {
@@ -228,8 +211,9 @@ export const CONFIG = {
     // (수치 없음 — 즉시 0으로 리셋. 항목만 문서화 목적으로 남겨둔다.)
 
     // ── 각인 등급 5단계(작업 지시 P8 커밋3) — 에픽 전용 규칙 변경 수치 ──
-    // '신속 장전' 에픽: 리듬 재장전 성공 구간 폭에 가산(비율, Player.startReload() 참고).
-    reloadEpicWindowBonus: 0.12,
+    // '신속 장전' 에픽의 규칙 변경("리듬 성공 구간 확대")은 리듬 장전 폐지로
+    // 함께 없앴다(작업 지시 P10 커밋1) — 수치(-50%)는 그대로 유지, 규칙
+    // 변경만 제거했다(SIGIL_DEFS.reload 참고).
     // '폭심' 에픽: 폭발로 죽은 적이 있으면 그 자리에서 한 번 더 연쇄 폭발한다
     // (Game.aoeDamage() 참고). 배율은 최초 폭발과 동일(연쇄 자체가 규칙 변경).
 

@@ -87,11 +87,13 @@ const pct = (v: number) => `${Math.round(v * 100)}%`
 export const SIGIL_DEFS: Record<string, SigilDef> = {
   // ══════ 기존 7종(P8 커밋3) ══════
   reload: {
+    // 에픽 규칙 변경("리듬 재장전 성공 구간 확대")은 리듬 장전 폐지로
+    // 함께 제거했다(작업 지시 P10 커밋1) — 수치(-50%)는 그대로 유지, 다른
+    // 등급과 같은 방식(수치 스케일링만)으로 표시한다.
     values: {
       normal: { frac: 0.15 }, rare: { frac: 0.22 }, unique: { frac: 0.30 }, legendary: { frac: 0.40 }, epic: { frac: 0.50 },
     },
-    epicRule: '리듬 재장전 성공 구간이 더 넓어진다',
-    desc: (v, g) => `장전 시간 -${pct(v.frac)}${g === 'epic' ? ' — 리듬 재장전 성공 구간 확대' : ''}`,
+    desc: (v) => `장전 시간 -${pct(v.frac)}`,
   },
   crit: {
     values: {
@@ -163,7 +165,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
   chain_reload: {
     unique: 'legendary',
     values: { legendary: { magMultiplier: 2 } },
-    desc: () => '리듬 재장전 성공 시 탄창 2회분을 채운다 (고유·레전더리)',
+    desc: () => '재장전이 완료될 때마다 탄창 2회분을 채운다 (고유·레전더리)',
   },
   zero_shot: {
     unique: 'epic',

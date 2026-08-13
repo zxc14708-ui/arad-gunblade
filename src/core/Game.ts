@@ -1098,7 +1098,7 @@ export class Game {
     // '황금의 무게'(작업 지시 P8c4) — 현재 골드를 매 프레임 알려준다. Player.update()
     // 끝에서 recompute()가 이 값을 읽어 동적 피해 배수에 반영한다.
     this.player.setGold(this.run.gold)
-    const { bullets, slash, startedReload, reloadTriggerAttempt, reloadRhythm } = this.player.update(playerDt, this.input, this.aimGround)
+    const { bullets, slash, startedReload, reloadTriggerAttempt } = this.player.update(playerDt, this.input, this.aimGround)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
@@ -1110,21 +1110,12 @@ export class Game {
     }
     if (startedReload) this.audio.reload(this.player.gun.id)
     if (reloadTriggerAttempt) this.audio.reloadTriggerAttempt()
-    // R 리듬 장전(작업 지시 P6 커밋3) — 월드공간 바(발밑 원호 게이지와 겹치지
-    // 않게 살짝 남쪽으로 띄운다)는 장전 중엔 매 프레임, 성공/실패 순간엔
-    // 색+소리로 즉시 피드백한다.
+    // 장전 진행 바(작업 지시 P6 커밋3 도입, P10 커밋1에서 리듬 판정 제거) —
+    // 발밑 원호 게이지와 겹치지 않게 살짝 남쪽으로 띄운 순수 진행률 바.
     if (this.player.reloading) {
-      const w = this.player.reloadWindow
-      this.effects.showReloadBar(this.player.pos.x, this.player.pos.z, this.player.reloadRatio, w.start, w.end)
+      this.effects.showReloadBar(this.player.pos.x, this.player.pos.z, this.player.reloadRatio)
     } else {
       this.effects.hideReloadBar()
-    }
-    if (reloadRhythm === 'success') {
-      this.effects.flashReloadBarResult(this.player.pos.x, this.player.pos.z, true)
-      this.audio.reloadRhythmSuccess()
-    } else if (reloadRhythm === 'fail') {
-      this.effects.flashReloadBarResult(this.player.pos.x, this.player.pos.z, false)
-      this.audio.reloadRhythmFail()
     }
     if (slash) {
       this.audio.slash(this.player.sword.id)

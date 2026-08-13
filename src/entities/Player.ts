@@ -58,8 +58,9 @@ export interface Mods {
   // 검 적중 시 장전 (기본 메커니즘 — 발도장전은 이 값들을 강화한다)
   swordReloadAmount: number // 검이 적을 맞히면 장전되는 총알 수 (기본 1)
   swordReloadBurstBonus: number // >0이면 검으로 장전한 직후 발사하는 총알 N발의 피해 배율 보너스
-  // 각인 등급 5단계(작업 지시 P8 커밋3) — 에픽 전용 규칙 변경 2종
-  reloadRhythmWindowBonus: number // '신속 장전' 에픽 — 리듬 재장전 성공 구간 폭에 가산(비율)
+  // 각인 등급 5단계(작업 지시 P8 커밋3) — 에픽 전용 규칙 변경. '신속 장전'의
+  // 규칙 변경("리듬 성공 구간 확대")은 리듬 장전 폐지로 함께 제거했다
+  // (작업 지시 P10 커밋1) — 수치(-50%)만 reloadTime mult로 남는다.
   detonatorChain: boolean // '폭심' 에픽 — 폭발로 죽은 적이 있으면 그 자리에서 한 번 더 연쇄 폭발
 
   // ══════ 신규 각인 18종(작업 지시 P8c4) ══════
@@ -79,7 +80,7 @@ export interface Mods {
   executeBladeOwned: boolean // '일도양단'(고유)
   executeThreshold: number // 이 체력 비율 이하 일반 적 즉사
   executeBossFrac: number // 보스·엘리트에게 최대 체력의 이 비율만큼 고정 피해
-  chainReloadOwned: boolean // '연쇄 장전'(고유) — 리듬 재장전 성공 시 탄창 2회분 충전
+  chainReloadOwned: boolean // '연쇄 장전'(고유) — 재장전 완료 시 탄창 2회분 충전
   zeroShotPerSecond: number // '영점 사격'(고유) — 정지 시간당 총 피해 가산율
   zeroShotCap: number
   reversalMaxDmgFrac: number // 역전 — 체력 20% 이하에서 포화하는 최대 피해/이속 가산(동적, recompute()가 매 프레임 재계산)
@@ -105,7 +106,7 @@ function freshMods(): Mods {
     // '발도장전'(lg_quickdraw)이 기본 메커니즘으로 승격됐다(작업 지시
     // slot_system_phase1 커밋 3) — 검 적중 직후 총알 3발에 항상 +30% 피해.
     swordReloadAmount: 1, swordReloadBurstBonus: 0.3,
-    reloadRhythmWindowBonus: 0, detonatorChain: false,
+    detonatorChain: false,
     damageTakenMult: 1, allDamageMult: 1, maxHpMult: 1, hpCostPerShot: 0,
     overheatStackFrac: 0, overheatMaxStacks: 0, chainSlashCutFrac: 0, chainSlashMaxStacks: 0,
     shockOnHitChance: 0, shockOnHitDuration: 0, bleedOnHitStacks: 0, bleedOnHitDurationMult: 1,
@@ -194,14 +195,6 @@ export class Player {
   reloading = false
   private reloadTimer = 0
   private swordReloadBurstShotsLeft = 0
-  // R 리듬 장전(작업 지시 P6 커밋3) — 장전 시작 시점의 reloadTime 기준으로
-  // 성공 구간을 고정한다(장전 도중 무기를 바꿔도 이번 장전의 판정은 흔들리지
-  // 않는다). rhythmBonusShotsLeft는 swordReloadBurstShotsLeft와 완전히
-  // 분리된 변수다 — 발도장전은 리듬 보너스를 받지 않는다는 요구사항 때문에
-  // 두 보너스가 서로의 카운터를 건드리면 안 된다.
-  private rhythmWindowStart = 0
-  private rhythmWindowEnd = 0
-  private rhythmBonusShotsLeft = 0
 
   // ══════ 신규 각인 18종의 동적 상태(작업 지시 P8c4) — 스택/타이머는 등급별
   // 정적 수치(mods)와 분리해 여기서 직접 관리한다. recompute()가 매 프레임
@@ -386,7 +379,6 @@ export class Player {
     m.reloadTime = 1
     m.gunDamage = 1
     m.swordDamage = 1
-    m.reloadRhythmWindowBonus = 0
     m.detonatorChain = false
     m.damageTakenMult = 1
     m.allDamageMult = 1
@@ -426,10 +418,7 @@ export class Player {
       if (!def || !v) continue
       switch (id) {
         // ── 기존 7종 ──
-        case 'reload':
-          m.reloadTime *= 1 - v.frac
-          if (grade === 'epic') m.reloadRhythmWindowBonus = CONFIG.traits.reloadEpicWindowBonus
-          break
+        case 'reload': m.reloadTime *= 1 - v.frac; break
         case 'crit': m.critChance += v.frac; break
         case 'crit_dmg': m.critMult += v.amount; break
         case 'lifesteal': m.lifesteal += v.frac; break
@@ -612,23 +601,11 @@ export class Player {
   get reloadRatio() {
     return this.reloading ? 1 - this.reloadTimer / this.stats.reloadTime : 1
   }
-  /** 리듬 장전 성공 구간(0..1 진행도 기준) — 장전 중이 아니면 의미 없다. HUD 바 표시용. */
-  get reloadWindow() {
-    return { start: this.rhythmWindowStart, end: this.rhythmWindowEnd }
-  }
   private startReload() {
     if (this.reloading || this.ammo >= this.magSize) return false
     this.reloading = true
     this.reloadTimer = this.stats.reloadTime
     this.overheatStacks = 0 // '과열'(작업 지시 P8c4) — 재장전 시 스택 초기화
-    // 성공 구간 폭은 이 무기의 장전 시간에 비례해 늘어난다(장전이 긴 무기일수록
-    // 여유롭게) — 위치(중심)는 무기와 무관하게 항상 고정이라 학습 가능하다.
-    const cfg = CONFIG.player.reloadRhythm
-    // '신속 장전' 에픽(작업 지시 P8 커밋3) — 성공 구간 폭에 가산(비율). 다른
-    // 등급에서는 mods.reloadRhythmWindowBonus가 0이라 기존 동작과 같다.
-    const width = Math.min(cfg.windowWidthMax, cfg.windowWidthBase + this.stats.reloadTime * cfg.windowWidthPerSecond) + this.mods.reloadRhythmWindowBonus
-    this.rhythmWindowStart = Math.max(0, cfg.windowCenterRatio - width / 2)
-    this.rhythmWindowEnd = Math.min(1, cfg.windowCenterRatio + width / 2)
     return true
   }
 
@@ -662,13 +639,11 @@ export class Player {
     slash: SlashSpec | null
     startedReload: boolean
     reloadTriggerAttempt: boolean
-    reloadRhythm: 'success' | 'fail' | null
   } {
     const bullets: BulletSpec[] = []
     let slash: SlashSpec | null = null
     let startedReload = false
     let reloadTriggerAttempt = false
-    let reloadRhythm: 'success' | 'fail' | null = null
 
     // 조준: 마우스 지면 좌표 방향 — 검 스윙 커밋 중엔 방향 전환 차단
     if (this.swingCommitTimer <= 0) {
@@ -747,29 +722,14 @@ export class Player {
     if (this.hybridStanceTimer > 0) this.hybridStanceTimer -= dt
     if (this.lastStandBuffTimer > 0) this.lastStandBuffTimer -= dt
 
-    // M1911 장전 처리 — R 리듬 장전(작업 지시 P6 커밋3)
+    // M1911 장전 처리(리듬 판정은 P10 커밋1에서 폐지 — R 수동 재장전, 소진 시 자동 재장전만 남는다)
     if (this.reloading) {
       this.reloadTimer -= dt
-      if (input.consumeAction('reload')) {
-        // 장전 도중 R을 한 번 더 — 고정된 성공 구간 안이면 즉시 완료 +
-        // 다음 몇 발 피해 보너스, 밖이면 소폭 지연 페널티(근접전에서
-        // 스트레스가 되지 않을 정도로 작게). 아무 입력도 없으면 정상 완료.
-        const progress = 1 - this.reloadTimer / this.stats.reloadTime
-        const cfg = CONFIG.player.reloadRhythm
-        if (progress >= this.rhythmWindowStart && progress <= this.rhythmWindowEnd) {
-          this.reloading = false
-          // '연쇄 장전'(고유·레전더리, 작업 지시 P8c4) — 리듬 성공 시 탄창
-          // 2회분을 채운다(오버플로 허용 — 다음 재장전까지 두 배 더 쏠 수 있다).
-          this.ammo = this.mods.chainReloadOwned ? this.magSize * 2 : this.magSize
-          this.rhythmBonusShotsLeft = cfg.successBonusShots
-          reloadRhythm = 'success'
-        } else {
-          this.reloadTimer += cfg.failDelay
-          reloadRhythm = 'fail'
-        }
-      } else if (this.reloadTimer <= 0) {
+      if (this.reloadTimer <= 0) {
         this.reloading = false
-        this.ammo = this.magSize
+        // '연쇄 장전'(고유·레전더리, 작업 지시 P8c4) — 정상 완료 시 탄창
+        // 2회분을 채운다(오버플로 허용 — 다음 재장전까지 두 배 더 쏠 수 있다).
+        this.ammo = this.mods.chainReloadOwned ? this.magSize * 2 : this.magSize
       }
     } else if (input.consumeAction('reload')) {
       // 수동 장전 시작 (R)
@@ -821,12 +781,6 @@ export class Player {
           if (this.swordReloadBurstShotsLeft > 0) {
             dmg *= 1 + this.mods.swordReloadBurstBonus
             this.swordReloadBurstShotsLeft--
-          }
-          // R 리듬 장전 성공 보너스 — 발도장전과 완전히 별개의 카운터라
-          // 발도장전(검격 적중 시 장전)에는 적용되지 않는다.
-          if (this.rhythmBonusShotsLeft > 0) {
-            dmg *= 1 + CONFIG.player.reloadRhythm.successBonusMult
-            this.rhythmBonusShotsLeft--
           }
           // '마지막 한발'(gun, 구 최후탄) — 피해 증폭 + 명중 시 넉백 충격파(Game.resolveBullets()).
           const lastBulletActive = this.coreSlots.get('gun') === 'last_bullet' && isLastBullet
@@ -899,7 +853,7 @@ export class Player {
     // recompute()를 매 프레임 부르면 QC 하네스가 직접 덮어쓴 다른 stats
     // 필드가 되살아난다 — 위 recompute()/updateDynamicStats() 주석 참고).
     this.updateDynamicStats()
-    return { bullets, slash, startedReload, reloadTriggerAttempt, reloadRhythm }
+    return { bullets, slash, startedReload, reloadTriggerAttempt }
   }
 
   /** 빙결탄/냉기 지대의 이동 둔화. 더 강한 둔화와 더 긴 남은 시간만 유지한다. */

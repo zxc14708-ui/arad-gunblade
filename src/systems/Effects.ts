@@ -61,19 +61,15 @@ export class Effects {
   private gaugeWasFulfilled = false
   private gaugeFlashTimer = 0
 
-  // ── R 리듬 장전 바 (작업 지시 P6 커밋3) ──────────────────────────────
+  // ── 장전 진행 바 (작업 지시 P6 커밋3에서 도입, P10 커밋1에서 리듬 판정
+  // 제거 — 성공 구간 강조·플래시 피드백 없이 순수 진행률만 보여준다) ──
   // 발밑 원호 게이지와 동시에 떠도 겹치지 않도록, 캐릭터 발밑에서 살짝
   // 남쪽(화면 아래쪽, +Z)으로 띄운 가로 막대다. Game이 매 프레임
-  // showReloadBar()/hideReloadBar()를 호출해 표시 여부를 관리하고,
-  // 성공/실패 순간엔 flashReloadBarResult()가 짧게 색을 덮어써 즉시
-  // 피드백을 준다 — flashTimer가 남아있는 동안은 hideReloadBar()가
-  // 무시되어(장전이 그 프레임에 이미 끝났어도) 피드백 색이 끊기지 않는다.
+  // showReloadBar()/hideReloadBar()를 호출해 표시 여부를 관리한다.
   private reloadBarMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null
   private reloadBarCanvas = document.createElement('canvas')
   private reloadBarCtx = this.reloadBarCanvas.getContext('2d')!
   private reloadBarTexture = new THREE.CanvasTexture(this.reloadBarCanvas)
-  private reloadBarFlashTimer = 0
-  private reloadBarFlashColor = '#ffffff'
 
   // 화면 흔들림: 누적 강도(shakeAmp)를 프레임마다 지수적으로 감쇠시킨다.
   private shakeAmp = 0
@@ -349,73 +345,37 @@ export class Effects {
     return mesh
   }
 
-  /** 진행 중인 장전 바 — 배경 트랙 + 성공 구간(색) + 진행 커서. */
-  private drawReloadBar(progress: number, windowStart: number, windowEnd: number) {
+  /** 진행 중인 장전 바 — 배경 트랙 + 진행 커서. */
+  private drawReloadBar(progress: number) {
     const ctx = this.reloadBarCtx
     const w = this.reloadBarCanvas.width
     const h = this.reloadBarCanvas.height
     ctx.clearRect(0, 0, w, h)
     ctx.fillStyle = 'rgba(8, 11, 18, 0.78)'
     ctx.fillRect(0, 0, w, h)
-    ctx.fillStyle = 'rgba(250, 204, 21, 0.55)'
-    ctx.fillRect(windowStart * w, 0, (windowEnd - windowStart) * w, h)
-    const cursorX = Math.max(1.5, Math.min(w - 1.5, progress * w))
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(cursorX - 1.5, 0, 3, h)
+    ctx.fillStyle = 'rgba(125, 217, 160, 0.65)'
+    ctx.fillRect(0, 0, Math.max(1.5, progress * w), h)
     ctx.strokeStyle = 'rgba(255,255,255,0.4)'
     ctx.lineWidth = 1
     ctx.strokeRect(0.5, 0.5, w - 1, h - 1)
     this.reloadBarTexture.needsUpdate = true
   }
 
-  /** 즉시 성공/실패 피드백 — 바 전체를 짧게 단색으로 덮는다(색 신호는 사운드와 함께 온다). */
-  private drawReloadBarFlash(color: string) {
-    const ctx = this.reloadBarCtx
-    const w = this.reloadBarCanvas.width
-    const h = this.reloadBarCanvas.height
-    ctx.clearRect(0, 0, w, h)
-    ctx.fillStyle = color
-    ctx.globalAlpha = 0.85
-    ctx.fillRect(0, 0, w, h)
-    ctx.globalAlpha = 1
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)'
-    ctx.lineWidth = 1
-    ctx.strokeRect(0.5, 0.5, w - 1, h - 1)
-    this.reloadBarTexture.needsUpdate = true
-  }
-
   /** 장전 중일 때 매 프레임 호출 — Game이 player.reloading===false가 되면 대신 hideReloadBar()를 부른다. */
-  showReloadBar(x: number, z: number, progress: number, windowStart: number, windowEnd: number) {
+  showReloadBar(x: number, z: number, progress: number) {
     const mesh = this.ensureReloadBarMesh()
     mesh.position.set(x, 0.05, z + 1.3)
     mesh.visible = true
-    if (this.reloadBarFlashTimer <= 0) this.drawReloadBar(progress, windowStart, windowEnd)
+    this.drawReloadBar(progress)
   }
 
-  /** 장전 중이 아닐 때 매 프레임 호출 — 성공/실패 플래시가 아직 남아있으면 무시한다. */
+  /** 장전 중이 아닐 때 매 프레임 호출. */
   hideReloadBar() {
-    if (this.reloadBarFlashTimer > 0) return
     if (this.reloadBarMesh) this.reloadBarMesh.visible = false
-  }
-
-  /** 리듬 장전 성공/실패 순간 — 짧게 색을 덮어써 즉시 피드백을 준다. */
-  flashReloadBarResult(x: number, z: number, success: boolean) {
-    this.reloadBarFlashTimer = CONFIG.player.reloadRhythm.flashDuration
-    this.reloadBarFlashColor = success ? '#4ade80' : '#f87171'
-    const mesh = this.ensureReloadBarMesh()
-    mesh.position.set(x, 0.05, z + 1.3)
-    mesh.visible = true
-    this.drawReloadBarFlash(this.reloadBarFlashColor)
-  }
-
-  private updateReloadBarFlash(dt: number) {
-    if (this.reloadBarFlashTimer <= 0) return
-    this.reloadBarFlashTimer = Math.max(0, this.reloadBarFlashTimer - dt)
   }
 
   update(dt: number, camera: THREE.Camera) {
     this.updateGauge(dt)
-    this.updateReloadBarFlash(dt)
     // 화면 흔들림 — Game이 이번 프레임 카메라 위치를 이미 정한 뒤이므로, 그 위에
     // 오프셋을 더하기만 한다(카메라 기준 위치 자체는 건드리지 않는다).
     if (dt > 0 && this.shakeAmp > 0.0005) {
@@ -579,7 +539,6 @@ export class Effects {
       this.reloadBarMesh.material.dispose()
       this.reloadBarMesh = null
     }
-    this.reloadBarFlashTimer = 0
     this.particles = []
     this.slashes = []
     this.floaters = []
