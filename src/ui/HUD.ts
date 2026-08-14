@@ -1,4 +1,4 @@
-import { Upgrade, CoreSlot, SLOT_LABEL, CORE_SLOTS, isSigilSlot, GRADE_LABEL, GRADE_COLOR, GRADES } from '../systems/Upgrades'
+import { Upgrade, CoreSlot, Grade, SLOT_LABEL, CORE_SLOTS, isSigilSlot, GRADE_LABEL, GRADE_COLOR, GRADES } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
@@ -13,6 +13,22 @@ export interface MiniMapRoom {
   cleared: boolean
   visible: boolean
   exits: ('north' | 'east' | 'south' | 'west')[]
+}
+
+/**
+ * Game/RunState의 방 타입을 DOM에 직접 노출하지 않는 경로 카드 표시 모델.
+ * grade/eliteAffix/recharge는 해당 경로에 정보가 있을 때만 표시한다.
+ */
+export interface RouteChoice {
+  id: string
+  icon?: string
+  title: string
+  kind: string
+  risk: string
+  reward: string
+  grade?: Grade
+  eliteAffix?: string
+  recharge?: string
 }
 
 /** DOM 기반 HUD / 오버레이 관리 */
@@ -31,6 +47,8 @@ export class HUD {
   private bossFill!: HTMLElement
   private startOv!: HTMLDivElement
   private levelOv!: HTMLDivElement
+  private routeOv!: HTMLDivElement
+  private routeContinue!: HTMLButtonElement
   private overOv!: HTMLDivElement
   private settingsOv!: HTMLDivElement
   private ammoText!: HTMLElement
@@ -43,6 +61,10 @@ export class HUD {
   private shakeCb: ((on: boolean) => void) | null = null
   private keybindCb: ((action: KeyAction, code: string) => boolean) | null = null
   private listeningAction: KeyAction | null = null
+  private routePickCb: ((index: number) => void) | null = null
+  private routePickLocked = true
+  private routeContinueCb: (() => void) | null = null
+  private routeContinueLocked = true
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div')
@@ -62,12 +84,16 @@ export class HUD {
     this.bossFill = this.q('#bossFill')
     this.startOv = this.q('#startOv')
     this.levelOv = this.q('#levelOv')
+    this.routeOv = this.q('#routeOv')
+    this.routeContinue = this.q('#routeContinue')
     this.overOv = this.q('#overOv')
     this.settingsOv = this.q('#settingsOv')
     this.ammoText = this.q('#ammoText')
     this.ammoPips = this.q('#ammoPips')
     this.ammoBox = this.q('#ammoBox')
     window.addEventListener('keydown', (e) => this.captureKeybind(e), true)
+    window.addEventListener('keydown', (e) => this.captureRouteChoice(e), true)
+    this.routeContinue.onclick = () => this.triggerRouteContinue()
   }
 
   private q<T extends HTMLElement>(sel: string): T {
@@ -88,6 +114,8 @@ export class HUD {
       <button class="icon-btn" id="settingsBtn" title="설정 (Tab)">⚙️</button>
 
       <div class="prompt" id="prompt"><kbd>E</kbd> <span id="promptText"></span></div>
+
+      <button class="route-proceed" id="routeContinue" type="button" hidden>다음 경로 보기</button>
 
       <div id="bossBar">
         <div class="name">◆ 마계의 지배자 ◆</div>
@@ -120,7 +148,7 @@ export class HUD {
           <kbd>좌클릭</kbd> 사격 &nbsp;·&nbsp; <kbd>R</kbd> 장전 &nbsp;·&nbsp; <kbd>우클릭</kbd>/<kbd>Space</kbd> 베기<br/>
           <kbd>Shift</kbd> 대시 (무적) &nbsp;·&nbsp; <kbd>E</kbd> 상호작용 &nbsp;·&nbsp; <kbd>Tab</kbd> 설정<br/><br/>
           마을의 <b style="color:#c8b0ff">포탈</b>로 던전에 입장하라.<br/>
-          방을 클리어하고 <b style="color:#ffd070">문</b>을 골라 전진 —
+          방을 클리어하고 <b style="color:#ffd070">경로 카드</b>를 골라 전진 —
           보스 앞엔 <b style="color:#7fd8f0">상인과 회복 분수</b>가 있다.<br/>
           던전 구조는 <b>매 판 랜덤</b>으로 바뀐다.
         </div>
@@ -151,6 +179,13 @@ export class HUD {
         <div class="levelup-head" id="levelHead">LEVEL UP!</div>
         <div class="levelup-sub" id="levelSub">강화할 능력을 선택하세요</div>
         <div class="cards" id="cards"></div>
+      </div>
+
+      <div class="overlay route-overlay" id="routeOv" role="dialog" aria-modal="true" aria-labelledby="routeHead">
+        <div class="route-head" id="routeHead">다음 경로 선택</div>
+        <div class="route-sub">위험과 보상을 확인하고 전진할 경로를 선택하세요</div>
+        <div class="route-cards" id="routeCards"></div>
+        <div class="route-key-help"><kbd>1</kbd>–<kbd>3</kbd> 숫자 키 또는 카드 클릭</div>
       </div>
 
       <div class="overlay" id="shopOv">
@@ -309,6 +344,15 @@ export class HUD {
     } else {
       this.q('#keybindNote').textContent = '이미 다른 조작에 쓰는 키입니다. 다른 키를 선택하세요.'
     }
+  }
+
+  private captureRouteChoice(e: KeyboardEvent) {
+    if (!this.routeOv.classList.contains('show') || this.routePickLocked || e.ctrlKey || e.altKey || e.metaKey) return
+    const index = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code)
+    if (index < 0 || index >= this.q('#routeCards').children.length) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    this.pickRoute(index)
   }
 
   private setReloadKey(bindings: KeyBindings) {
@@ -524,6 +568,128 @@ export class HUD {
     } else {
       p.classList.remove('show')
     }
+  }
+
+  /**
+   * 전투 보상 카드와 독립된 다음 방 선택 화면. 카드는 1~3장만 허용하며,
+   * 클릭/숫자 키가 동시에 들어와도 콜백은 최초 한 번만 실행된다.
+   */
+  showRouteChoices(
+    choices: RouteChoice[],
+    onPick: (choice: RouteChoice, index: number) => void,
+  ) {
+    if (choices.length < 1 || choices.length > 3) {
+      throw new RangeError(`경로 카드는 1~3장이어야 합니다 (현재 ${choices.length}장)`)
+    }
+
+    this.hideRouteContinue()
+    const cards = this.q('#routeCards')
+    cards.innerHTML = ''
+    this.routePickLocked = false
+    this.routePickCb = (index) => onPick(choices[index], index)
+
+    choices.forEach((choice, index) => {
+      const card = document.createElement('button')
+      card.type = 'button'
+      card.className = 'route-card'
+      card.dataset.roomId = choice.id
+      card.setAttribute('aria-label', `${index + 1}번 경로: ${choice.title}`)
+      if (choice.grade) card.style.setProperty('--route-grade', GRADE_COLOR[choice.grade])
+
+      const number = document.createElement('span')
+      number.className = 'route-number'
+      number.textContent = String(index + 1)
+
+      const icon = document.createElement('span')
+      icon.className = 'route-icon'
+      icon.textContent = choice.icon ?? '◇'
+
+      const title = document.createElement('strong')
+      title.className = 'route-title'
+      title.textContent = choice.title
+
+      const tags = document.createElement('span')
+      tags.className = 'route-tags'
+      const kind = document.createElement('span')
+      kind.className = 'route-kind'
+      kind.textContent = choice.kind
+      const risk = document.createElement('span')
+      risk.className = 'route-risk'
+      risk.textContent = choice.risk
+      tags.append(kind, risk)
+
+      const details = document.createElement('span')
+      details.className = 'route-details'
+      const addDetail = (label: string, value: string, className = '') => {
+        const row = document.createElement('span')
+        row.className = `route-detail ${className}`.trim()
+        const key = document.createElement('b')
+        key.textContent = label
+        const text = document.createElement('span')
+        text.textContent = value
+        row.append(key, text)
+        details.appendChild(row)
+      }
+      addDetail('보상', choice.reward, 'reward')
+      addDetail('등급', choice.grade ? GRADE_LABEL[choice.grade] : '고정', 'grade')
+      if (choice.eliteAffix) addDetail('엘리트', choice.eliteAffix, 'elite')
+      if (choice.recharge) addDetail('충전', choice.recharge, 'recharge')
+
+      card.append(number, icon, title, tags, details)
+      card.onclick = () => this.pickRoute(index)
+      cards.appendChild(card)
+    })
+
+    this.routeOv.classList.add('show')
+  }
+
+  hideRouteChoices() {
+    this.routePickLocked = true
+    this.routePickCb = null
+    this.routeOv.classList.remove('show')
+    this.q<HTMLButtonElement>('#routeCards button')?.blur()
+  }
+
+  private pickRoute(index: number) {
+    if (this.routePickLocked || !this.routePickCb) return
+    const cards = [...this.q('#routeCards').querySelectorAll<HTMLButtonElement>('.route-card')]
+    if (!cards[index]) return
+
+    // 화면을 먼저 잠그고 닫은 뒤 콜백을 호출해 빠른 더블 클릭/키 반복을 막는다.
+    this.routePickLocked = true
+    cards.forEach((card) => { card.disabled = true })
+    this.routeOv.classList.remove('show')
+    const cb = this.routePickCb
+    this.routePickCb = null
+    cb(index)
+  }
+
+  /** 시설을 모두 이용한 뒤 경로 선택을 여는 버튼의 콜백을 등록한다. */
+  onRouteContinue(cb: () => void) {
+    this.routeContinueCb = cb
+  }
+
+  showRouteContinue(label = '다음 경로 보기') {
+    this.routeContinue.textContent = label
+    this.routeContinue.disabled = false
+    this.routeContinue.hidden = false
+    this.routeContinueLocked = false
+  }
+
+  hideRouteContinue() {
+    this.routeContinueLocked = true
+    this.routeContinue.disabled = true
+    this.routeContinue.hidden = true
+    this.routeContinue.blur()
+  }
+
+  private triggerRouteContinue() {
+    if (this.routeContinueLocked || !this.routeContinueCb) return
+    this.routeContinueLocked = true
+    this.routeContinue.disabled = true
+    this.routeContinue.hidden = true
+    this.routeContinue.blur()
+    this.routeContinueCb()
   }
 
   setHp(hp: number, max: number) {

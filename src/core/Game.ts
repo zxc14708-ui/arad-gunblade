@@ -5,7 +5,7 @@ import { Input } from './Input'
 import { Room, RoomVisualKind, DEFAULT_ROOM_SIZES } from '../systems/Room'
 import { RunState, RoomPlan, RoomEnemy, ROOM_ICON, roomLabel, Direction } from '../systems/RunState'
 import { Player } from '../entities/Player'
-import { Enemy, EnemyAction } from '../entities/Enemy'
+import { Enemy, EnemyAction, EnemyKind } from '../entities/Enemy'
 import { enemyDeathArt, ENEMY_SCALE } from '../entities/EnemySprite'
 import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
@@ -20,10 +20,26 @@ import { weaponById } from '../systems/Weapons'
 import { preloadAssets } from '../rendering/assets'
 import { noOutline } from '../rendering/toon'
 import { DISPLAY, fitStage } from '../rendering/viewport'
-import { HUD } from '../ui/HUD'
+import { HUD, type RouteChoice } from '../ui/HUD'
 
-type State = 'start' | 'play' | 'levelup' | 'reward' | 'shop' | 'meta' | 'loadout' | 'clear' | 'gameover'
+type State = 'start' | 'play' | 'route' | 'levelup' | 'reward' | 'shop' | 'meta' | 'loadout' | 'clear' | 'gameover'
 type Mode = 'town' | 'dungeon'
+
+/** 경로 카드에서 전투 구성을 짧고 일관되게 읽기 위한 표시명. */
+const ROUTE_ENEMY_LABEL: Record<EnemyKind, string> = {
+  imp: '근접',
+  brute: '중형',
+  shooter: '원거리',
+  boss: '보스',
+  suicide: '자폭',
+  frostSuicide: '빙결 자폭',
+  fireMage: '화염 마법',
+  iceMage: '빙결 마법',
+  summoner: '소환술사',
+  zombie: '좀비',
+  voidMage: '공허 마법',
+  charger: '돌진',
+}
 
 export class Game {
   private renderer: THREE.WebGLRenderer
@@ -175,6 +191,11 @@ export class Game {
     })
     this.hud.onShakeToggle((on) => this.effects.setShakeEnabled(on))
     this.hud.onKeybind((action, code) => this.input.rebind(action, code))
+    this.hud.onRouteContinue(() => {
+      if (this.mode === 'dungeon' && this.state === 'play' && this.roomCleared) {
+        this.presentNextRoutes()
+      }
+    })
     this.hud.onShop(
       (i) => this.buyShopItem(i),
       () => this.rerollShop(),
@@ -275,6 +296,8 @@ export class Game {
     this.boss = null
     this.hud.showBoss(false)
     this.hud.setPrompt(null)
+    this.hud.hideRouteChoices()
+    this.hud.hideRouteContinue()
   }
 
   /** 마을(허브) 입장 */
@@ -288,6 +311,7 @@ export class Game {
     this.curPlan = null
     this.run.reset()
     this.startRun()
+    this.player.group.visible = true
 
     // 던전 포탈 — 북쪽 문 라인 대신 마을 안쪽에 둬 상단 벽/HUD에 가리지 않게 한다.
     const p = { x: 0, z: this.room.bounds.minZ + 8 }
@@ -315,8 +339,8 @@ export class Game {
   private enterDungeon() {
     this.run.reset(1)
     this.mode = 'dungeon'
-    const plan = this.run.enterFirst()
-    this.loadRoom(plan)
+    this.run.enterFirst()
+    this.prepareStageRoutes()
     this.audio.waveStart()
   }
 
@@ -331,13 +355,116 @@ export class Game {
   private advanceStage() {
     this.shopRooms.clear()
     this.run.advanceStage()
-    const plan = this.run.enterFirst()
-    this.loadRoom(plan)
     this.player.heal(this.player.stats.maxHp * 0.3)
+    this.run.enterFirst()
+    this.prepareStageRoutes()
     this.audio.waveStart()
   }
 
-  /** 방 하나 구성 — 문은 항상 북쪽에 모여 있어(openDoors 참고) 다음 방은 항상 남쪽에서 진입한다. */
+  /**
+   * 깊이 0 로비는 그래프 연결을 위한 논리 루트로만 남긴다. 실제 방을 만들지
+   * 않고 첫 경로 카드를 바로 열어, 던전 진입 화면 자체가 첫 선택이 되게 한다.
+   */
+  private prepareStageRoutes() {
+    this.clearWorld()
+    this.room?.dispose()
+    this.player.group.visible = false
+    this.curPlan = null
+    this.roomCleared = true
+    this.run.markCurrentCleared()
+    this.hud.setMinimap(this.run.minimap())
+    this.hud.banner_(`${this.run.cfg.name} · 첫 경로를 선택하세요`)
+    this.presentNextRoutes()
+    this.clock.getDelta()
+  }
+
+  /** 경로 카드에서 사용할 배율 표기 — 게임 수치는 바꾸지 않고 읽기만 한다. */
+  private routeMultiplier(value: number) {
+    return Number(value.toFixed(2)).toString()
+  }
+
+  private routeRisk(plan: RoomPlan) {
+    if (plan.enemies.length === 0) return '전투 없음'
+    if (plan.kind === 'boss') {
+      return `보스 1 + 호위 ${Math.max(0, plan.enemies.length - 1)} · 체력×${this.routeMultiplier(plan.hpMul)} · 공격×${this.routeMultiplier(plan.dmgMul)}`
+    }
+    const roster = [...new Set(plan.enemies.map((enemy) => ROUTE_ENEMY_LABEL[enemy.kind]))].join('/')
+    return `적 ${plan.enemies.length}명 · ${roster} · 체력×${this.routeMultiplier(plan.hpMul)} · 공격×${this.routeMultiplier(plan.dmgMul)} · 속도×${this.routeMultiplier(plan.speedMul)}`
+  }
+
+  /** 현재 구현의 실제 보상만 표기한다. 전투 골드 배수는 P9 커밋 1에서 추가된다. */
+  private routeReward(plan: RoomPlan) {
+    switch (plan.kind) {
+      case 'trait': return '각인 후보 3장 중 1장'
+      case 'hardCombat': return `각인 후보 3장 중 1장 · 골드 +${20 + plan.depth * 8}`
+      case 'elite': return `각인 후보 4장 중 1장 · 골드 +${35 + plan.depth * 12} · 증표 1`
+      case 'boss': return '각인 후보 3장 중 1장 · 스테이지 보상'
+      case 'shop': return '상점 · 제련소'
+      case 'rest': return '상점 · 회복 우물 · 제련소'
+      case 'recover': return '회복 우물'
+      default: return plan.chests > 0 ? '기본 골드 · 보물상자' : '기본 골드'
+    }
+  }
+
+  private routeGrade(plan: RoomPlan) {
+    switch (plan.kind) {
+      case 'trait': return nodeGradeFor(this.run.stage, 'trait')
+      case 'hardCombat': return nodeGradeFor(this.run.stage, 'hardCombat')
+      case 'elite': return nodeGradeFor(this.run.stage, 'elite')
+      case 'boss': return nodeGradeFor(this.run.stage, 'boss')
+      default: return undefined
+    }
+  }
+
+  private routeRecharge(plan: RoomPlan) {
+    if (!this.player.sigilGrades.has('reserve_mag') || (plan.kind !== 'shop' && plan.kind !== 'rest')) return undefined
+    const current = this.player.reserveMagChargesLeft
+    const max = this.player.reserveMagMaxCharges
+    return current < max ? `가능 · ${current}/${max}` : `현재 최대 · ${current}/${max}`
+  }
+
+  private routeChoice(plan: RoomPlan): RouteChoice {
+    return {
+      id: plan.id,
+      icon: ROOM_ICON[plan.kind],
+      title: roomLabel(plan),
+      kind: `${plan.depth}구역 · ${roomLabel(plan)}`,
+      risk: this.routeRisk(plan),
+      reward: this.routeReward(plan),
+      grade: this.routeGrade(plan),
+      eliteAffix: plan.kind === 'elite' && plan.affix ? ELITE_AFFIX[plan.affix].name : undefined,
+      recharge: this.routeRecharge(plan),
+    }
+  }
+
+  /**
+   * 물리적인 문 대신 현재 노드의 단방향 출구를 카드로 보여준다. 별도 route
+   * 상태에서 게임 루프가 멈추며, 카드 선택이 확정된 뒤에만 목표 방을 로드한다.
+   */
+  private presentNextRoutes() {
+    if (this.curPlan?.kind === 'boss') return
+    const exits = this.run.exits
+    if (exits.length === 0) {
+      this.state = 'play'
+      this.hud.hideRouteChoices()
+      this.hud.hideRouteContinue()
+      return
+    }
+
+    const choices = exits.map(({ plan }) => this.routeChoice(plan))
+    this.state = 'route'
+    this.input.clearAll()
+    this.hud.setPrompt(null)
+    this.hud.showRouteChoices(choices, (choice) => {
+      if (this.state !== 'route') return
+      const target = this.run.exits.find(({ plan }) => plan.id === choice.id)
+      if (!target) return
+      this.audio.pick()
+      this.loadRoom(this.run.enter(target.plan.id))
+    })
+  }
+
+  /** 방 하나 구성 — 다음 방 이동은 물리 문이 아니라 경로 카드에서 처리한다. */
   private loadRoom(plan: RoomPlan) {
     this.clearWorld()
     this.room?.dispose()
@@ -349,6 +476,7 @@ export class Game {
     this.room = new Room(this.scene, size, visual, this.run.cfg.art)
     this.curPlan = plan
     this.state = 'play'
+    this.player.group.visible = true
 
     // 적 스폰 대기열
     const alreadyCleared = this.run.isCurrentCleared()
@@ -405,32 +533,15 @@ export class Game {
       this.hud.banner_(`${this.run.depth}번째 방 · ${roomLabel(plan)}`)
     }
 
-    // 적 없는 방(상점)은 즉시 문 개방
-    if (this.roomCleared) this.openDoors()
+    // 시설방은 입장 즉시 클리어 상태지만, 시설 이용 전에 경로 화면이 플레이를
+    // 막지 않도록 명시적인 진행 버튼으로만 다음 카드를 연다. recover는 P9
+    // 커밋 1에서 제거 예정이므로 그전까지 같은 안전 규칙을 적용한다.
+    if (this.roomCleared && (plan.kind === 'shop' || plan.kind === 'rest' || plan.kind === 'recover')) {
+      this.hud.showRouteContinue(plan.kind === 'rest' ? '보스전 준비 완료 · 다음 경로 보기' : '다음 경로 보기')
+    }
 
     this.snapCamera()
     this.clock.getDelta()
-  }
-
-  /**
-   * 방 클리어 → 다음 방 문 생성. 선형 분기 맵(작업 지시 P7 커밋2)에서는 한
-   * 방에서 다음 깊이로 2~3개 선택지가 동시에 열릴 수 있다 — 전부 북쪽 벽에
-   * 고르게 배치한다(room.doorPoints, "앞으로 나아간다"는 방향감을 유지하려고
-   * 남/동/서 대신 항상 북쪽에 모은다). direction 필드 자체는 RunState의
-   * exits 맵 키(북/동/서를 임의 슬롯으로 재사용)일 뿐 실제 배치와는 무관하다.
-   */
-  private openDoors() {
-    if (this.curPlan?.kind === 'boss') return
-    const exits = this.run.exits
-    const points = this.room.doorPoints(exits.length)
-    exits.forEach(({ direction, plan }, i) => {
-      const p = points[i]
-      const label = `${roomLabel(plan)} 방으로 (${ROOM_ICON[plan.kind]})`
-      const door = new Interactable('door', p.x, p.z, label)
-      door.targetRoomId = plan.id
-      door.direction = direction
-      this.interactables.push(door.addTo(this.scene))
-    })
   }
 
   private onRoomClear() {
@@ -448,8 +559,8 @@ export class Game {
       this.grantHardCombatReward()
     } else {
       this.audio.pick()
-      this.hud.banner_('방 클리어! 문이 열렸다')
-      this.openDoors()
+      this.hud.banner_('방 클리어! 다음 경로를 선택하세요')
+      this.presentNextRoutes()
     }
   }
 
@@ -468,7 +579,7 @@ export class Game {
     if (choices.length === 0) {
       this.state = 'play'
       this.hud.banner_('획득 가능한 특성이 없습니다')
-      this.openDoors()
+      this.presentNextRoutes()
       this.clock.getDelta()
       return
     }
@@ -477,7 +588,7 @@ export class Game {
         this.audio.pick()
         this.state = 'play'
         this.hud.banner_('각인 획득!')
-        this.openDoors()
+        this.presentNextRoutes()
         this.clock.getDelta()
       })
     })
@@ -501,7 +612,7 @@ export class Game {
     if (choices.length === 0) {
       this.state = 'play'
       this.hud.banner_(`골드 +${gold} · 획득 가능한 특성이 없습니다`)
-      this.openDoors()
+      this.presentNextRoutes()
       this.clock.getDelta()
       return
     }
@@ -510,7 +621,7 @@ export class Game {
         this.audio.pick()
         this.state = 'play'
         this.hud.banner_('상위 전투 보상 획득!')
-        this.openDoors()
+        this.presentNextRoutes()
         this.clock.getDelta()
       })
     })
@@ -534,7 +645,7 @@ export class Game {
     if (choices.length === 0) {
       this.state = 'play'
       this.hud.banner_(`골드 +${gold} · 모험가 증표 +1 · 획득 가능한 특성이 없습니다`)
-      this.openDoors()
+      this.presentNextRoutes()
       this.clock.getDelta()
       return
     }
@@ -543,7 +654,7 @@ export class Game {
         this.audio.pick()
         this.state = 'play'
         this.hud.banner_('엘리트 보상 획득!')
-        this.openDoors()
+        this.presentNextRoutes()
         this.clock.getDelta()
       })
     })
@@ -628,22 +739,12 @@ export class Game {
       }
     }
 
-    // 문은 적이 남아있으면 사용 불가
-    if (target?.kind === 'door' && !this.roomCleared) target = null
-
     this.hud.setPrompt(target ? target.label : null)
     if (!target || !justPressed) return
 
     switch (target.kind) {
       case 'portal':
         this.openLoadout()
-        break
-      case 'door':
-        if (target.targetRoomId) {
-          // 문은 항상 북쪽 벽에 모여 있다(openDoors 참고) — loadRoom()은
-          // 항상 남쪽 진입점을 쓴다(entryPoint() 기본값).
-          this.loadRoom(this.run.enter(target.targetRoomId))
-        }
         break
       case 'chest':
         this.openChest(target)
@@ -1583,15 +1684,15 @@ export class Game {
 
   /** 진입 위치와 출입구 주변은 비워, 방을 여는 순간의 불합리한 피격을 막는다. */
   private safeSpawnPoint() {
-    const doors: Direction[] = ['north', 'east', 'south', 'west']
+    const edges: Direction[] = ['north', 'east', 'south', 'west']
     for (let i = 0; i < 18; i++) {
       const p = this.room.randomPoint(5)
       const nearPlayer = Math.hypot(p.x - this.player.pos.x, p.z - this.player.pos.z) < 7
-      const nearDoor = doors.some((d) => {
-        const door = this.room.doorPoint(d)
-        return Math.hypot(p.x - door.x, p.z - door.z) < 5
+      const nearEntrance = edges.some((d) => {
+        const edge = this.room.edgePoint(d)
+        return Math.hypot(p.x - edge.x, p.z - edge.z) < 5
       })
-      if (!nearPlayer && !nearDoor) return p
+      if (!nearPlayer && !nearEntrance) return p
     }
     return this.room.randomPoint(5)
   }

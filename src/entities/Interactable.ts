@@ -2,9 +2,8 @@ import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { ASSET, loadTex } from '../rendering/assets'
 import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
-import type { Direction } from '../systems/RunState'
 
-export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'door' | 'traitAltar' | 'traitForge' | 'dungeonForge' | 'metaAltar'
+export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'traitAltar' | 'traitForge' | 'dungeonForge' | 'metaAltar'
 
 // ── 프롭 텍스처 (제공된 픽셀 애셋) ──
 const chestClosedTex = () => loadTex(ASSET.props.chestClosed)
@@ -12,7 +11,6 @@ const chestOpenTex = () => loadTex(ASSET.props.chestOpen)
 const fountainTex = () => loadTex(ASSET.props.fountain)
 const merchantTex = () => loadTex(ASSET.props.merchant)
 const portalTex = () => loadTex(ASSET.props.portal)
-const doorTex = () => loadTex(ASSET.props.door)
 const altarTex = () => loadTex(ASSET.props.traitAltar)
 const forgeTex = () => loadTex(ASSET.props.traitForge)
 
@@ -21,7 +19,6 @@ const TEXFN: Record<InteractKind, () => THREE.Texture> = {
   fountain: fountainTex,
   merchant: merchantTex,
   portal: portalTex,
-  door: doorTex,
   traitAltar: altarTex,
   traitForge: forgeTex,
   // 던전 제련소 — 전용 아트 없이 마을 제련소와 같은 룬석을 재사용(STATION_TINT로만 구분)
@@ -29,7 +26,7 @@ const TEXFN: Record<InteractKind, () => THREE.Texture> = {
   metaAltar: forgeTex,
 }
 const SCALE: Record<InteractKind, number> = {
-  chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 4.9, door: 4.2, traitAltar: 3.4, traitForge: 3.4, dungeonForge: 3.4, metaAltar: 3.4,
+  chest: 1.8, fountain: 2.8, merchant: 3.2, portal: 4.9, traitAltar: 3.4, traitForge: 3.4, dungeonForge: 3.4, metaAltar: 3.4,
 }
 /** 애셋 원본 종횡비(가로/세로) — 텍스처가 비동기 로드라 상수로 고정 */
 const ASPECT: Record<InteractKind, number> = {
@@ -37,7 +34,6 @@ const ASPECT: Record<InteractKind, number> = {
   fountain: 28 / 30,
   merchant: 26 / 34,
   portal: 2 / 3,
-  door: 24 / 30,
   traitAltar: 48 / 64,
   traitForge: 48 / 64,
   dungeonForge: 48 / 64,
@@ -48,7 +44,6 @@ export const INTERACT_RANGE: Record<InteractKind, number> = {
   fountain: 2.4,
   merchant: 3.0,
   portal: 2.8,
-  door: 2.0,
   traitAltar: 2.6,
   traitForge: 2.6,
   dungeonForge: 2.6,
@@ -73,10 +68,6 @@ export class Interactable {
   group = new THREE.Group()
   pos = new THREE.Vector3()
   used = false
-  /** 문 전용: 선택지 인덱스 */
-  choiceIndex = 0
-  targetRoomId: string | null = null
-  direction: Direction | null = null
   /** 프롬프트에 표시할 라벨 */
   label: string
   private sprite: THREE.Sprite
@@ -94,10 +85,10 @@ export class Interactable {
       color: kind === 'fountain' ? 0x8dffae : (STATION_TINT[kind]?.body ?? 0xffffff),
       transparent: true,
       depthWrite: false,
-      depthTest: kind !== 'portal' && kind !== 'door',
+      depthTest: kind !== 'portal',
     })
     this.sprite = makeBottomAnchoredSprite(this.mat)
-    this.sprite.renderOrder = kind === 'portal' || kind === 'door' ? 12 : 2
+    this.sprite.renderOrder = kind === 'portal' ? 12 : 2
     const sc = SCALE[kind]
     setSpriteWorldHeight(this.sprite, sc, ASPECT[kind])
     this.group.add(this.sprite)
@@ -114,8 +105,8 @@ export class Interactable {
 
     // 포탈은 보랏빛 수직 관문, 분수는 초록빛 고정 수원, 마을 시설은 고유색 룬석.
     const tint = STATION_TINT[kind]
-    if (kind === 'portal' || kind === 'door' || kind === 'fountain' || tint) {
-      const glowColor = tint ? tint.ring : kind === 'portal' ? 0xb56cff : kind === 'door' ? 0x7eaaff : 0x72f7a0
+    if (kind === 'portal' || kind === 'fountain' || tint) {
+      const glowColor = tint ? tint.ring : kind === 'portal' ? 0xb56cff : 0x72f7a0
       const gm = noOutline(
         new THREE.SpriteMaterial({
           map: TEXFN[kind](),

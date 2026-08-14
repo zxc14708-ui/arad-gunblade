@@ -599,11 +599,10 @@ export class RunState {
    * 깊이(4=상점, 8=보스 준비방, 9=보스)에는 선택지가 없고, 분기 깊이에는
    * planBranchKinds()가 보장한 2~3개 선택지가 있다.
    *
-   * 깊이 0("로비")은 표에 없는 구조적 앵커다 — 문(door) 인터랙터블은 항상
-   * "지금 서 있는 방"에 붙어야 하는데, 깊이 1 자체가 첫 분기라 그 분기를
-   * 보여줄 방이 하나 필요하다(적이 없어 즉시 클리어되고 문이 바로 열린다,
-   * 상점/보스 준비방과 같은 처리). 던전 진입 즉시 실질적으로 깊이 1 분기를
-   * 마주하므로 표의 의도(깊이 1부터 분기)를 그대로 구현한 것이다.
+   * 깊이 0("로비")은 표에 없는 논리적 앵커다. 실제 방으로 렌더링하지 않고
+   * 던전 입장 직후 첫 경로 카드의 출발점으로만 유지한다. 이를 남겨두면 맵
+   * 연결·표본 검사·스테이지 전환 구조를 바꾸지 않으면서 플레이어 화면에서는
+   * 깊이 1부터 바로 선택을 시작할 수 있다.
    *
    * 깊이 i의 모든 노드는 깊이 i+1의 모든 노드로 각각 연결된다 — 전부
    * connectForward(단방향)만 쓴다. 어느 노드를 골라도 다음 깊이의 모든
@@ -634,12 +633,13 @@ export class RunState {
       nodesByDepth.set(depth, [this.nodes.get(plan.id)!])
     }
 
-    const doorDirs: Direction[] = ['north', 'east', 'west']
+    // direction은 미니맵 연결 슬롯 이름일 뿐, 물리적인 문 방향이 아니다.
+    const routeSlots: Direction[] = ['north', 'east', 'west']
     for (let depth = 0; depth < BOSS_DEPTH; depth++) {
       const from = nodesByDepth.get(depth)!
       const to = nodesByDepth.get(depth + 1)!
       for (const a of from) {
-        to.forEach((b, i) => this.connectForward(a, doorDirs[i % doorDirs.length], b))
+        to.forEach((b, i) => this.connectForward(a, routeSlots[i % routeSlots.length], b))
       }
     }
   }
@@ -698,7 +698,8 @@ export class RunState {
       visibleIds.add(node.plan.id)
       Object.values(node.exits).forEach((id) => id && visibleIds.add(id))
     }
-    return [...this.nodes.values()].map((node) => ({
+    // 로비는 경로 그래프의 루트로만 남기고 플레이어 미니맵에는 표시하지 않는다.
+    return [...this.nodes.values()].filter((node) => node.plan.id !== 'lobby').map((node) => ({
       id: node.plan.id,
       kind: node.plan.kind,
       x: node.plan.x,
