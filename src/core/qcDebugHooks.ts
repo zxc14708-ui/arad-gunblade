@@ -37,8 +37,15 @@ interface GameInternals {
     reloading: boolean
   }
   boss: Enemy | null
-  hud: { showBoss(show: boolean): void }
+  hud: {
+    showBoss(show: boolean): void
+    hideRouteChoices?: () => void
+    hideRouteContinue?: () => void
+    /** routeContinue 명칭으로 정리되기 전 작업 트리와도 QC 훅이 호환되게 한다. */
+  }
   mode: 'town' | 'dungeon'
+  state: string
+  roomCleared: boolean
   spawnQueue: EnemyKind[]
   curPlan: RoomPlan | null
   resolveSlash: (
@@ -141,7 +148,45 @@ export function installQcDebugHooks(game: Game) {
     debugSetGauge: (v: { progress: number; color: string; decreasing?: boolean } | null) => void
     debugSetCoreSlot: (slot: string, id: string) => void
     debugEnterStage: (stage: number) => boolean
+    debugLoadRoom: (roomId: string, stabilize?: boolean) => boolean
+    debugStabilizeRouteSandbox: () => void
   }
+
+  /**
+   * 실제 경로 카드 흐름을 검증한 뒤 나머지 전투 QC가 같은 방을 샌드박스로
+   * 계속 사용할 수 있게 한다. debugClearEnemies()가 방을 비울 때마다 다음
+   * 경로 모달이 다시 열리면 state==='route'에서 게임 시계가 멈춰 기존 전투
+   * 시나리오가 연쇄 실패한다. RunState의 cleared/roomsCleared는 건드리지 않고
+   * Game의 중복 클리어 가드만 세워, 맵 진행 수치에는 가짜 클리어를 더하지 않는다.
+   */
+  const stabilizeRouteSandbox = () => {
+    const g = internals(game)
+    g.hud.hideRouteChoices?.()
+    g.hud.hideRouteContinue?.()
+    g.state = 'play'
+    g.roomCleared = true
+  }
+
+  /**
+   * 상점 재고·보스 준비방처럼 특정 방의 렌더링/상태만 독립 검증할 때 쓰는
+   * 결정적 방 로드 훅. 실제 플레이 이동 검증은 tools/qc.mjs의 경로 카드
+   * 헬퍼가 담당하고, 이 훅은 그래프상 역주행이 불가능한 재방문 회귀 검사에만
+   * 사용한다. stabilize=false면 시설방의 "다음 경로" 버튼을 그대로 남긴다.
+   */
+  const loadRoomForQc = (roomId: string, stabilize = true) => {
+    const g = internals(game)
+    try {
+      const plan = g.run.enter(roomId)
+      g.loadRoom.call(game, plan)
+      if (stabilize) stabilizeRouteSandbox()
+      return g.curPlan?.id === roomId
+    } catch {
+      return false
+    }
+  }
+
+  api.debugLoadRoom = loadRoomForQc
+  api.debugStabilizeRouteSandbox = stabilizeRouteSandbox
 
   const swings: SwingDensityRecord[] = []
   const pierces: PierceDensityRecord[] = []
@@ -283,15 +328,17 @@ export function installQcDebugHooks(game: Game) {
     if (stage < 1 || stage > 7) return false
     const g = internals(game)
     g.run.reset(stage)
-    const lobby = g.run.enterFirst()
-    g.loadRoom.call(game, lobby)
-    // enterFirst()는 깊이 0(진입 로비)에 들어간다 — 적이 없는 구조적
-    // 앵커라 스테이지 콘텐츠(적 로스터) 검증엔 의미가 없다(작업 지시 P7
-    // 커밋2, RunState.generateMap() 주석 참고). 실제 전투가 있는 깊이 1
-    // 방으로 곧장 한 번 더 들어간다 — 적이 있는 선택지를 우선한다('회복'
-    // 노드가 뽑히면 적이 0이라 로스터 검증이 안 된다).
-    const firstExit = g.run.exits.find((exit) => exit.plan.enemies.length > 0) ?? g.run.exits[0]
-    if (firstExit) g.loadRoom.call(game, g.run.enter(firstExit.plan.id))
+    let plan = g.run.enterFirst()
+    // P9 카드 이동은 깊이 0 로비를 화면에 렌더링하지 않는다. 그래프 앵커로
+    // 논리 로비를 남긴 구현과 enterFirst()가 곧바로 깊이 1을 돌려주는 구현
+    // 양쪽에서 스테이지 로스터 QC가 같은 실제 전투방에 들어가도록 분기한다.
+    if (plan.depth === 0) {
+      const firstExit = g.run.exits.find((exit) => exit.plan.enemies.length > 0) ?? g.run.exits[0]
+      if (!firstExit) return false
+      plan = g.run.enter(firstExit.plan.id)
+    }
+    g.loadRoom.call(game, plan)
+    stabilizeRouteSandbox()
     return g.run.stage === stage && g.curPlan?.depth === 1
   }
 

@@ -325,7 +325,7 @@ const STEPS = [
   },
   {
     name: 'dungeon',
-    what: '포탈로 던전 입장 — 방이 생성되고 적이 배치되는가',
+    what: '포탈로 던전 입장 — 빈 로비 없이 첫 경로 카드 2~3장이 표시되는가',
     async run(p) {
       await walkTo(p, 'portal')
       for (let i = 0; i < 8; i++) {
@@ -337,11 +337,73 @@ const STEPS = [
           await p.locator('#loadoutStart').click()
           await p.waitForTimeout(300)
         }
-        if (await inDungeon(p)) break
+        if (await routeVisible(p)) break
       }
-      await p.waitForTimeout(1400)
+      const cards = await readRouteCards(p)
+      await p.evaluate((value) => { window.__qcInitialRouteCards = value }, cards)
     },
-    check: async (p) => ((await inDungeon(p)) ? null : '던전에 진입하지 못함'),
+    check: async (p) => {
+      if (!await inDungeon(p)) return '던전에 진입하지 못함'
+      const cards = await p.evaluate(() => window.__qcInitialRouteCards)
+      return validateRouteCards(cards, 2, 3)
+    },
+  },
+  {
+    name: 'route-choice',
+    needs: 'dungeon',
+    what: '경로 카드 이동 — 숫자키 선택·방 클리어 후 재표시·전진 전용 연결·표시 정보가 모두 동작하는가',
+    async run(p) {
+      const initialCards = await readRouteCards(p)
+      // 회복 같은 무전투 카드는 입장과 동시에 cleared라 debugClearEnemies()로
+      // onRoomClear()를 다시 만들 수 없다. 경로 재표시까지 검증해야 하는 이
+      // 시나리오에서는 적이 있는 카드 중 첫 번째를 결정적으로 고른다.
+      const combatIndex = initialCards.findIndex((card) => card.enemyCount > 0)
+      if (combatIndex < 0) throw new Error('첫 경로 카드 중 전투가 있는 방이 없음')
+      const picked = await chooseRouteCard(p, { index: combatIndex, via: 'key' })
+      const entered = await p.evaluate(() => ({
+        id: window.__game.run.current?.id ?? window.__game.curPlan?.id ?? null,
+        depth: window.__game.run.depth,
+      }))
+      if (entered.id !== picked.roomId) {
+        throw new Error(`숫자키로 고른 방과 실제 진입 방이 다름 (${picked.roomId} → ${entered.id})`)
+      }
+
+      // 첫 실제 방을 결정적으로 비워 정상 onRoomClear() 경로를 탄다. 각인/상위
+      // 전투/엘리트가 뽑혔다면 보상 카드를 먼저 고른 뒤 경로 카드가 떠야 한다.
+      await p.evaluate(() => window.__game.debugClearEnemies())
+      await p.waitForFunction(
+        () => ['route', 'reward', 'levelup'].includes(window.__game.state),
+        null,
+        { timeout: 10000 },
+      )
+      await dismissRewardsUntilRoute(p)
+      const nextCards = await readRouteCards(p)
+      await p.evaluate((value) => { window.__qcRouteFlow = value }, {
+        initialCards,
+        picked,
+        entered,
+        nextCards,
+      })
+    },
+    check: async (p) => {
+      const r = await p.evaluate(() => window.__qcRouteFlow)
+      if (!r) return '경로 이동 검사 결과가 없음'
+      const initialError = validateRouteCards(r.initialCards, 2, 3)
+      if (initialError) return `첫 경로 카드: ${initialError}`
+      const nextError = validateRouteCards(r.nextCards, 2, 3)
+      if (nextError) return `클리어 후 경로 카드: ${nextError}`
+      if (r.entered.id !== r.picked.roomId) return '선택한 방으로 진입하지 않음'
+      if (r.nextCards.some((card) => card.targetDepth !== r.entered.depth + 1)) {
+        return `다음 카드에 되돌아가기/깊이 건너뛰기가 있음 (현재 ${r.entered.depth}, 대상 ${r.nextCards.map((card) => card.targetDepth).join(',')})`
+      }
+      return null
+    },
+    async after(p) {
+      // 클릭 경로도 실제로 한 번 통과시킨 뒤, 이후 24개 던전 시나리오는
+      // 경로 모달 재출현 없이 같은 방을 결정적 전투 샌드박스로 사용한다.
+      await chooseRouteCard(p, { index: 0, via: 'click' })
+      await p.evaluate(() => window.__game.debugStabilizeRouteSandbox())
+    },
   },
   {
     name: 'combat',
@@ -702,9 +764,16 @@ const STEPS = [
         const nearbyPos = { x: nearby.pos.x, z: nearby.pos.z }
         g.projectiles.spawnBullet(direct.pos.clone(), direct.pos.clone().set(0, 0, -1), 0, 1, false, 0, true)
         const simT0 = g.simClock
-        while (g.simClock - simT0 < 0.2) await wait(30)
+        let triggered = false
+        // 프레임마다 knockTimer/velocity를 함께 표본화한다. 감쇠가 끝난 뒤의
+        // 최종 변위 하나만 보면 rAF 분할에 따라 수치가 흔들리므로, 실제
+        // 넉백 상태 진입과 눈에 띄는 이동을 각각 확인한다.
+        while (g.simClock - simT0 < 0.3) {
+          if (nearby.knockTimer > 0 || nearby.vel.lengthSq() > 0.01) triggered = true
+          await wait(16)
+        }
         const moved = Math.hypot(nearby.pos.x - nearbyPos.x, nearby.pos.z - nearbyPos.z)
-        return { moved }
+        return { moved, triggered }
       })
 
       // ── 표식(character) — 대시로 관통한 적은 3초간 받는 피해 +35% ──
@@ -807,7 +876,7 @@ const STEPS = [
       if (!r.lastBulletResult.pipClass || !r.lastBulletResult.pipClass.includes('last-bullet')) {
         return '마지막 한발 상태에서 탄약 UI 마지막 핍에 강조 클래스가 없음'
       }
-      if (!r.shockwaveResult || r.shockwaveResult.moved < 0.3) {
+      if (!r.shockwaveResult?.triggered || r.shockwaveResult.moved < 0.05) {
         return `마지막 한발 명중 시 인근 적이 넉백 충격파로 밀려나지 않음 (변위 ${r.shockwaveResult?.moved})`
       }
       if (r.marked !== true) return "표식 — 대시로 관통한 적이 마크되지 않음"
@@ -1480,16 +1549,22 @@ const STEPS = [
     // 검증한다(게임 상태는 건드리지 않음, debugMapSample 참고).
     name: 'boss-prep',
     needs: 'dungeon',
-    what: '보스 준비 장소 — 적 없이 상점·분수로 보스방 하나만 연결되는가, 선형 분기 맵 배치 규칙(깊이 9, 300회 표본)',
+    what: '보스 준비 장소 — 시설 이용을 막지 않고 출발 버튼 뒤 보스 카드 1장만 표시되는가, 선형 분기 맵 배치 규칙(깊이 9, 300회 표본)',
     async run(p) {
-      await p.evaluate(() => {
+      const loaded = await p.evaluate(() => {
         const g = window.__game
         const nodes = g.run.nodes
         const rest = [...nodes.values()].find((node) => node.plan.kind === 'rest')
         if (!rest) throw new Error('보스 준비 장소가 생성되지 않음')
-        g.loadRoom(g.run.enter(rest.plan.id))
+        // stabilize=false: 준비방 시설과 #routeContinue를 실제 loadRoom 결과
+        // 그대로 남긴다. 경로 선택 화면이 먼저 떠 시설을 가리면 이 검사는 실패한다.
+        return g.debugLoadRoom(rest.plan.id, false)
       })
+      if (!loaded) throw new Error('보스 준비 장소를 QC 방 로드 훅으로 열지 못함')
       await p.waitForTimeout(350)
+      await openFacilityRouteCards(p)
+      const cards = await readRouteCards(p)
+      await p.evaluate((value) => { window.__qcBossPrepRouteCards = value }, cards)
     },
     check: async (p) => {
       const r = await p.evaluate(() => {
@@ -1500,6 +1575,7 @@ const STEPS = [
         const kinds = g.interactables.map((item) => item.kind)
         const restExitIds = rest ? Object.values(rest.exits) : []
         const bossExitIds = boss ? Object.values(boss.exits) : []
+        const routeCards = window.__qcBossPrepRouteCards
         let structural = null
         if (!rest || !boss) structural = '보스 준비 장소 또는 보스방이 없음'
         else if (rest.plan.enemies.length !== 0) structural = '보스 준비 장소에 적이 배치됨'
@@ -1508,9 +1584,14 @@ const STEPS = [
         else if (bossExitIds.length !== 0) structural = '보스방에 출입구가 있음(터미널 노드여야 함 — 되돌아가기 폐지 위반)'
 
         const sample = g.debugMapSample(300)
-        return { structural, sample }
+        return { structural, sample, routeCards, bossId: boss?.plan.id ?? null }
       })
       if (r.structural) return r.structural
+      const routeError = validateRouteCards(r.routeCards, 1, 1)
+      if (routeError) return `보스 진입 카드: ${routeError}`
+      if (r.routeCards[0].roomId !== r.bossId) {
+        return `보스 준비방의 단일 카드가 보스방을 가리키지 않음 (${r.routeCards[0].roomId} / ${r.bossId})`
+      }
 
       const s = r.sample
       console.log(`  · 선형 분기 맵 표본 ${s.n}회 검증(작업 지시 P7 커밋2)`)
@@ -1525,6 +1606,15 @@ const STEPS = [
       if (s.duplicateKindAtDepth > 0) return `같은 깊이에 같은 종류 선택지가 겹친 표본 ${s.duplicateKindAtDepth}건`
       if (s.backwardEdge > 0) return `되돌아가기가 가능한 간선이 있는 표본 ${s.backwardEdge}건`
       return null
+    },
+    async after(p) {
+      // 고정 깊이 카드도 클릭으로 실제 진입되는지 확인하고, 뒤의 보스 패턴
+      // 시나리오가 계획 보스와 QC 보스를 중복 스폰하지 않도록 방을 비운다.
+      await chooseRouteCard(p, { index: 0, via: 'click' })
+      await p.evaluate(() => {
+        window.__game.debugClearEnemies()
+        window.__game.debugStabilizeRouteSandbox()
+      })
     },
   },
   {
@@ -2026,6 +2116,9 @@ const STEPS = [
       const reset = async () => p.evaluate(() => {
         const g = window.__game
         g.debugClearEnemies()
+        // 직전 서브테스트의 총알이 다음 적에게 뒤늦게 명중하면 첫 베기
+        // 피해 기준값이 오염된다. 각인 동작과 무관한 잔존 발사체를 격리한다.
+        g.projectiles.clear()
         g.player.pos.set(0, 0, 0) // 아래 aimAtPoint()가 근처 좌표를 조준하므로 기준점을 고정한다
         g.player.sigilGrades.clear()
         g.player.recomputeSigilMods()
@@ -2557,7 +2650,7 @@ const STEPS = [
   },
   {
     name: 'shop-persist',
-    what: '상점 재고 유지 — 상점방↔보스 준비방을 오가도 구매/판매/리롤 상태가 리롤되지 않고, 두 방의 재고는 서로 독립',
+    what: '상점 재고 유지 — QC 내부 재로드 뒤에도 구매/판매/리롤 상태가 유지되고 상점·보스 준비방 재고가 서로 독립',
     async run(p) {
       await dismissLevelUp(p)
       const err = await p.evaluate(() => {
@@ -2569,7 +2662,9 @@ const STEPS = [
         const restRoom = rooms.find((r) => r.kind === 'rest')
         if (!shopRoom || !restRoom) return '상점방 또는 보스 준비방을 찾지 못함'
 
-        g.loadRoom(g.run.enter(shopRoom.id))
+        // 실제 맵은 이전 깊이로 되돌아갈 수 없다. 이 시나리오는 이동 검사가
+        // 아니라 방별 Shop 인스턴스 지속성 검사이므로 QC 전용 직접 로드 훅을 쓴다.
+        if (!g.debugLoadRoom(shopRoom.id)) return '상점방 직접 로드 실패'
         g.openShop()
         g.rerollShop() // 리롤 먼저 — 구매 후 리롤하면 재고 자체가 새로 생성돼 방금 산 항목의 sold가 사라지는 게 정상 동작이라 순서를 바꿔 검증한다
         g.buyShopItem(0)
@@ -2577,11 +2672,11 @@ const STEPS = [
         window.__qcShopBefore = { sold: shopA.items.map((it) => it.sold), rerollCount: shopA.rerollCount, items: shopA.items.length }
         g.closeShop()
 
-        g.loadRoom(g.run.enter(restRoom.id))
+        if (!g.debugLoadRoom(restRoom.id)) return '보스 준비방 직접 로드 실패'
         const shopRest = g.shopRooms.get(restRoom.id)
         window.__qcRestShop = { sold: shopRest.items.map((it) => it.sold), rerollCount: shopRest.rerollCount }
 
-        g.loadRoom(g.run.enter(shopRoom.id))
+        if (!g.debugLoadRoom(shopRoom.id)) return '상점방 재로드 실패'
         window.__qcShopIds = { shop: shopRoom.id, rest: restRoom.id }
         return null
       })
@@ -2790,7 +2885,7 @@ const STEPS = [
  */
 async function dismissLevelUp(p) {
   for (let i = 0; i < 5; i++) {
-    const open = await p.evaluate(() => window.__game.state === 'levelup')
+    const open = await p.evaluate(() => ['levelup', 'reward'].includes(window.__game.state))
     if (!open) return
     await p.click('#cards .card').catch(() => {})
     await p.waitForTimeout(150)
@@ -2887,6 +2982,131 @@ function verifyStateSequence(samples, expected) {
 const inDungeon = (p) =>
   p.evaluate(() => window.__game?.mode === 'dungeon').catch(() => false)
 
+const routeVisible = (p) =>
+  p.locator('#routeOv.show').count().then((count) => count > 0).catch(() => false)
+
+/**
+ * 화면에 실제로 보이는 경로 카드 정보와 그 카드가 가리키는 RunState 깊이를
+ * 함께 읽는다. 표시 필드를 DOM에서 읽어 "데이터는 있는데 화면에는 없음"인
+ * 회귀도 잡고, roomId/targetDepth는 선택 결과·되돌아가기 검증에만 사용한다.
+ */
+async function readRouteCards(p) {
+  await p.waitForSelector('#routeOv.show', { state: 'visible', timeout: 10000 })
+  const cards = await p.evaluate(() => {
+    const g = window.__game
+    const detail = (card, name) =>
+      card.querySelector(`.route-detail.${name} > span`)?.textContent?.trim()
+      ?? card.querySelector(`.route-${name}`)?.textContent?.trim()
+      ?? ''
+    return [...document.querySelectorAll('#routeCards .route-card')].map((card) => {
+      // 최종 DOM 계약은 data-room-id다. routeId는 HUD 작업 중간 명칭으로
+      // 생성된 빌드도 실패 원인을 명확히 보여주기 위한 진단용 폴백이다.
+      const roomId = card.dataset.roomId ?? card.dataset.routeId ?? ''
+      const node = g.run.nodes?.get?.(roomId)
+      return {
+        roomId,
+        title: card.querySelector('.route-title')?.textContent?.trim() ?? '',
+        kind: card.querySelector('.route-kind')?.textContent?.trim() ?? '',
+        risk: card.querySelector('.route-risk')?.textContent?.trim() ?? '',
+        reward: detail(card, 'reward'),
+        grade: detail(card, 'grade'),
+        elite: detail(card, 'elite'),
+        recharge: detail(card, 'recharge'),
+        enemyCount: node?.plan?.enemies?.length ?? 0,
+        targetDepth: node?.plan?.depth ?? null,
+      }
+    })
+  })
+  if (cards.length === 0) throw new Error('경로 오버레이는 열렸지만 카드가 없음')
+  return cards
+}
+
+function validateRouteCards(cards, minCount, maxCount) {
+  if (!Array.isArray(cards)) return '경로 카드 결과가 배열이 아님'
+  if (cards.length < minCount || cards.length > maxCount) {
+    return `카드 수가 ${minCount}~${maxCount} 범위가 아님 (${cards.length})`
+  }
+  const ids = new Set()
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i]
+    if (!card.roomId) return `${i + 1}번 카드에 data-room-id가 없음`
+    if (ids.has(card.roomId)) return `같은 방 카드가 중복됨 (${card.roomId})`
+    ids.add(card.roomId)
+    if (!card.title) return `${i + 1}번 카드에 제목이 없음`
+    if (!card.kind) return `${i + 1}번 카드에 방 종류가 없음`
+    if (!card.risk) return `${i + 1}번 카드에 위험 정보가 없음`
+    if (!card.reward) return `${i + 1}번 카드에 보상 정보가 없음`
+    if (!card.grade) return `${i + 1}번 카드에 등급 정보가 없음`
+    if (!Number.isFinite(card.targetDepth)) return `${i + 1}번 카드의 목표 깊이를 확인할 수 없음`
+  }
+  return null
+}
+
+/** 클릭과 숫자 키가 같은 진입 콜백을 타고 선택한 roomId를 실제로 여는지 확인한다. */
+async function chooseRouteCard(p, { index = 0, via = 'click' } = {}) {
+  const cards = await readRouteCards(p)
+  const picked = cards[index]
+  if (!picked) throw new Error(`${index + 1}번 경로 카드가 없음`)
+  if (via === 'key') await p.keyboard.press(`Digit${index + 1}`)
+  else await p.locator('#routeCards .route-card').nth(index).click()
+  await p.waitForFunction(
+    (roomId) => {
+      const g = window.__game
+      const currentId = g.run.current?.id ?? g.curPlan?.id ?? null
+      return !document.querySelector('#routeOv')?.classList.contains('show')
+        && g.state === 'play'
+        && currentId === roomId
+    },
+    picked.roomId,
+    { timeout: 10000 },
+  )
+  return { roomId: picked.roomId, index, via }
+}
+
+/** 시설방은 입장 즉시 모달을 띄우지 않고, 준비를 마친 뒤 버튼으로 연다. */
+async function openFacilityRouteCards(p) {
+  if (await routeVisible(p)) throw new Error('시설방 입장 즉시 경로 카드가 떠 시설 이용을 가림')
+  const button = p.locator('#routeContinue:not([hidden])').first()
+  await button.waitFor({ state: 'visible', timeout: 5000 })
+  await button.click()
+  await p.waitForSelector('#routeOv.show', { state: 'visible', timeout: 5000 })
+}
+
+/**
+ * 디버그 전투가 방을 비운 직후 예기치 않게 열린 경로 모달을 중앙에서 흡수한다.
+ * 이후 같은 방은 QC 샌드박스로 고정해 각 시나리오의 waitGame()이 route 상태로
+ * 멈추지 않게 한다. 정상 경로 자체는 route-choice/boss-prep 스텝에서 검증한다.
+ */
+async function ensureRouteNotBlocking(p) {
+  await dismissLevelUp(p)
+  const state = await p.evaluate(() => window.__game?.state).catch(() => null)
+  if (state === 'route' || await routeVisible(p)) {
+    await chooseRouteCard(p, { index: 0, via: 'click' })
+  }
+  await p.evaluate(() => window.__game.debugStabilizeRouteSandbox?.())
+}
+
+/**
+ * 각인/상위 전투/엘리트 보상은 첫 카드를 고른 뒤 핵심 슬롯 교체 확인을 한 번
+ * 더 띄울 수 있다. 단발 dismiss로는 state==='reward'가 남아 경로 카드 대기가
+ * 멈출 수 있으므로, 실제 #routeOv가 열릴 때까지 보상 카드 흐름을 끝까지 소비한다.
+ */
+async function dismissRewardsUntilRoute(p) {
+  for (let i = 0; i < 10; i++) {
+    if (await routeVisible(p)) return
+    const state = await p.evaluate(() => window.__game?.state).catch(() => null)
+    if (!['levelup', 'reward'].includes(state)) {
+      await p.waitForTimeout(100)
+      continue
+    }
+    const card = p.locator('#levelOv.show #cards .card').first()
+    await card.waitFor({ state: 'visible', timeout: 3000 })
+    await card.click()
+    await p.waitForTimeout(100)
+  }
+  await p.waitForSelector('#routeOv.show', { state: 'visible', timeout: 3000 })
+}
+
 /**
  * --only 로 특정 스텝만 돌릴 때, 앞선 스텝들이 실제로 실행되지 않아
  * window.__game.player 조차 없는 상태로 시작해 모든 디버그 훅이 죽는
@@ -2899,7 +3119,7 @@ const inDungeon = (p) =>
  * --only 를 쓰지 않는 일반 전체 실행에는 전혀 관여하지 않는다(각 스텝이
  * 이미 스스로 순서대로 상태를 쌓아가므로 끼어들 이유가 없다).
  */
-async function ensureBaseline(p, needs) {
+async function ensureBaseline(p, needs, preserveInitialRoute = false) {
   const state = await p.evaluate(() => window.__game?.state).catch(() => null)
   if (state === 'start') {
     await p.click('#startBtn').catch(() => {})
@@ -2910,6 +3130,11 @@ async function ensureBaseline(p, needs) {
     if (mode !== 'dungeon') {
       await p.evaluate(() => window.__game.enterDungeon())
       await p.waitForTimeout(300)
+    }
+    if (preserveInitialRoute) {
+      await p.waitForSelector('#routeOv.show', { state: 'visible', timeout: 10000 })
+    } else {
+      await ensureRouteNotBlocking(p)
     }
   }
 }
@@ -3095,7 +3320,9 @@ let i = 0
 for (const s of STEPS) {
   i++
   if (only && !s.name.includes(only)) continue
-  if (only) await ensureBaseline(page, s.needs)
+  const isRouteScenario = s.name === 'route-choice'
+  if (only) await ensureBaseline(page, s.needs, isRouteScenario)
+  if (s.needs === 'dungeon' && !isRouteScenario) await ensureRouteNotBlocking(page)
   const tag = `${String(i).padStart(2, '0')}-${s.name}`
   let fail = null
   try {

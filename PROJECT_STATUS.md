@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last updated: 2026-08-13
+Last updated: 2026-08-14
 
 ## Playable now
 
@@ -10,7 +10,14 @@ Last updated: 2026-08-13
   Branching depths (1/2/3/5/6/7) offer 2-3 differently-kinded room choices
   (`combat`/`elite`/`trait`/`hardCombat`/`recover`). Every room connection
   is parent→child one-way, so **backtracking to a previous room is
-  structurally impossible**. Stage 2-7 use the user-approved illustrated
+  structurally impossible**. Exits are presented as 1-3 route cards that show
+  room type, enemy roster/count, difficulty multipliers, reward/grade, elite
+  affix, and reserve-magazine recharge information when relevant. Physical
+  dungeon door interactables are gone. Combat rooms open the cards after all
+  reward selection finishes; shop/recover/boss-prep rooms keep their facilities
+  usable until the player presses `다음 경로 보기`. The depth-0 lobby remains
+  only as a hidden graph root and is never rendered. Stage 2-7 use the
+  user-approved illustrated
   Stage 2 enemy set plus temporary Stages 3-7 environments/roster
   (`docs/systems/stages-2-7.md`); stage themes/final boss identities remain
   open (`DESIGN_LOG.md`).
@@ -90,13 +97,17 @@ Last updated: 2026-08-13
 
 ## Next approved implementation work
 
-1. Integrate per-weapon visuals only after matching final motion sheets are
+1. P9 commit 1 remains deliberately separate for later confirmation: remove
+   `recover`, add the shop-room fountain, revise branch-kind guarantees, and
+   define/measure the normal-combat gold multiplier. Route cards currently
+   describe the existing rewards and still support `recover` until that lands.
+2. Integrate per-weapon visuals only after matching final motion sheets are
    delivered, then visually QC each loadout.
-2. Replace the Stage 2-7 palette placeholders with final theme-specific art
+3. Replace the Stage 2-7 palette placeholders with final theme-specific art
    and name/illustrate each boss. Escalating boss reward contents remain open.
-3. Add final weapon/projectile/melee-effect art once the matching sheets are
+4. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
-4. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
+5. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
    항목"): 4-way job advancement (전직), locking a run to one weapon family
    at start, and character/monster palette recolor variants.
 

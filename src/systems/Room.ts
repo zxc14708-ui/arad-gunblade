@@ -52,7 +52,7 @@ export const DEFAULT_ROOM_SIZES: Record<string, { w: number; d: number }> = {
 
 /**
  * 직사각형 방 하나를 씬에 구성한다 (2.5D 픽셀 탑다운).
- * 바닥 타일 + 4면 벽 + 장식. 문/상자 등 오브젝트는 Interactable이 담당.
+ * 바닥 타일 + 4면 벽 + 장식. 상자 등 오브젝트는 Interactable이 담당.
  */
 export class Room {
   group = new THREE.Group()
@@ -248,8 +248,8 @@ export class Room {
     }
   }
 
-  /** 북쪽 벽 앞 문 위치들 (개수에 따라 균등 배치) */
-  doorPoint(direction: Direction): { x: number; z: number } {
+  /** 출입구 주변 안전 영역 계산용 방 가장자리 기준점. */
+  edgePoint(direction: Direction): { x: number; z: number } {
     const inset = 2.8
     switch (direction) {
       case 'north': return { x: 0, z: this.bounds.minZ + inset }
@@ -257,16 +257,6 @@ export class Room {
       case 'south': return { x: 0, z: this.bounds.maxZ - inset }
       case 'west': return { x: this.bounds.minX + inset, z: 0 }
     }
-  }
-
-  doorPoints(count: number): { x: number; z: number }[] {
-    const z = this.bounds.minZ + 1.2
-    if (count <= 1) return [this.doorPoint('north')]
-    const span = this.w * 0.5
-    return Array.from({ length: count }, (_, i) => ({
-      x: -span / 2 + (span / (count - 1)) * i,
-      z,
-    }))
   }
 
   /** 방 안 랜덤 위치 (가장자리 여백 확보) */
