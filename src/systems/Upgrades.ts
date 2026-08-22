@@ -52,6 +52,17 @@ export const gradeIndex = (g: Grade) => GRADES.indexOf(g)
 /** g1이 g2보다 더 높은(승급된) 등급인가 */
 export const gradeAbove = (g1: Grade, g2: Grade) => gradeIndex(g1) > gradeIndex(g2)
 
+/** P11 각인 계열 메타데이터 — 표시와 향후 선택 알고리즘용이며 효과 계산에는 쓰지 않는다. */
+export type SigilTag = '감전' | '출혈' | '과열' | '연참' | '총검연계' | '골드' | '하이리스크' | '태세'
+export type SigilRole = '부여' | '증폭' | '소비'
+
+export interface SigilMetadata {
+  tags: readonly SigilTag[]
+  role?: SigilRole
+  synergy: readonly string[]
+  conflict: readonly string[]
+}
+
 export interface Upgrade {
   id: string
   name: string
@@ -63,6 +74,11 @@ export interface Upgrade {
    * POOL 원본 정의(카탈로그) 자체에는 없고, rollChoices()/rollNodeSigilRewards()가
    * 룰에 따라 등급을 붙여 만들어낸 "제안 인스턴스"에만 존재한다. */
   grade?: Grade
+  /** 각인 제안 카드에 복사되는 P11 분류 정보. 핵심 슬롯 특성에는 없다. */
+  tags?: readonly SigilTag[]
+  role?: SigilRole
+  synergy?: readonly string[]
+  conflict?: readonly string[]
 }
 
 /**
@@ -73,7 +89,7 @@ export interface Upgrade {
  * 값이 정의된다 — 승급으로 도달할 수 없고(work order), 다른 등급 값을
  * 조회할 일이 아예 없다.
  */
-interface SigilDef {
+export interface SigilDef extends SigilMetadata {
   /** 고유 각인이면 고정 등급 — 이 각인은 이 등급으로만 존재하고 승급하지 않는다. */
   unique?: Grade
   values: Partial<Record<Grade, Record<string, number>>>
@@ -93,6 +109,7 @@ const pct = (v: number) => {
 export const SIGIL_DEFS: Record<string, SigilDef> = {
   // ══════ 기존 7종(P8 커밋3) ══════
   reload: {
+    tags: [], synergy: [], conflict: [],
     // 에픽 규칙 변경("리듬 재장전 성공 구간 확대")은 리듬 장전 폐지로
     // 함께 제거했다(작업 지시 P10 커밋1) — 수치(-50%)는 그대로 유지, 다른
     // 등급과 같은 방식(수치 스케일링만)으로 표시한다.
@@ -102,36 +119,42 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `장전 시간 -${pct(v.frac)}`,
   },
   crit: {
+    tags: [], synergy: [], conflict: [],
     values: {
       normal: { frac: 0.08 }, rare: { frac: 0.11 }, unique: { frac: 0.15 }, legendary: { frac: 0.20 }, epic: { frac: 0.26 },
     },
     desc: (v) => `치명타 확률 +${pct(v.frac)}p`,
   },
   crit_dmg: {
+    tags: [], synergy: [], conflict: [],
     values: {
       normal: { amount: 0.4 }, rare: { amount: 0.6 }, unique: { amount: 0.85 }, legendary: { amount: 1.15 }, epic: { amount: 1.5 },
     },
     desc: (v) => `치명타 배율 +${v.amount.toFixed(2)}`,
   },
   lifesteal: {
+    tags: ['출혈'], synergy: ['bleed_blade', 'blood_trace'], conflict: [],
     values: {
       normal: { frac: 0.04 }, rare: { frac: 0.06 }, unique: { frac: 0.08 }, legendary: { frac: 0.11 }, epic: { frac: 0.14 },
     },
     desc: (v) => `가한 피해의 ${pct(v.frac)} 회복`,
   },
   hp: {
+    tags: [], synergy: [], conflict: [],
     values: {
       normal: { amount: 20 }, rare: { amount: 30 }, unique: { amount: 42 }, legendary: { amount: 56 }, epic: { amount: 72 },
     },
     desc: (v) => `최대 체력 +${v.amount}, 완전 회복`,
   },
   speed: {
+    tags: [], synergy: [], conflict: [],
     values: {
       normal: { frac: 0.08 }, rare: { frac: 0.12 }, unique: { frac: 0.16 }, legendary: { frac: 0.22 }, epic: { frac: 0.28 },
     },
     desc: (v) => `이동 속도 +${pct(v.frac)}`,
   },
   lg_detonator: {
+    tags: [], synergy: [], conflict: [],
     values: {
       normal: { amount: 14 }, rare: { amount: 20 }, unique: { amount: 28 }, legendary: { amount: 38 }, epic: { amount: 50 },
     },
@@ -141,6 +164,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
 
   // ══════ 총 축 신규 4종(P8c4) ══════
   blood_bullet: {
+    tags: ['하이리스크'], synergy: [], conflict: [],
     values: {
       normal: { dmgFrac: 0.15, hpCost: 1 }, rare: { dmgFrac: 0.22, hpCost: 1.3 }, unique: { dmgFrac: 0.30, hpCost: 1.6 },
       legendary: { dmgFrac: 0.40, hpCost: 2.0 }, epic: { dmgFrac: 0.55, hpCost: 2.5 },
@@ -148,6 +172,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `총 피해 +${pct(v.dmgFrac)} · 발사할 때마다 체력 -${v.hpCost} (하이리스크)`,
   },
   overheat: {
+    tags: ['과열'], synergy: [], conflict: [],
     values: {
       normal: { stackFrac: 0.02, maxStacks: 5 }, rare: { stackFrac: 0.025, maxStacks: 6 }, unique: { stackFrac: 0.03, maxStacks: 7 },
       legendary: { stackFrac: 0.035, maxStacks: 8 }, epic: { stackFrac: 0.04, maxStacks: 10 },
@@ -155,6 +180,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `재장전 없이 연사할수록 스택당 피해 +${pct(v.stackFrac)}(최대 ${v.maxStacks}, +${pct(v.stackFrac * v.maxStacks)}), 재장전 시 초기화`,
   },
   gun_focus: {
+    tags: ['태세'], synergy: [], conflict: ['sword_focus', 'hybrid_stance'],
     values: {
       normal: { gunFrac: 0.12, swordPenalty: 0.10 }, rare: { gunFrac: 0.18, swordPenalty: 0.13 }, unique: { gunFrac: 0.25, swordPenalty: 0.17 },
       legendary: { gunFrac: 0.34, swordPenalty: 0.22 }, epic: { gunFrac: 0.45, swordPenalty: 0.30 },
@@ -162,6 +188,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `총 피해 +${pct(v.gunFrac)} · 검 피해 -${pct(v.swordPenalty)} (검날 집중·총검일체와 상충)`,
   },
   shock_bullet: {
+    tags: ['감전'], role: '부여', synergy: [], conflict: [],
     values: {
       normal: { chance: 0.20, duration: 1.5 }, rare: { chance: 0.30, duration: 1.8 }, unique: { chance: 0.45, duration: 2.1 },
       legendary: { chance: 0.65, duration: 2.4 }, epic: { chance: 0.85, duration: 3.0 },
@@ -171,11 +198,13 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
   // '연쇄 장전'(chain_reload)은 리듬 재장전 폐지로 전제가 사라져 폐지했다
   // (작업 지시 P10 커밋2) — '예비 탄창'(reserve_mag)으로 대체.
   reserve_mag: {
+    tags: [], synergy: [], conflict: [],
     unique: 'legendary',
     values: { legendary: { maxCharges: 3 } },
     desc: (v) => `재장전이 즉시 완료된다. 런당 사용 횟수 제한(최대 ${v.maxCharges}) — 상인 노드·보스 준비방에서 충전 (고유·레전더리)`,
   },
   rapid_reload: {
+    tags: [], synergy: [], conflict: [],
     values: {
       normal: { duration: 2.0, cutFrac: 0.12 }, rare: { duration: 2.3, cutFrac: 0.18 }, unique: { duration: 2.6, cutFrac: 0.25 },
       legendary: { duration: 3.0, cutFrac: 0.34 }, epic: { duration: 3.5, cutFrac: 0.45 },
@@ -183,6 +212,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `재장전 직후 ${v.duration}s간 사격 쿨타임 -${pct(v.cutFrac)}`,
   },
   zero_shot: {
+    tags: [], synergy: [], conflict: [],
     unique: 'epic',
     values: { epic: { perSecond: 0.08, cap: 0.40 } },
     desc: (v) => `정지 시간에 비례해 총 피해 +${pct(v.perSecond)}/s(최대 +${pct(v.cap)}), 이동 시 초기화 (고유·에픽)`,
@@ -190,6 +220,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
 
   // ══════ 검 축 신규 4종(P8c4) ══════
   berserk_blade: {
+    tags: ['하이리스크'], synergy: [], conflict: [],
     values: {
       normal: { swordFrac: 0.15, dmgTakenFrac: 0.10 }, rare: { swordFrac: 0.22, dmgTakenFrac: 0.14 }, unique: { swordFrac: 0.30, dmgTakenFrac: 0.18 },
       legendary: { swordFrac: 0.40, dmgTakenFrac: 0.23 }, epic: { swordFrac: 0.55, dmgTakenFrac: 0.30 },
@@ -197,6 +228,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `검 피해 +${pct(v.swordFrac)} · 받는 피해 +${pct(v.dmgTakenFrac)} (하이리스크)`,
   },
   chain_slash: {
+    tags: ['연참'], synergy: [], conflict: [],
     values: {
       normal: { cutFrac: 0.03, maxStacks: 5 }, rare: { cutFrac: 0.035, maxStacks: 6 }, unique: { cutFrac: 0.04, maxStacks: 7 },
       legendary: { cutFrac: 0.045, maxStacks: 8 }, epic: { cutFrac: 0.05, maxStacks: 10 },
@@ -204,6 +236,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `연속으로 벨수록 검 쿨타임 -${pct(v.cutFrac)}/타(최대 ${v.maxStacks}, -${pct(v.cutFrac * v.maxStacks)}), 멈추면 초기화`,
   },
   sword_focus: {
+    tags: ['태세'], synergy: [], conflict: ['gun_focus', 'hybrid_stance'],
     values: {
       normal: { swordFrac: 0.12, gunPenalty: 0.10 }, rare: { swordFrac: 0.18, gunPenalty: 0.13 }, unique: { swordFrac: 0.25, gunPenalty: 0.17 },
       legendary: { swordFrac: 0.34, gunPenalty: 0.22 }, epic: { swordFrac: 0.45, gunPenalty: 0.30 },
@@ -211,6 +244,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `검 피해 +${pct(v.swordFrac)} · 총 피해 -${pct(v.gunPenalty)} (총구 집중·총검일체와 상충)`,
   },
   bleed_blade: {
+    tags: ['출혈'], role: '부여', synergy: ['blood_trace', 'lifesteal'], conflict: [],
     values: {
       normal: { stacks: 1, durationMult: 1.0 }, rare: { stacks: 1, durationMult: 1.2 }, unique: { stacks: 2, durationMult: 1.0 },
       legendary: { stacks: 2, durationMult: 1.4 }, epic: { stacks: 3, durationMult: 1.0 },
@@ -218,11 +252,13 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `베기 적중 시 출혈 ${v.stacks}중첩 부여${v.durationMult !== 1 ? ` (지속 +${pct(v.durationMult - 1)})` : ''}`,
   },
   blood_trace: {
+    tags: ['출혈'], role: '소비', synergy: ['bleed_blade', 'lifesteal'], conflict: [],
     unique: 'legendary',
     values: { legendary: { stacks: 1 } },
     desc: () => '벤 적에게 출혈 1중첩 부여(단독 작동) · 출혈 적을 다시 베면 남은 출혈 잔여 피해가 즉시 폭발한다 (고유·레전더리)',
   },
   execute_blade: {
+    tags: [], synergy: [], conflict: [],
     unique: 'epic',
     values: { epic: { executeThreshold: 0.30, bossFrac: 0.06 } },
     desc: (v) => `체력 ${pct(v.executeThreshold)} 이하 일반 적 즉사 · 보스·엘리트에는 최대 체력의 ${pct(v.bossFrac)} 고정 피해 (고유·에픽)`,
@@ -230,6 +266,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
 
   // ══════ 캐릭터 축 신규 4종(P8c4) ══════
   berserker: {
+    tags: ['하이리스크'], synergy: [], conflict: [],
     values: {
       normal: { maxHpPenalty: 0.10, dmgTakenFrac: 0.08, allDmgFrac: 0.10 }, rare: { maxHpPenalty: 0.14, dmgTakenFrac: 0.12, allDmgFrac: 0.15 },
       unique: { maxHpPenalty: 0.18, dmgTakenFrac: 0.16, allDmgFrac: 0.21 }, legendary: { maxHpPenalty: 0.23, dmgTakenFrac: 0.21, allDmgFrac: 0.28 },
@@ -238,6 +275,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `최대 체력 -${pct(v.maxHpPenalty)} · 받는 피해 +${pct(v.dmgTakenFrac)} · 모든 피해 +${pct(v.allDmgFrac)} (하이리스크)`,
   },
   reversal: {
+    tags: [], synergy: [], conflict: [],
     values: {
       normal: { maxDmgFrac: 0.15, maxSpeedFrac: 0.10 }, rare: { maxDmgFrac: 0.20, maxSpeedFrac: 0.14 }, unique: { maxDmgFrac: 0.27, maxSpeedFrac: 0.18 },
       legendary: { maxDmgFrac: 0.36, maxSpeedFrac: 0.24 }, epic: { maxDmgFrac: 0.48, maxSpeedFrac: 0.32 },
@@ -245,6 +283,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `체력이 낮을수록 피해 최대 +${pct(v.maxDmgFrac)} · 이동 속도 최대 +${pct(v.maxSpeedFrac)} (체력 20% 이하에서 포화)`,
   },
   hybrid_stance: {
+    tags: ['총검연계', '태세'], synergy: [], conflict: ['gun_focus', 'sword_focus'],
     values: {
       normal: { duration: 1.5, dmgFrac: 0.15 }, rare: { duration: 1.8, dmgFrac: 0.20 }, unique: { duration: 2.1, dmgFrac: 0.27 },
       legendary: { duration: 2.5, dmgFrac: 0.36 }, epic: { duration: 3.0, dmgFrac: 0.48 },
@@ -252,6 +291,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `무기 전환 직후 ${v.duration}s간 모든 피해 +${pct(v.dmgFrac)} (총구 집중·검날 집중과 상충)`,
   },
   golden_weight: {
+    tags: ['골드'], synergy: [], conflict: [],
     values: {
       normal: { ratePer200: 0.01, cap: 0.15 }, rare: { ratePer200: 0.013, cap: 0.20 }, unique: { ratePer200: 0.017, cap: 0.27 },
       legendary: { ratePer200: 0.022, cap: 0.36 }, epic: { ratePer200: 0.03, cap: 0.50 },
@@ -259,6 +299,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `골드 200당 모든 피해 +${pct(v.ratePer200)}(최대 +${pct(v.cap)})`,
   },
   remnant: {
+    tags: [], synergy: [], conflict: [],
     unique: 'legendary',
     values: { legendary: { duration: 3, dmgFrac: 0.5 } },
     desc: (v) => `처치 시 ${v.duration}초간 잔상이 남아 현재 총 피해의 ${pct(v.dmgFrac)}로 대신 공격 (고유·레전더리)`,
@@ -266,6 +307,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
   // '최후의 저항'(last_stand)은 효과가 약하고 런당 1회라 존재감이 없어
   // 폐지했다(작업 지시 P10 커밋2) — '불굴'(undaunted)로 대체.
   undaunted: {
+    tags: [], synergy: [], conflict: [],
     unique: 'epic',
     values: { epic: { capFrac: 0.20 } },
     desc: (v) => `받는 피해가 최대 체력의 ${pct(v.capFrac)}를 넘으면 ${pct(v.capFrac)}로 제한된다(무적 아님, 상시 작동) (고유·에픽)`,
@@ -401,7 +443,16 @@ export const POOL: Upgrade[] = RAW_POOL
 
 /** POOL의 정적 정의를 특정 등급의 "제안 카드"로 복제한다(원본을 변형하지 않는다). */
 function offerSigil(u: Upgrade, grade: Grade): Upgrade {
-  return { ...u, desc: describeSigil(u.id, grade), grade }
+  const metadata = SIGIL_DEFS[u.id]
+  return {
+    ...u,
+    desc: describeSigil(u.id, grade),
+    grade,
+    tags: metadata.tags,
+    role: metadata.role,
+    synergy: metadata.synergy,
+    conflict: metadata.conflict,
+  }
 }
 
 /**
