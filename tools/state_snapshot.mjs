@@ -139,7 +139,7 @@ function writeSnapshot(m) {
   L.push('')
   L.push(`### 각인 등급별 수치 (작업 지시 P8 커밋3 초안 7종 + P8c4 승인 18종 + P10 커밋2 교체 3종, ${sigils.length}종 전체)`)
   L.push('')
-  L.push(`| 각인 | ${GRADES.map((g) => GRADE_LABEL[g]).join(' | ')} | 에픽 규칙 변경 |`)
+  L.push(`| 각인 | ${GRADES.map((g) => GRADE_LABEL[g]).join(' | ')} | ${GRADE_LABEL.epic} 규칙 변경 |`)
   L.push(`|---|${GRADES.map(() => '---:').join('|')}|---|`)
   for (const u of sigils) {
     const def = SIGIL_DEFS[u.id]

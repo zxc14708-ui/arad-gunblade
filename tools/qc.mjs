@@ -1746,7 +1746,7 @@ const STEPS = [
       const cards = await p.evaluate(() => window.__qcBossRewardCards)
       if (!cards || cards.length !== 3) return `보스 보상 카드가 3장이 아님 (${cards?.length})`
       if (!cards[0].open) return '카드 선택 오버레이(#levelOv)가 열리지 않음'
-      if (!cards.every((c) => c.tag && ['노멀', '레어', '유니크', '레전더리', '에픽'].includes(c.tag))) {
+      if (!cards.every((c) => c.tag && ['일반', '희귀', '영웅', '전설', '신화'].includes(c.tag))) {
         return `카드에 등급 태그가 없거나 알 수 없는 값 (${JSON.stringify(cards.map((c) => c.tag))})`
       }
       const clearShown = await p.evaluate(() => document.querySelector('#clearOv')?.classList.contains('show'))
