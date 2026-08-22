@@ -32,7 +32,7 @@ Last updated: 2026-08-14
 - **Trait system: 3 slot axes × sigils, 5 grades.** Core slots are
   gun/sword/character (1 trait each, no grade, no stacking). Sigils
   (26 total — gun 9 / sword 8 / character 9) use a 5-tier grade ladder
-  (노멀→레어→유니크→레전더리→에픽); re-acquiring a held sigil promotes it
+  (일반→희귀→영웅→전설→신화); re-acquiring a held sigil promotes it
   (never stacks, downgrade attempts are ignored). Grades exist only for
   sigils, not core-slot traits — see `DESIGN_LOG.md` "각인 등급 부활 근거"
   for why the concept was scoped this narrowly.

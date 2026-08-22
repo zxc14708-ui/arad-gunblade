@@ -34,15 +34,15 @@ export const SLOT_LABEL: Record<UpgradeSlot, string> = {
 }
 
 /**
- * 각인 등급 5단계(작업 지시 P8 커밋3) — "노멀 → 레어 → 유니크 → 레전더리 →
- * 에픽". 등급은 각인에만 있다(규칙 2) — 핵심 슬롯 12종에는 없다. 스택은
+ * 각인 등급 5단계(작업 지시 P8 커밋3, P11 표시명 변경) —
+ * "일반 → 희귀 → 영웅 → 전설 → 신화". 등급은 각인에만 있다(규칙 2) — 핵심 슬롯 12종에는 없다. 스택은
  * 폐지됐다(규칙 1) — 이미 보유한 각인을 다시 만나면 스택이 아니라 승급이고,
  * 각인 하나당 등급 하나만 존재한다(Player.sigilGrades: Map<id, Grade>).
  */
 export type Grade = 'normal' | 'rare' | 'unique' | 'legendary' | 'epic'
 export const GRADES: Grade[] = ['normal', 'rare', 'unique', 'legendary', 'epic']
 export const GRADE_LABEL: Record<Grade, string> = {
-  normal: '노멀', rare: '레어', unique: '유니크', legendary: '레전더리', epic: '에픽',
+  normal: '일반', rare: '희귀', unique: '영웅', legendary: '전설', epic: '신화',
 }
 /** 등급 색상 — P6 커밋5가 "자리만 남겨두라"던 그 자리(HUD 배지/카드에서 사용). */
 export const GRADE_COLOR: Record<Grade, string> = {
