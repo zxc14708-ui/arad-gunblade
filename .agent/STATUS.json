@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "updated_at": null,
+  "roles": {
+    "orchestrator": {
+      "agent": "Claude",
+      "separable": false
+    },
+    "developer": {
+      "agent": "Codex",
+      "separable": false
+    },
+    "art": {
+      "agent": "Gemini",
+      "separable": false
+    },
+    "qc": {
+      "agent": "Claude",
+      "separable": true,
+      "note": "Runs today as an internal Orchestrator step. Can move to a dedicated agent later by changing only this entry - see .agent/ROUTING.md."
+    }
+  },
+  "active_tasks": [],
+  "last_qc_run": {
+    "task_id": null,
+    "result": null,
+    "at": null,
+    "contact_sheet": "qc-out/contact.png"
+  }
+}

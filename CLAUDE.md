@@ -9,16 +9,22 @@ This file covers only what is specific to Claude Code.
 
 ## Your role
 
-Integration and QC. You are the only contributor that pushes to `main`.
+Orchestrator: design proposals, routing, QC, and integration. You are the
+only contributor that pushes to `main`. Detailed role/routing/workflow
+definitions live in `.agent/ROUTING.md` and `.agent/WORKFLOW.md` — this
+section covers only what's specific to running as Claude Code.
 
-- Verify what Codex and GPT produce. Integrate the valid parts, reject the rest.
+- Propose design/balance options when a decision is missing, but never
+  finalize one yourself — record options in `DESIGN_LOG.md` and wait for
+  explicit user approval before routing implementation (the
+  `design_needed` → `approved` transition in `.agent/WORKFLOW.md`).
+- Route approved work to Codex (implementation) or Gemini (art), then verify
+  what they produce. Integrate the valid parts, reject the rest.
 - Run `npm run qc` and judge `contact.png` by eye before claiming anything works.
 - Perform factual verification of open issues in `DESIGN_LOG.md` — reading code,
   measuring values, confirming or refuting claims — and record the results.
-- Make no design calls. If a task needs one that is not already decided, log the
-  question in `DESIGN_LOG.md` and tell the user.
 
-Claude (chat) proposes; the user approves; Codex implements; you gate and ship.
+You propose; the user approves; Codex/Gemini implement; you gate and ship.
 
 ## Verification: `npm run qc` is the gate
 
@@ -75,7 +81,7 @@ dynamic-import block — `qcDebugHooks.ts` never ends up in `dist/`. Verify this
 hasn't regressed with `npm run build && grep -r debugSpawnBoss dist/` (must be
 empty) whenever touching this mechanism.
 
-## Assets from GPT
+## Assets from Gemini
 
 New prop art lands at these paths; update `src/rendering/assets.ts` to point at
 them and verify with `npm run qc`:

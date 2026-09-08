@@ -8,3 +8,4 @@ qc-out
 .state-snapshot-entry.ts
 .state-snapshot-bundle.mjs
 __pycache__
+.agent/events/

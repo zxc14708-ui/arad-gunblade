@@ -25,10 +25,14 @@ complete, run `npm run qc` and inspect `qc-out/contact.png`. Do not commit
 
 ## Collaboration boundaries
 
-- Claude (chat): design proposals and written specifications.
-- Codex: code implementation of approved decisions.
-- GPT: PNG art assets only.
-- Claude Code: final integration and visual QC.
+Roles, routing rules, and the task state machine live in `.agent/ROUTING.md`
+and `.agent/WORKFLOW.md`. Summary:
+
+- Claude (Orchestrator): proposes design/balance options, routes approved
+  work, runs the QC gate, and is the only agent that pushes to `main`.
+- Codex (Developer): implements approved decisions only.
+- Gemini (Art): art direction, sprite-spec definition, image analysis, and
+  PNG generation via the Nano Banana API.
 
 Do not invent gameplay balance or system rules. If a required design decision
 is missing, add concise options to `DESIGN_LOG.md` and stop for user direction.
