@@ -9,3 +9,13 @@ qc-out
 .state-snapshot-bundle.mjs
 __pycache__
 .agent/events/
+# tools/verify_*.mjs 가 만드는 임시 번들(중단되면 남을 수 있다)
+.roll-choices-entry.ts
+.roll-choices-tmp/
+.node-grade-entry.ts
+.node-grade-tmp/
+.synergy-entry.ts
+.synergy-tmp/
+.enemy-comp-entry.ts
+.enemy-comp-bundle*
+.state-snapshot-tmp/

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-09T14:30:00+09:00",
+  "updated_at": "2026-10-09T18:00:00+09:00",
   "roles": {
     "orchestrator": {
       "agent": "Claude",
@@ -20,17 +20,7 @@
       "note": "Runs today as an internal Orchestrator step. Can move to a dedicated agent later by changing only this entry - see .agent/ROUTING.md."
     }
   },
-  "active_tasks": [
-    {
-      "task_id": "T-0006",
-      "title": "P11 각인 리워크 3번 — 짝 각인 7종 초안 승인 대기 (1·2·4·5번은 구현됨)",
-      "state": "design_needed",
-      "owner_role": "orchestrator",
-      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-결과-2026-10-09",
-      "created_at": "2026-10-09T11:30:00+09:00",
-      "updated_at": "2026-10-09T16:00:00+09:00"
-    }
-  ],
+  "active_tasks": [],
   "last_qc_run": {
     "task_id": "T-0004",
     "result": "passed",

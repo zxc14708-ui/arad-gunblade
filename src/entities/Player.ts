@@ -99,6 +99,13 @@ export interface Mods {
   rapidReloadCutFrac: number
   undauntedOwned: boolean // '철벽'(고유) — Player.takeDamage()에서 받는 피해를 최대 체력 비율로 상한
   undauntedCapFrac: number
+
+  // ══════ P11 짝 각인 7종(2026-10-09) ══════
+  shockSlashFrac: number // '뇌격' — 감전된 적 베기 시 감전 소모 + 검 피해 비율 추가 피해(Game.resolveSlash)
+  overheatCritFrac: number // '임계점' — 과열 스택 최대일 때 치명타 확률 가산
+  chainFuryFrac: number // '연격' — 연참 가속 스택당 검 피해 가산
+  steadyStanceFrac: number // '저격 자세' — 정지 중 받는 피해 감소
+  goldGainFrac: number // '전리품' — 처치 골드 가산(Game.killEnemy)
 }
 
 function freshMods(): Mods {
@@ -122,6 +129,7 @@ function freshMods(): Mods {
     reserveMagOwned: false, reserveMagMaxCharges: 0,
     rapidReloadDuration: 0, rapidReloadCutFrac: 0,
     undauntedOwned: false, undauntedCapFrac: 0,
+    shockSlashFrac: 0, overheatCritFrac: 0, chainFuryFrac: 0, steadyStanceFrac: 0, goldGainFrac: 0,
   }
 }
 
@@ -435,6 +443,17 @@ export class Player {
     m.rapidReloadDuration = 0
     m.rapidReloadCutFrac = 0
     m.undauntedOwned = false
+    // P11 짝 각인 — 대시 쿨타임·발도장전 보너스는 기본값(freshMods)이 1/0.3이라
+    // 0이 아니라 기본값으로 되돌린다. 빠뜨리면 각인을 하나 얻을 때마다(또는
+    // 제련소 교체 후에도) 질풍·교차 장전이 중복 적용된다(QC로 실측 발견).
+    const base = freshMods()
+    m.dashCooldown = base.dashCooldown
+    m.swordReloadBurstBonus = base.swordReloadBurstBonus
+    m.shockSlashFrac = 0
+    m.overheatCritFrac = 0
+    m.chainFuryFrac = 0
+    m.steadyStanceFrac = 0
+    m.goldGainFrac = 0
     m.undauntedCapFrac = 0
 
     for (const [id, grade] of this.sigilGrades) {
@@ -544,6 +563,14 @@ export class Player {
           m.undauntedOwned = true
           m.undauntedCapFrac = v.capFrac
           break
+        // ── P11 짝 각인 ──
+        case 'shock_slash': m.shockSlashFrac = v.frac; break
+        case 'overheat_crit': m.overheatCritFrac = v.frac; break
+        case 'chain_fury': m.chainFuryFrac = v.frac; break
+        case 'steady_stance': m.steadyStanceFrac = v.frac; break
+        case 'gale': m.dashCooldown *= 1 - v.frac; break
+        case 'cross_reload': m.swordReloadBurstBonus += v.frac; break
+        case 'spoils': m.goldGainFrac = v.frac; break
       }
     }
     this.recompute()
@@ -694,8 +721,8 @@ export class Player {
     if (this.mods.swordReloadBurstBonus > 0) this.swordReloadBurstShotsLeft = 3
   }
 
-  private rollCrit(): boolean {
-    return Math.random() < this.stats.critChance
+  private rollCrit(bonus = 0): boolean {
+    return Math.random() < Math.min(1, this.stats.critChance + bonus)
   }
 
   /**
@@ -829,6 +856,8 @@ export class Player {
         // '과열'(작업 지시 P8c4) — 이번 발의 배율은 "지금까지 쌓인" 스택으로
         // 정한다(첫 발은 보너스 없음), 발사 후 상한까지 스택을 쌓는다.
         const overheatMult = this.mods.overheatMaxStacks > 0 ? 1 + this.overheatStacks * this.mods.overheatStackFrac : 1
+        // '임계점'(P11) — 발사 직전 스택이 이미 최대면 이번 발의 치명타 확률 가산.
+        const overheatCritBonus = this.mods.overheatMaxStacks > 0 && this.overheatStacks >= this.mods.overheatMaxStacks ? this.mods.overheatCritFrac : 0
         if (this.mods.overheatMaxStacks > 0) this.overheatStacks = Math.min(this.mods.overheatMaxStacks, this.overheatStacks + 1)
         // "무기 전환" 정의(작업 지시 P8c4 확정) — 마지막으로 사용한 무기가
         // 바뀌는 순간. '총검일체' 보유 시에만 버프를 건다.
@@ -847,7 +876,7 @@ export class Player {
           const dir = baseDir.clone()
           const jitter = (Math.random() - 0.5) * this.stats.spread + spreadIdx
           dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), jitter)
-          const crit = aimedShotReady || this.rollCrit()
+          const crit = aimedShotReady || this.rollCrit(overheatCritBonus)
           let dmg = this.stats.gunDamage * (crit ? this.stats.critMult : 1) * overheatMult
           // 발도장전 강화: 검으로 장전한 직후 발사하는 총알 N발에 피해 보너스
           if (this.swordReloadBurstShotsLeft > 0) {
@@ -880,6 +909,8 @@ export class Player {
       // '연참 가속'(작업 지시 P8c4) — 이번 스윙의 쿨타임 감산은 "지금까지
       // 쌓인" 스택으로 정한다(첫 타는 감산 없음), 스윙 후 상한까지 스택을 쌓는다.
       const chainSlashMult = this.mods.chainSlashMaxStacks > 0 ? 1 - this.chainSlashStacks * this.mods.chainSlashCutFrac : 1
+      // '연격'(P11) — 쿨타임 감산과 같은 기준("지금까지 쌓인" 스택)으로 피해 가산.
+      const chainFuryMult = 1 + this.chainSlashStacks * this.mods.chainFuryFrac
       if (this.mods.chainSlashMaxStacks > 0) this.chainSlashStacks = Math.min(this.mods.chainSlashMaxStacks, this.chainSlashStacks + 1)
       this.chainSlashIdleTimer = 0
       // '급전환'(dash) 버프 — 대시 종료 직후 잠깐 검 쿨타임이 절반이다.
@@ -902,7 +933,7 @@ export class Player {
         angle: this.angle,
         arc: this.stats.swordArc,
         range: this.stats.swordRange,
-        damage: this.stats.swordDamage * (crit ? this.stats.critMult : 1) * dmgMult,
+        damage: this.stats.swordDamage * (crit ? this.stats.critMult : 1) * dmgMult * chainFuryMult,
         crit,
         knockback: this.stats.knockback * kbMult,
       }
@@ -972,6 +1003,8 @@ export class Player {
     // 적용되는지가 QC 요구사항이다. 여기 한 곳에서만 곱해 모든 피해원
     // (총알/근접/광역/장판)에 공통 적용된다.
     let effective = amount * this.mods.damageTakenMult
+    // '저격 자세'(P11) — 이동·대시 중이 아닐 때만 감소. 철벽 상한보다 먼저 적용한다.
+    if (this.mods.steadyStanceFrac > 0 && !this.moving && this.dashTimer <= 0) effective *= 1 - this.mods.steadyStanceFrac
     // '철벽'(고유·에픽, 작업 지시 P10 — 메타 업그레이드 '불굴'과 이름이 겹쳐 2026-10-09 개명) — 받는 피해 증가를 적용한 뒤에
     // 상한을 건다(work order 명시 순서). 무적이 아니라 한 방의 크기만
     // 제한할 뿐, 누적 피해(여러 번 맞으면 그만큼 깎임)는 그대로다.

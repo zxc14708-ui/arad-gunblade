@@ -748,6 +748,13 @@ export class Enemy {
     this.shockTimer = duration
   }
 
+  /** '뇌격'(P11) — 감전을 소모한다. 감전 중이었으면 true. */
+  consumeShock() {
+    const was = this.shockTimer > 0
+    this.shockTimer = 0
+    return was
+  }
+
   get shocked() {
     return this.shockTimer > 0
   }

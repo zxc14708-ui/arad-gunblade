@@ -2522,6 +2522,113 @@ const STEPS = [
     },
   },
   {
+    name: 'sigil-p11-pairs',
+    needs: 'dungeon',
+    what: 'P11 짝 각인 7종(2026-10-09 승인) — 뇌격(감전 소모+추가 피해)·임계점·연격·저격 자세(정지 중 피해 감소)·질풍·교차 장전·전리품의 수치 배선과 핵심 동작',
+    async run(p) {
+      await dismissLevelUp(p)
+      const out = await p.evaluate(() => {
+        const g = window.__game
+        const pl = g.player
+        const reset = () => {
+          g.debugClearEnemies()
+          pl.sigilGrades.clear()
+          pl.recomputeSigilMods()
+          pl.pos.set(0, 0, 0)
+          pl.invuln = 0
+          pl.wardReady = false // 메타 '수호'가 첫 피격을 막으면 피해 측정이 0이 된다
+        }
+        // 1. 신화(epic) 등급 수치 배선
+        reset()
+        const baseDash = pl.stats.dashCooldown
+        const baseBurst = pl.mods.swordReloadBurstBonus
+        for (const id of ['shock_slash', 'overheat_crit', 'chain_fury', 'steady_stance', 'gale', 'cross_reload', 'spoils']) pl.applySigil(id, 'epic')
+        const wiring = {
+          shockSlashFrac: pl.mods.shockSlashFrac,
+          overheatCritFrac: pl.mods.overheatCritFrac,
+          chainFuryFrac: pl.mods.chainFuryFrac,
+          steadyStanceFrac: pl.mods.steadyStanceFrac,
+          dashRatio: pl.stats.dashCooldown / baseDash,
+          burstDelta: pl.mods.swordReloadBurstBonus - baseBurst,
+          goldGainFrac: pl.mods.goldGainFrac,
+        }
+        // 1-b. 제련소 교체처럼 각인이 빠지면 효과도 남지 않아야 한다
+        for (const id of ['shock_slash', 'overheat_crit', 'chain_fury', 'steady_stance', 'gale', 'cross_reload', 'spoils']) pl.sigilGrades.delete(id)
+        pl.recomputeSigilMods()
+        const removed = {
+          dashRatio: pl.stats.dashCooldown / baseDash,
+          burstDelta: pl.mods.swordReloadBurstBonus - baseBurst,
+          leftovers: [pl.mods.shockSlashFrac, pl.mods.overheatCritFrac, pl.mods.chainFuryFrac, pl.mods.steadyStanceFrac, pl.mods.goldGainFrac].filter((v) => v !== 0).length,
+        }
+
+        // 2. 저격 자세 — 정지 중이면 받는 피해 -28%, 이동 중이면 그대로
+        reset()
+        pl.applySigil('steady_stance', 'epic')
+        pl.hp = pl.stats.maxHp
+        pl.moving = false
+        pl.takeDamage(10)
+        const stillLoss = pl.stats.maxHp - pl.hp
+        pl.hp = pl.stats.maxHp
+        pl.invuln = 0
+        pl.moving = true
+        pl.takeDamage(10)
+        const movingLoss = pl.stats.maxHp - pl.hp
+        pl.moving = false
+        pl.invuln = 0
+
+        // 3. 뇌격 — 감전된 적: 본타(감전 ×1.3) + 감전 소모 + 본타의 140% 추가 피해.
+        //    감전 안 된 적: 본타만. 일섬(정확히 1명 명중 ×2)이 장착돼 있을 수 있어
+        //    본타 기준값은 감전 안 된 적의 실측 피해로 잡는다.
+        reset()
+        pl.applySigil('shock_slash', 'epic')
+        const spawn = (shock) => {
+          const e = g.debugSpawnEnemy('brute')
+          e.pos.set(0, 0, 2)
+          e.speed = 0
+          e.damage = 0
+          e.maxHp = 100000
+          e.hp = 100000
+          if (shock) e.applyShock(3)
+          return e
+        }
+        const plain = spawn(false)
+        g.resolveSlash(pl.pos.clone(), 0, pl.stats.swordArc, pl.stats.swordRange, 10, false, 0)
+        const plainLoss = 100000 - plain.hp
+        g.debugClearEnemies()
+        const shocked = spawn(true)
+        g.resolveSlash(pl.pos.clone(), 0, pl.stats.swordArc, pl.stats.swordRange, 10, false, 0)
+        const shockedLoss = 100000 - shocked.hp
+        const shockConsumed = !shocked.shocked
+        reset()
+        pl.hp = pl.stats.maxHp // 저격 자세 측정으로 깎은 체력을 다음 단계에 넘기지 않는다
+        return { wiring, removed, stillLoss, movingLoss, plainLoss, shockedLoss, shockConsumed }
+      })
+      await p.evaluate((r) => { window.__qcP11Pairs = r }, out)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcP11Pairs
+      if (!r) return '결과 없음'
+      const near = (a, b, eps = 0.005) => Math.abs(a - b) <= eps
+      const w = r.wiring
+      if (!near(w.shockSlashFrac, 1.4)) return `뇌격 신화 수치가 다름 (${w.shockSlashFrac} / 기대 1.4)`
+      if (!near(w.overheatCritFrac, 0.22)) return `임계점 신화 수치가 다름 (${w.overheatCritFrac} / 기대 0.22)`
+      if (!near(w.chainFuryFrac, 0.04)) return `연격 신화 수치가 다름 (${w.chainFuryFrac} / 기대 0.04)`
+      if (!near(w.steadyStanceFrac, 0.28)) return `저격 자세 신화 수치가 다름 (${w.steadyStanceFrac} / 기대 0.28)`
+      if (!near(w.dashRatio, 0.72, 0.01)) return `질풍 신화 대시 쿨타임 배율이 다름 (${w.dashRatio.toFixed(3)} / 기대 0.72)`
+      if (!near(w.burstDelta, 0.36)) return `교차 장전 신화 발도장전 보너스 가산이 다름 (${w.burstDelta} / 기대 +0.36)`
+      if (!near(w.goldGainFrac, 0.38)) return `전리품 신화 수치가 다름 (${w.goldGainFrac} / 기대 0.38)`
+      const rm = r.removed
+      if (!near(rm.dashRatio, 1, 0.01) || !near(rm.burstDelta, 0) || rm.leftovers > 0) return `각인 제거 후에도 효과가 남음 (대시 배율 ${rm.dashRatio.toFixed(3)}, 발도장전 가산 ${rm.burstDelta}, 잔여 ${rm.leftovers}종) — 제련소 교체 시 중복/잔존 버그`
+      if (!near(r.stillLoss, 7.2, 0.05)) return `저격 자세 — 정지 중 10 피해가 7.2로 줄지 않음 (${r.stillLoss})`
+      if (!near(r.movingLoss, 10, 0.05)) return `저격 자세 — 이동 중에도 피해가 줄어듦 (${r.movingLoss})`
+      if (!(r.plainLoss > 0)) return '뇌격 검증용 기준 베기가 적을 맞히지 못함'
+      const expected = r.plainLoss * 1.3 + r.plainLoss * 1.4
+      if (Math.abs(r.shockedLoss - expected) > expected * 0.02) return `뇌격 — 감전된 적 피해가 기대와 다름 (${r.shockedLoss.toFixed(1)} / 기대 ${expected.toFixed(1)} = 본타×1.3 + 본타×1.4)`
+      if (!r.shockConsumed) return '뇌격 — 추가 피해 후 감전이 소모되지 않음'
+      return null
+    }),
+  },
+  {
     name: 'conflict-triple',
     needs: 'dungeon',
     what: '상충 각인 3종 실제 피해 배수(작업 지시 P10 커밋3-4) — 총구 집중×검날 집중(곱셈, 서로 거의 상쇄)· 총검일체 추가(별도 배율 계층, 덧셈 항) 조합 3가지',
@@ -2659,6 +2766,11 @@ const STEPS = [
         window.__qcSwiftSpeed = swift.speed
 
         g.player.invuln = 0 // 직전 실제 접촉 피해로 무적창이 남아있으면 폭발 피해가 막힌다
+        // 폭발 피해가 실제로 들어가는지 보려고 무적을 끄므로, 앞 단계들의 누적
+        // 피해로 체력이 낮으면 이 폭발+분열 자식 공격에 사망(gameover → 시계 정지)할
+        // 수 있다 — QC 실측. 피해량 비교는 전후 차이라 체력만 넉넉히 채운다.
+        g.player.stats.maxHp = Math.max(g.player.stats.maxHp, 1000)
+        g.player.hp = g.player.stats.maxHp
         window.__qcPlayerHpBefore = g.player.hp
         const volatile_ = g.debugSpawnElite('imp', 'volatile')
         volatile_.pos.x = g.player.pos.x
@@ -2786,23 +2898,23 @@ const STEPS = [
   },
   {
     name: 'trait-panel-axis',
-    what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 26종을 전부 보유해도 패널이 화면을 넘지 않는가',
+    what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 33종을 전부 보유해도 패널이 화면을 넘지 않는가',
     async run(p) {
       const r = await p.evaluate(() => {
         const g = window.__game
         // POOL은 window에 노출돼 있지 않다 — trait-slot-badges 스텝과 같은
         // 관례로, 패널이 실제로 소비하는 필드(id/name/desc/icon/slot/grade)만
         // 갖춘 리터럴 객체를 직접 만든다. 핵심 슬롯은 축당 1개만 가질 수
-        // 있으므로 3개, 각인은 26종(작업 지시 P10c2로 완성된 전체 명단) 전부.
+        // 있으므로 3개, 각인은 33종(P10c2 26종 + P11 짝 각인 7종) 전부.
         const core = [
           { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', slot: 'gun', apply: () => {} },
           { id: 'iaijutsu', name: '발도참', desc: '', icon: '🌸', slot: 'sword', apply: () => {} },
           { id: 'mark', name: '표식', desc: '', icon: '🏷️', slot: 'character', apply: () => {} },
         ]
         const sigilIds = {
-          'gun-sigil': ['reload', 'crit', 'blood_bullet', 'overheat', 'gun_focus', 'shock_bullet', 'rapid_reload', 'reserve_mag', 'zero_shot'],
-          'sword-sigil': ['crit_dmg', 'lifesteal', 'berserk_blade', 'chain_slash', 'sword_focus', 'bleed_blade', 'blood_trace', 'execute_blade'],
-          'character-sigil': ['hp', 'speed', 'lg_detonator', 'berserker', 'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'undaunted'],
+          'gun-sigil': ['reload', 'crit', 'blood_bullet', 'overheat', 'gun_focus', 'shock_bullet', 'rapid_reload', 'reserve_mag', 'zero_shot', 'overheat_crit', 'cross_reload'],
+          'sword-sigil': ['crit_dmg', 'lifesteal', 'berserk_blade', 'chain_slash', 'sword_focus', 'bleed_blade', 'blood_trace', 'execute_blade', 'shock_slash', 'chain_fury'],
+          'character-sigil': ['hp', 'speed', 'lg_detonator', 'berserker', 'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'undaunted', 'steady_stance', 'gale', 'spoils'],
         }
         const grades = ['normal', 'rare', 'unique', 'legendary', 'epic']
         const sigils = []
@@ -2845,7 +2957,7 @@ const STEPS = [
       if (r.heads.join(',') !== '총,검,캐릭터') return `축 섹션 순서/이름이 다름 (${r.heads.join(',')})`
       if (r.sections.length !== 3) return `섹션 수가 3이 아님 (${r.sections.length})`
       // 각 섹션 = 핵심 슬롯 1(있으면) + 그 축 각인 개수. 총=1+9=10, 검=1+8=9, 캐릭터=1+9=10.
-      const expectedRows = [10, 9, 10]
+      const expectedRows = [12, 11, 13]
       for (let i = 0; i < 3; i++) {
         if (r.sections[i].rows !== expectedRows[i]) {
           return `${r.sections[i].head} 섹션 항목 수가 다름 (${r.sections[i].rows} / 기대 ${expectedRows[i]})`
@@ -2853,8 +2965,8 @@ const STEPS = [
         if (r.sections[i].hasEmptyLabel) return `${r.sections[i].head} 섹션에 각인이 있는데 "각인 없음" 표시가 남아있음`
         if (r.sections[i].hasTslot > 0) return `${r.sections[i].head} 섹션 항목에 축 라벨(tslot)이 남아있음 — 섹션 헤더와 중복`
       }
-      if (r.totalRows !== 29) return `전체 항목 수가 다름 (${r.totalRows} / 기대 29 = 핵심 3 + 각인 26)`
-      if (!r.panelWithinViewport) return '26종을 전부 보유한 상태에서 패널이 화면(뷰포트) 밖으로 넘침'
+      if (r.totalRows !== 36) return `전체 항목 수가 다름 (${r.totalRows} / 기대 36 = 핵심 3 + 각인 33)`
+      if (!r.panelWithinViewport) return '33종을 전부 보유한 상태에서 패널이 화면(뷰포트) 밖으로 넘침'
       if (!r.panelScrollable) return '내용이 뷰포트보다 긴데 패널이 스크롤 가능 상태가 아님(overflow 설정 확인)'
       return null
     }),
@@ -3675,7 +3787,13 @@ async function checkDisplayContract(page) {
   }
 
   await page.setViewportSize({ width: 1366, height: 768 })
-  await page.waitForTimeout(100)
+  // 고정 100ms 대기는 느린 샌드박스(게임 시계 0.07배 실측)에서 resize 처리가
+  // 끝나기 전에 측정해 "잘림"으로 오판했다 — 스테이지가 새 창 폭 안으로 들어올
+  // 때까지(최대 5초) 기다린 뒤 측정한다. 끝내 안 들어오면 아래 검사가 실패를 낸다.
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.game-stage')
+    return !!el && el.getBoundingClientRect().width <= window.innerWidth + 1
+  }, null, { timeout: 5000 }).catch(() => {})
   const fitted = await inspect()
   await page.setViewportSize(VIEW)
   await page.waitForTimeout(100)

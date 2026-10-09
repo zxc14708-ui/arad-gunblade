@@ -1908,6 +1908,14 @@ export class Game {
         }
       }
       const reflected = e.takeDamage(finalDamage, 'melee', crit)
+      // '뇌격'(P11) — 본타는 감전 받는 피해 증가를 그대로 받고, 그 뒤 감전을
+      // 소모해 추가 번개 피해를 준다(추가 피해 자체에는 감전 배율이 안 붙는다).
+      if (this.player.mods.shockSlashFrac > 0 && e.alive && e.consumeShock()) {
+        const bolt = finalDamage * this.player.mods.shockSlashFrac
+        e.takeDamage(bolt, 'melee')
+        this.effects.damageNumber(new THREE.Vector3(e.pos.x, 2.2, e.pos.z), Math.round(bolt), false)
+        this.effects.burst(new THREE.Vector3(e.pos.x, 1.4, e.pos.z), 0x9fd8ff, 8, 5)
+      }
       // '일도양단'(고유·에픽, 작업 지시 P8c4) — 피해 적용 후 판정한다(방금
       // 이 타격으로 낮아진 체력 기준). 일반 적은 즉사(다음 프레임
       // updateEnemies()가 일반 사망 경로로 처리 — killEnemy()를 여기서
@@ -2012,7 +2020,9 @@ export class Game {
     }
 
     // 골드 드랍
-    const gold = e.kind === 'boss' ? 120 + Math.floor(Math.random() * 60) : Math.max(2, Math.round(e.maxHp * 0.22))
+    const baseGold = e.kind === 'boss' ? 120 + Math.floor(Math.random() * 60) : Math.max(2, Math.round(e.maxHp * 0.22))
+    // '전리품'(P11) — 처치 골드만 늘린다(상자 골드는 제외).
+    const gold = Math.round(baseGold * (1 + this.player.mods.goldGainFrac))
     this.pickups.dropGold(e.pos.x, e.pos.z, gold)
 
     if (this.player.mods.explodeOnKill > 0 && (!fromExplosion || this.player.mods.detonatorChain)) {

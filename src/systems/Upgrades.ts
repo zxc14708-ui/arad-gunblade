@@ -149,7 +149,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `최대 체력 +${v.amount}, 완전 회복`,
   },
   speed: {
-    tags: ['기동'], synergy: [], conflict: [],
+    tags: ['기동'], synergy: ['gale'], conflict: [],
     values: {
       normal: { frac: 0.08 }, rare: { frac: 0.12 }, unique: { frac: 0.16 }, legendary: { frac: 0.22 }, epic: { frac: 0.28 },
     },
@@ -174,7 +174,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `총 피해 +${pct(v.dmgFrac)} · 발사할 때마다 체력 -${v.hpCost} (하이리스크)`,
   },
   overheat: {
-    tags: ['과열'], synergy: [], conflict: [],
+    tags: ['과열'], synergy: ['overheat_crit'], conflict: [],
     values: {
       normal: { stackFrac: 0.02, maxStacks: 5 }, rare: { stackFrac: 0.025, maxStacks: 6 }, unique: { stackFrac: 0.03, maxStacks: 7 },
       legendary: { stackFrac: 0.035, maxStacks: 8 }, epic: { stackFrac: 0.04, maxStacks: 10 },
@@ -190,7 +190,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `총 피해 +${pct(v.gunFrac)} · 검 피해 -${pct(v.swordPenalty)} (검날 집중·총검일체와 상충)`,
   },
   shock_bullet: {
-    tags: ['감전'], role: '부여', synergy: [], conflict: [],
+    tags: ['감전'], role: '부여', synergy: ['shock_slash'], conflict: [],
     values: {
       normal: { chance: 0.20, duration: 1.5 }, rare: { chance: 0.30, duration: 1.8 }, unique: { chance: 0.45, duration: 2.1 },
       legendary: { chance: 0.65, duration: 2.4 }, epic: { chance: 0.85, duration: 3.0 },
@@ -214,7 +214,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `재장전 직후 ${v.duration}s간 사격 쿨타임 -${pct(v.cutFrac)}`,
   },
   zero_shot: {
-    tags: ['정지'], synergy: [], conflict: [],
+    tags: ['정지'], synergy: ['steady_stance'], conflict: [],
     unique: 'epic',
     values: { epic: { perSecond: 0.08, cap: 0.40 } },
     desc: (v) => `정지 시간에 비례해 총 피해 +${pct(v.perSecond)}/s(최대 +${pct(v.cap)}), 이동 시 초기화 (고유·에픽)`,
@@ -230,7 +230,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `검 피해 +${pct(v.swordFrac)} · 받는 피해 +${pct(v.dmgTakenFrac)} (하이리스크)`,
   },
   chain_slash: {
-    tags: ['연참'], synergy: [], conflict: [],
+    tags: ['연참'], synergy: ['chain_fury'], conflict: [],
     values: {
       normal: { cutFrac: 0.03, maxStacks: 5 }, rare: { cutFrac: 0.035, maxStacks: 6 }, unique: { cutFrac: 0.04, maxStacks: 7 },
       legendary: { cutFrac: 0.045, maxStacks: 8 }, epic: { cutFrac: 0.05, maxStacks: 10 },
@@ -285,7 +285,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `체력이 낮을수록 피해 최대 +${pct(v.maxDmgFrac)} · 이동 속도 최대 +${pct(v.maxSpeedFrac)} (체력 20% 이하에서 포화)`,
   },
   hybrid_stance: {
-    tags: ['총검연계', '태세'], synergy: [], conflict: ['gun_focus', 'sword_focus'],
+    tags: ['총검연계', '태세'], synergy: ['cross_reload'], conflict: ['gun_focus', 'sword_focus'],
     values: {
       normal: { duration: 1.5, dmgFrac: 0.15 }, rare: { duration: 1.8, dmgFrac: 0.20 }, unique: { duration: 2.1, dmgFrac: 0.27 },
       legendary: { duration: 2.5, dmgFrac: 0.36 }, epic: { duration: 3.0, dmgFrac: 0.48 },
@@ -293,7 +293,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `무기 전환 직후 ${v.duration}s간 모든 피해 +${pct(v.dmgFrac)} (총구 집중·검날 집중과 상충)`,
   },
   golden_weight: {
-    tags: ['골드'], synergy: [], conflict: [],
+    tags: ['골드'], synergy: ['spoils'], conflict: [],
     values: {
       normal: { ratePer200: 0.01, cap: 0.15 }, rare: { ratePer200: 0.013, cap: 0.20 }, unique: { ratePer200: 0.017, cap: 0.27 },
       legendary: { ratePer200: 0.022, cap: 0.36 }, epic: { ratePer200: 0.03, cap: 0.50 },
@@ -313,6 +313,56 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     unique: 'epic',
     values: { epic: { capFrac: 0.20 } },
     desc: (v) => `받는 피해가 최대 체력의 ${pct(v.capFrac)}를 넘으면 ${pct(v.capFrac)}로 제한된다(무적 아님, 상시 작동) (고유·에픽)`,
+  },
+  // ══════ P11 짝 각인 7종(2026-10-09 사용자 승인) — 한 종뿐이던 계열을 2종으로 ══════
+  shock_slash: {
+    tags: ['감전'], role: '소비', synergy: ['shock_bullet'], conflict: [],
+    values: {
+      normal: { frac: 0.40 }, rare: { frac: 0.55 }, unique: { frac: 0.75 }, legendary: { frac: 1.00 }, epic: { frac: 1.40 },
+    },
+    desc: (v) => `감전된 적을 베면 감전을 소모하고 검 피해의 ${pct(v.frac)} 추가 번개 피해`,
+  },
+  overheat_crit: {
+    tags: ['과열', '치명'], role: '증폭', synergy: ['overheat'], conflict: [],
+    values: {
+      normal: { frac: 0.06 }, rare: { frac: 0.09 }, unique: { frac: 0.12 }, legendary: { frac: 0.16 }, epic: { frac: 0.22 },
+    },
+    desc: (v) => `과열 스택이 최대일 때 치명타 확률 +${pct(v.frac)}p (과열 필요)`,
+  },
+  chain_fury: {
+    tags: ['연참'], role: '증폭', synergy: ['chain_slash'], conflict: [],
+    values: {
+      normal: { frac: 0.02 }, rare: { frac: 0.025 }, unique: { frac: 0.03 }, legendary: { frac: 0.035 }, epic: { frac: 0.04 },
+    },
+    desc: (v) => `연참 가속 스택 1개당 검 피해 +${pct(v.frac)} (연참 가속 필요)`,
+  },
+  steady_stance: {
+    tags: ['정지', '생존'], synergy: ['zero_shot'], conflict: [],
+    values: {
+      normal: { frac: 0.08 }, rare: { frac: 0.11 }, unique: { frac: 0.15 }, legendary: { frac: 0.20 }, epic: { frac: 0.28 },
+    },
+    desc: (v) => `이동하지 않는 동안 받는 피해 -${pct(v.frac)}`,
+  },
+  gale: {
+    tags: ['기동'], synergy: ['speed'], conflict: [],
+    values: {
+      normal: { frac: 0.08 }, rare: { frac: 0.12 }, unique: { frac: 0.16 }, legendary: { frac: 0.22 }, epic: { frac: 0.28 },
+    },
+    desc: (v) => `대시 쿨타임 -${pct(v.frac)}`,
+  },
+  cross_reload: {
+    tags: ['총검연계'], synergy: ['hybrid_stance'], conflict: [],
+    values: {
+      normal: { frac: 0.10 }, rare: { frac: 0.15 }, unique: { frac: 0.20 }, legendary: { frac: 0.27 }, epic: { frac: 0.36 },
+    },
+    desc: (v) => `발도장전(검 적중 후 총알 3발) 보너스 피해 +${pct(v.frac)}p`,
+  },
+  spoils: {
+    tags: ['골드', '처치'], synergy: ['golden_weight'], conflict: [],
+    values: {
+      normal: { frac: 0.10 }, rare: { frac: 0.15 }, unique: { frac: 0.20 }, legendary: { frac: 0.28 }, epic: { frac: 0.38 },
+    },
+    desc: (v) => `처치 시 골드 획득 +${pct(v.frac)}`,
   },
 }
 
@@ -386,6 +436,8 @@ const RAW_POOL: Upgrade[] = [
   { id: 'rapid_reload', name: '속사 전환', desc: describeSigil('rapid_reload', 'normal'), icon: '💨', slot: 'gun-sigil', apply: () => {} },
   { id: 'reserve_mag', name: '예비 탄창', desc: describeSigil('reserve_mag', 'legendary'), icon: '🧰', slot: 'gun-sigil', apply: () => {} },
   { id: 'zero_shot', name: '영점 사격', desc: describeSigil('zero_shot', 'epic'), icon: '🧊', slot: 'gun-sigil', apply: () => {} },
+  { id: 'overheat_crit', name: '임계점', desc: describeSigil('overheat_crit', 'normal'), icon: '🌡️', slot: 'gun-sigil', apply: () => {} },
+  { id: 'cross_reload', name: '교차 장전', desc: describeSigil('cross_reload', 'normal'), icon: '🔀', slot: 'gun-sigil', apply: () => {} },
 
   // ── 검 각인(sword-sigil) 6종 ──
   { id: 'crit_dmg', name: '처형인', desc: describeSigil('crit_dmg', 'normal'), icon: '☠️', slot: 'sword-sigil', apply: () => {} },
@@ -396,6 +448,8 @@ const RAW_POOL: Upgrade[] = [
   { id: 'bleed_blade', name: '출혈 칼날', desc: describeSigil('bleed_blade', 'normal'), icon: '🔪', slot: 'sword-sigil', apply: () => {} },
   { id: 'blood_trace', name: '혈흔', desc: describeSigil('blood_trace', 'legendary'), icon: '🌹', slot: 'sword-sigil', apply: () => {} },
   { id: 'execute_blade', name: '일도양단', desc: describeSigil('execute_blade', 'epic'), icon: '⚔️', slot: 'sword-sigil', apply: () => {} },
+  { id: 'shock_slash', name: '뇌격', desc: describeSigil('shock_slash', 'normal'), icon: '🌩️', slot: 'sword-sigil', apply: () => {} },
+  { id: 'chain_fury', name: '연격', desc: describeSigil('chain_fury', 'normal'), icon: '🌪️', slot: 'sword-sigil', apply: () => {} },
 
   // ── 캐릭터 각인(character-sigil) 7종 ──
   // '전투의 깨달음'(xp_gain, 경험치 획득량 +10%)은 작업 지시 P7 커밋1에서
@@ -409,6 +463,9 @@ const RAW_POOL: Upgrade[] = [
   { id: 'golden_weight', name: '황금의 무게', desc: describeSigil('golden_weight', 'normal'), icon: '💰', slot: 'character-sigil', apply: () => {} },
   { id: 'remnant', name: '잔재', desc: describeSigil('remnant', 'legendary'), icon: '👻', slot: 'character-sigil', apply: () => {} },
   { id: 'undaunted', name: '철벽', desc: describeSigil('undaunted', 'epic'), icon: '🛡️', slot: 'character-sigil', apply: () => {} },
+  { id: 'steady_stance', name: '저격 자세', desc: describeSigil('steady_stance', 'normal'), icon: '🧍', slot: 'character-sigil', apply: () => {} },
+  { id: 'gale', name: '질풍', desc: describeSigil('gale', 'normal'), icon: '🌬️', slot: 'character-sigil', apply: () => {} },
+  { id: 'spoils', name: '전리품', desc: describeSigil('spoils', 'normal'), icon: '🪙', slot: 'character-sigil', apply: () => {} },
 
   // ── 핵심 슬롯: sword(4종, 구 slash — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
   { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'sword',
