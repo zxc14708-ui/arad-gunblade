@@ -191,6 +191,8 @@ export class Game {
     })
     this.hud.onShakeToggle((on) => this.effects.setShakeEnabled(on))
     this.hud.onKeybind((action, code) => this.input.rebind(action, code))
+    // 저장된 키 설정이 있으면 첫 화면부터 장전·상호작용 키 힌트에 반영한다.
+    this.hud.setKeyHints(this.input.keyBindings)
     this.hud.onRouteContinue(() => {
       if (this.mode === 'dungeon' && this.state === 'play' && this.roomCleared) {
         this.presentNextRoutes()

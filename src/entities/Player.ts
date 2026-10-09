@@ -5,7 +5,7 @@ import { CharacterSprite } from './CharacterSprite'
 import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
 import { MetaBonuses } from '../systems/MetaProgression'
 import type { CoreSlot, UpgradeSlot, Grade } from '../systems/Upgrades'
-import { isSigilSlot, isUniqueSigil, GRADES, gradeAbove, SIGIL_DEFS } from '../systems/Upgrades'
+import { isSigilSlot, isUniqueSigil, gradeAbove, SIGIL_DEFS } from '../systems/Upgrades'
 
 /** 무기 정의 × 특성 배수로 산출되는 실효 스탯 */
 export interface PlayerStats {

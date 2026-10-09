@@ -63,7 +63,6 @@ export class EnemySprite {
   private artSet: string
   private state: EnemyAnimState = 'idle'
   private time = 0
-  private flip = 1
   /** 공격 모션 잔여 시간 */
   private attackTimer = 0
   private chargeTimer = 0
@@ -147,7 +146,6 @@ export class EnemySprite {
     const idx = Math.floor(this.time * FPS[this.state]) % n
     const fw = 1 / n
     const map = this.mat.map!
-    this.flip = faceLeft ? -1 : 1
     if (faceLeft) {
       map.offset.x = (idx + 1) * fw
       map.repeat.x = -fw

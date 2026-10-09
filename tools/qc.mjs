@@ -199,14 +199,29 @@ const STEPS = [
   },
   {
     name: 'settings',
-    what: '설정창 — 음량 3종 + 화면 효과 + 키 설정 + 획득 특성 목록',
+    what: '설정창 — 음량 3종 + 화면 효과 + 키 설정 + 획득 특성 목록, 상호작용 키를 바꾸면 화면 힌트(E)도 따라 바뀌는가',
     async run(p) {
       await p.keyboard.press('Tab')
       await p.waitForTimeout(400)
+      // 상호작용 키를 F로 바꿨다가 힌트를 읽고 E로 되돌린다(이후 스텝이 E를 쓴다).
+      const rebind = async (code) => {
+        await p.click('.keybind-btn[data-action="interact"]')
+        await p.keyboard.press(code)
+        await p.waitForTimeout(100)
+      }
+      await rebind('KeyF')
+      const hint = await p.evaluate(() => document.querySelector('#prompt kbd')?.textContent ?? null)
+      await rebind('KeyE')
+      const restored = await p.evaluate(() => document.querySelector('#prompt kbd')?.textContent ?? null)
+      await p.evaluate(({ hint, restored }) => { window.__qcKeyHint = { hint, restored } }, { hint, restored })
     },
     check: async (p) => {
       const ok = await p.isVisible('#volMaster').catch(() => false)
-      return ok ? null : '설정창이 열리지 않음'
+      if (!ok) return '설정창이 열리지 않음'
+      const k = await p.evaluate(() => window.__qcKeyHint)
+      if (k?.hint !== 'F') return `상호작용 키를 F로 바꿨는데 화면 힌트가 따라오지 않음 (${k?.hint})`
+      if (k?.restored !== 'E') return `상호작용 키를 E로 되돌렸는데 힌트가 복구되지 않음 (${k?.restored})`
+      return null
     },
     async after(p) {
       await p.keyboard.press('Tab')
@@ -236,7 +251,7 @@ const STEPS = [
   },
   {
     name: 'gauge-charging',
-    what: '조건 게이지(발밑 원호) — 진행 중(옅은 흰색)으로 캐릭터 발밑에 그려지는가. 이 게이지는 아직 소비자(조건부 특성)가 없어 QC 디버그 훅으로 강제 표시한다.',
+    what: '조건 게이지(발밑 원호) — 진행 중(옅은 흰색)으로 캐릭터 발밑에 그려지는가. 실제 소비자(발도참·조준사격 등)는 trait-slots 스텝에서 검증하고, 여기서는 렌더링만 보려고 QC 디버그 훅으로 강제 표시한다.',
     async run(p) {
       await aim(p, 400)
       await p.evaluate(() => {
@@ -1820,6 +1835,11 @@ const STEPS = [
       await dismissLevelUp(p)
       await p.evaluate(() => {
         const g = window.__game
+        // boss-charge가 올려둔 체력(999999)은 사이의 보상 단계에서 각인을 받아
+        // recompute()가 돌면 원래 최대 체력으로 깎인다. 이 단계에서 보스가 몇
+        // 게임초 동안 실제로 공격하므로, 피격 후 무적 타이머로 확실히 막는다 —
+        // 사망하면 gameover로 시계가 멈춰 이후 단계까지 연쇄로 멈췄다.
+        g.player.invuln = 999
         g.debugClearEnemies()
         const boss = g.debugSpawnBoss()
         // 슬램 예고 중(바닥 경고 이펙트가 이미 떠 있는 상태)으로 만들어, 75%
@@ -1886,6 +1906,13 @@ const STEPS = [
       if (stunAfter > stunBefore + 0.01) return '이미 통과한 임계가 재발동해 stunTimer가 다시 늘어남 (런당 1회 래치 깨짐)'
 
       return null
+    },
+    async after(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        g.player.invuln = 0
+      })
     },
   },
   {
@@ -3174,7 +3201,12 @@ async function waitGame(p, gameSeconds) {
     const wallElapsed = (Date.now() - wallT0) / 1000
     const advanced = simNow - simT0
     if (advanced <= 0.001) {
-      throw new Error(`게임 시계 정지 — 모달 상태이거나 루프가 죽음 (목표 ${gameSeconds}게임초, 벽시계 ${wallElapsed.toFixed(1)}s 대기)`)
+      // 시계는 state!=='play'일 때만 멈춘다 — 어떤 모달/사망 때문인지 바로 보이게 남긴다.
+      const why = await p.evaluate(() => {
+        const g = window.__game
+        return `state=${g.state}, settingsOpen=${g.settingsOpen}, playerHp=${Math.round(g.player.hp)}/${Math.round(g.player.stats.maxHp)}`
+      }).catch(() => '상태 조회 실패')
+      throw new Error(`게임 시계 정지 — 모달 상태이거나 루프가 죽음 (목표 ${gameSeconds}게임초, 벽시계 ${wallElapsed.toFixed(1)}s 대기, ${why})`)
     }
     const rate = advanced / wallElapsed
     throw new Error(`게임 시계 진행이 너무 느림 (실측 배속 ${rate.toFixed(2)}) — ${advanced.toFixed(2)}/${gameSeconds}게임초 진행 (벽시계 ${wallElapsed.toFixed(1)}s)`)

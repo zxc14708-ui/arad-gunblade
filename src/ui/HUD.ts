@@ -57,8 +57,6 @@ export class HUD {
   private lastAmmo = -1
   private lastMag = -1
   private lastBulletTrait = false
-  private volCb: ((kind: 'master' | 'music' | 'sfx', v: number) => void) | null = null
-  private shakeCb: ((on: boolean) => void) | null = null
   private keybindCb: ((action: KeyAction, code: string) => boolean) | null = null
   private listeningAction: KeyAction | null = null
   private routePickCb: ((index: number) => void) | null = null
@@ -269,7 +267,6 @@ export class HUD {
   }
 
   onVolume(cb: (kind: 'master' | 'music' | 'sfx', v: number) => void) {
-    this.volCb = cb
     const wire = (id: string, valId: string, kind: 'master' | 'music' | 'sfx') => {
       const el = this.q(id) as HTMLInputElement
       const val = this.q(valId)
@@ -284,7 +281,6 @@ export class HUD {
   }
 
   onShakeToggle(cb: (on: boolean) => void) {
-    this.shakeCb = cb
     const el = this.q('#shakeToggle') as HTMLInputElement
     el.onchange = () => cb(el.checked)
   }
@@ -317,7 +313,7 @@ export class HUD {
       row.append(label, button)
       box.appendChild(row)
     }
-    this.setReloadKey(bindings)
+    this.setKeyHints(bindings)
   }
 
   private captureKeybind(e: KeyboardEvent) {
@@ -337,7 +333,7 @@ export class HUD {
       if (button) button.textContent = keyLabel(e.code)
       this.q('#keybindNote').textContent = `${KEY_ACTION_LABELS[action]}: ${keyLabel(e.code)}로 변경했습니다.`
       const bindings = Object.fromEntries([...box.querySelectorAll<HTMLButtonElement>('.keybind-btn')].map((button) => [button.dataset.action!, button.textContent!])) as Partial<KeyBindings>
-      this.setReloadKey({
+      this.setKeyHints({
         moveUp: bindings.moveUp ?? 'W', moveDown: bindings.moveDown ?? 'S', moveLeft: bindings.moveLeft ?? 'A', moveRight: bindings.moveRight ?? 'D',
         dash: bindings.dash ?? 'Left Shift', slash: bindings.slash ?? 'Space', reload: bindings.reload ?? 'R', interact: bindings.interact ?? 'E',
       })
@@ -355,9 +351,12 @@ export class HUD {
     this.pickRoute(index)
   }
 
-  private setReloadKey(bindings: KeyBindings) {
+  /** 화면에 고정 표기된 키 힌트(장전·상호작용)를 현재 바인딩에 맞춘다. */
+  setKeyHints(bindings: KeyBindings) {
     const ammoKey = this.q('#ammoBox .ammo-label kbd')
     if (ammoKey) ammoKey.textContent = keyLabel(bindings.reload)
+    const promptKey = this.q('#prompt kbd')
+    if (promptKey) promptKey.textContent = keyLabel(bindings.interact)
   }
 
   openSettings(

@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last updated: 2026-08-14
+Last updated: 2026-10-09
 
 ## Playable now
 
@@ -70,6 +70,12 @@ Last updated: 2026-08-14
   swords' `range` × 1.5. Weapon numbers and core-slot trait effects are not
   to be changed casually — see `CLAUDE.md`.
 
+- Interaction/reload key hints on screen (`E`/`R`) follow the player's
+  saved key bindings from startup and after rebinding in settings
+  (`HUD.setKeyHints`, checked by the `settings` QC step).
+- `tsconfig.json` now enables `noUnusedLocals`/`noUnusedParameters`, so
+  dead locals/imports fail the type check instead of accumulating.
+
 ## Verification baseline
 
 - `npm run qc` builds, serves, and drives a real headless browser through
@@ -84,6 +90,17 @@ Last updated: 2026-08-14
   (`page.waitForFunction` polling), not wall time, with a wall-clock safety
   cap that distinguishes "clock stalled" (a real bug/hang) from "clock too
   slow" (environmental) in its error message.
+- The recurring `boss-break` "게임 시계 정지" failure followed by a hung run
+  was a real harness bug, not environment: `boss-charge` makes the player
+  near-immortal by raising HP, but the reward step in between triggers
+  `recompute()`, which clamps HP back to the normal max. `boss-break` then let
+  the boss attack for several game-seconds and the player sometimes died
+  (`gameover` stops the clock). Fixed 2026-10-09 by setting the post-hit
+  invulnerability timer for that step; `waitGame()` failures now also print
+  `state`/`settingsOpen`/player HP so a stalled clock names its cause.
+- QC needs Python Pillow + NumPy for `tools/measure_sprites.py`
+  (`pip install pillow numpy`); a fresh sandbox without them fails the asset
+  integrity gate with `ModuleNotFoundError: PIL`.
 - **Known environmental flakiness**: individual steps occasionally fail
   with "게임 시계 정지" in a full sequential run while passing cleanly in
   an isolated `--only <step>` rerun, especially after several consecutive
@@ -107,7 +124,11 @@ Last updated: 2026-08-14
    and name/illustrate each boss. Escalating boss reward contents remain open.
 4. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
-5. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
+5. Open design questions found in the 2026-10-09 orchestrator review are
+   listed in `DESIGN_LOG.md` ("오케스트레이터 점검 미결 항목") and tracked as
+   `design_needed` tasks in `.agent/STATUS.json` — nothing proceeds on them
+   without user approval.
+6. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
    항목"): 4-way job advancement (전직), locking a run to one weapon family
    at start, and character/monster palette recolor variants.
 

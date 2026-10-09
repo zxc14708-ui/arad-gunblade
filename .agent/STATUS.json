@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": null,
+  "updated_at": "2026-10-09T11:30:00+09:00",
   "roles": {
     "orchestrator": {
       "agent": "Claude",
@@ -20,7 +20,71 @@
       "note": "Runs today as an internal Orchestrator step. Can move to a dedicated agent later by changing only this entry - see .agent/ROUTING.md."
     }
   },
-  "active_tasks": [],
+  "active_tasks": [
+    {
+      "task_id": "T-0001",
+      "title": "일반 적 기절 발생 경로 결정 (현재 게임 플레이에서 아무도 기절을 걸지 않음)",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-미결-항목-2026-10-09",
+      "created_at": "2026-10-09T11:30:00+09:00",
+      "updated_at": "2026-10-09T11:30:00+09:00"
+    },
+    {
+      "task_id": "T-0002",
+      "title": "이슈 6 무기 등급 재정렬 진행 여부/범위 결정",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-미결-항목-2026-10-09",
+      "created_at": "2026-10-09T11:30:00+09:00",
+      "updated_at": "2026-10-09T11:30:00+09:00"
+    },
+    {
+      "task_id": "T-0003",
+      "title": "P10 수치 초안 승인 (예비 탄창·속사 전환·불굴·잔재 추종)",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-미결-항목-2026-10-09",
+      "created_at": "2026-10-09T11:30:00+09:00",
+      "updated_at": "2026-10-09T11:30:00+09:00"
+    },
+    {
+      "task_id": "T-0004",
+      "title": "'불굴' 표시명 중복 해소 방식 결정 (메타 업그레이드 vs 각인)",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-미결-항목-2026-10-09",
+      "created_at": "2026-10-09T11:30:00+09:00",
+      "updated_at": "2026-10-09T11:30:00+09:00"
+    },
+    {
+      "task_id": "T-0005",
+      "title": "각인 총수 25 vs 26 결정",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-미결-항목-2026-10-09",
+      "created_at": "2026-10-09T11:30:00+09:00",
+      "updated_at": "2026-10-09T11:30:00+09:00"
+    },
+    {
+      "task_id": "T-0006",
+      "title": "P11 각인 리워크 목표·범위 결정 (메타데이터 13/26 미기입)",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-미결-항목-2026-10-09",
+      "created_at": "2026-10-09T11:30:00+09:00",
+      "updated_at": "2026-10-09T11:30:00+09:00"
+    },
+    {
+      "task_id": "T-0007",
+      "title": "P9 커밋1 재개 여부 (recover 제거·상점방 분수·분기 보장·일반 전투 골드 배율)",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "PROJECT_STATUS.md#next-approved-implementation-work",
+      "created_at": "2026-10-09T11:30:00+09:00",
+      "updated_at": "2026-10-09T11:30:00+09:00"
+    }
+  ],
   "last_qc_run": {
     "task_id": null,
     "result": null,

@@ -66,12 +66,8 @@ export class CharacterSprite {
   private animTime = 0
   private flip = 1
   private lastState = ''
-  private gunId: string
-  private swordId: string
 
   constructor(gunId = 'm1911', swordId = 'katana') {
-    this.gunId = gunId
-    this.swordId = swordId
 
     // 우선 절차 시트로 시작 (즉시 표시)
     const tex = makeTexture(makeSheet(gunId, swordId))
@@ -151,8 +147,6 @@ export class CharacterSprite {
 
   /** 무기 교체 — 기본 장비는 완성 아트, 그 외 장비는 무기별 임시 픽셀 시트. */
   setWeapons(gunId: string, swordId: string) {
-    this.gunId = gunId
-    this.swordId = swordId
     if (this.artTexture) {
       this.setTexture(this.artTexture, ART_SPEC)
       return
