@@ -8,8 +8,11 @@ import { ELITE_AFFIX, EliteAffix, rollEliteAffix } from './EliteAffixes'
  * 회복)에 없어 폐지, 'trait'(각인)·'hardCombat'(상위 전투)·'recover'(회복)가
  * 새로 생겼다. 'shop'(깊이 4 고정)·'rest'(깊이 8 고정 보스 준비방)·
  * 'boss'(깊이 9)는 역할이 고정된 깊이 그대로다.
+ *
+ * P9 커밋1(2026-10-09 승인) — 'recover'(회복) 노드를 폐지했다. 던전 분수는
+ * 상점방(깊이 4)과 보스 준비방(깊이 8) 두 곳에 고정 배치된다.
  */
-export type RoomKind = 'combat' | 'trait' | 'hardCombat' | 'elite' | 'recover' | 'shop' | 'rest' | 'boss'
+export type RoomKind = 'combat' | 'trait' | 'hardCombat' | 'elite' | 'shop' | 'rest' | 'boss'
 export type Direction = 'north' | 'east' | 'south' | 'west'
 
 export const DIRECTIONS: Direction[] = ['north', 'east', 'south', 'west']
@@ -73,7 +76,6 @@ export const ROOM_LABEL: Record<RoomKind, string> = {
   trait: '각인',
   hardCombat: '상위 전투',
   elite: '엘리트',
-  recover: '회복',
   shop: '상점',
   rest: '보스 준비',
   boss: '보스',
@@ -83,7 +85,6 @@ export const ROOM_ICON: Record<RoomKind, string> = {
   trait: '📘',
   hardCombat: '🔥',
   elite: '✦',
-  recover: '❤',
   shop: '¤',
   rest: '⛺',
   boss: '☠',
@@ -474,9 +475,7 @@ export class RunState {
       ]
       return { id, kind, enemies, chests: 0, x, y, depth, hasFountain: false, ...m }
     }
-    if (kind === 'shop') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: false, ...m }
-    if (kind === 'rest') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
-    if (kind === 'recover') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
+    if (kind === 'shop' || kind === 'rest') return { id, kind, enemies: [], chests: 0, x, y, depth, hasFountain: true, ...m }
     if (kind === 'elite') {
       const affix = rollEliteAffix(this.previousEliteAffix)
       this.previousEliteAffix = affix
@@ -536,62 +535,28 @@ export class RunState {
    * 확률이 아니라 개수 보장으로 만족시킨다(분수 배치에서 겪었던 "약 1.3%
    * 확률로 조건 미달" 결함과 같은 유형을 피하려는 것, DESIGN_LOG B5 참고).
    *
-   * 규칙: 분기 깊이 6개 각각 2~3개 선택지 / 각인 노드(각인+상위 전투) 총
-   * 2~4개, 서로 다른 깊이에 하나씩만 둬 "같은 깊이에 같은 종류 중복" 문제를
-   * 원천적으로 피한다 / 회복 노드 최소 1개 / 상위 전투는 깊이 5 이상에서만 /
-   * 같은 깊이의 선택지는 항상 서로 다른 종류.
+   * 규칙(P9 커밋1, 2026-10-09 승인): 각인 노드(각인+상위 전투) 총 2~4개를
+   * 서로 다른 깊이에 하나씩 둔다 / 그 깊이는 3갈래(각인계 + 전투 + 엘리트),
+   * 나머지 깊이는 2갈래(전투 + 엘리트) / 상위 전투는 깊이 5 이상에서만 /
+   * 같은 깊이의 선택지는 항상 서로 다른 종류. 회복 노드는 폐지됐다 — 그
+   * 역할은 상점방 분수가 대신한다.
    */
   private planBranchKinds(): Map<number, RoomKind[]> {
-    const counts = new Map<number, number>()
-    for (const d of BRANCH_DEPTHS) counts.set(d, Math.random() < 0.5 ? 2 : 3)
-
-    const slots = new Map<number, (RoomKind | null)[]>()
-    for (const d of BRANCH_DEPTHS) slots.set(d, new Array<RoomKind | null>(counts.get(d)!).fill(null))
-
-    const usedAt = (d: number) => slots.get(d)!.filter((k): k is RoomKind => k !== null)
-    const place = (d: number, kind: RoomKind) => {
-      const arr = slots.get(d)!
-      const free: number[] = []
-      arr.forEach((v, i) => { if (v === null) free.push(i) })
-      if (free.length === 0) return false
-      arr[free[Math.floor(Math.random() * free.length)]] = kind
-      return true
-    }
-
     // 각인 계열(각인/상위 전투) — traitTarget(2~4)개를 서로 다른 깊이에
     // 하나씩 배정한다. 분기 깊이가 6개라 목표(최대 4)보다 항상 많아 반드시
     // 채워진다.
     const traitTarget = 2 + Math.floor(Math.random() * 3)
-    const shuffledForTrait = [...BRANCH_DEPTHS].sort(() => Math.random() - 0.5)
-    let traitPlaced = 0
-    for (const d of shuffledForTrait) {
-      if (traitPlaced >= traitTarget) break
-      const kind: RoomKind = d >= 5 && Math.random() < 0.4 ? 'hardCombat' : 'trait'
-      if (place(d, kind)) traitPlaced++
-    }
+    const traitDepths = [...BRANCH_DEPTHS].sort(() => Math.random() - 0.5).slice(0, traitTarget)
 
-    // 회복 노드 최소 1개.
-    for (const d of [...BRANCH_DEPTHS].sort(() => Math.random() - 0.5)) {
-      if (place(d, 'recover')) break
-    }
-
-    // 나머지 빈 슬롯 — 깊이별로 허용되는 종류 중 그 깊이에 아직 없는 것을 채운다.
-    // 각인 계열(각인/상위 전투)은 위에서 이미 traitTarget만큼 정확히 배정했다 —
-    // 여기 후보에 다시 넣으면 목표(2~4개) 이상으로 더 뽑혀버린다(실측 300회
-    // 중 265회 위반 — 이 필터가 빠졌을 때 실제로 발생한 결함).
-    const fillKinds: RoomKind[] = ['combat', 'elite', 'recover']
+    const slots = new Map<number, RoomKind[]>()
     for (const d of BRANCH_DEPTHS) {
-      const arr = slots.get(d)!
-      for (let i = 0; i < arr.length; i++) {
-        if (arr[i] !== null) continue
-        const used = usedAt(d)
-        const candidates = fillKinds.filter((k) => !used.includes(k))
-        const pool = candidates.length > 0 ? candidates : (['combat'] as RoomKind[])
-        arr[i] = pool[Math.floor(Math.random() * pool.length)]
-      }
+      const kinds: RoomKind[] = ['combat', 'elite']
+      if (traitDepths.includes(d)) kinds.push(d >= 5 && Math.random() < 0.4 ? 'hardCombat' : 'trait')
+      // 카드 순서가 항상 같은 종류로 시작하지 않도록 섞는다.
+      slots.set(d, kinds.sort(() => Math.random() - 0.5))
     }
 
-    return slots as Map<number, RoomKind[]>
+    return slots
   }
 
   /**

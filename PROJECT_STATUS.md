@@ -7,14 +7,15 @@ Last updated: 2026-10-09
 - Chapter 1 runs through Stages 1-7 as a **linear branching map** (depth
   1-9, `RunState.ts`). Depth 4 is always a shop, depth 8 is always the boss
   preparation room, depth 9 is the boss — no choice at those depths.
-  Branching depths (1/2/3/5/6/7) offer 2-3 differently-kinded room choices
-  (`combat`/`elite`/`trait`/`hardCombat`/`recover`). Every room connection
+  Branching depths (1/2/3/5/6/7) always offer `combat` + `elite`; the 2-4
+  depths that also carry a `trait`/`hardCombat` node offer 3 choices (P9
+  commit 1, 2026-10-09 — the `recover` node was removed). Every room connection
   is parent→child one-way, so **backtracking to a previous room is
   structurally impossible**. Exits are presented as 1-3 route cards that show
   room type, enemy roster/count, difficulty multipliers, reward/grade, elite
   affix, and reserve-magazine recharge information when relevant. Physical
   dungeon door interactables are gone. Combat rooms open the cards after all
-  reward selection finishes; shop/recover/boss-prep rooms keep their facilities
+  reward selection finishes; shop/boss-prep rooms keep their facilities
   usable until the player presses `다음 경로 보기`. The depth-0 lobby remains
   only as a hidden graph root and is never rendered. Stage 2-7 use the
   user-approved illustrated
@@ -50,9 +51,11 @@ Last updated: 2026-10-09
 - Boss state machine (idle → telegraph → charge/slam → stagger → phase 2)
   plus boss break (HP 75%/25% stun windows) and 6 elite affixes.
 - Town fully heals on entry; the town fountain was removed as a redundant
-  duplicate of that (P7 커밋2). In-dungeon recovery is guaranteed by the
-  map's `recover` node and the boss-prep room's paid fountain, not a
-  fixed room count.
+  duplicate of that (P7 커밋2). In-dungeon recovery is the fountain in the
+  depth-4 shop room and the depth-8 boss-prep room (first use per run free,
+  then 60→96→154G).
+- Normal `combat` nodes pay kill gold ×1.5 (`CONFIG.economy.combatGoldMultiplier`,
+  P9 commit 1) so they are the gold route against trait/elite sigil routes.
 - Fixed 1920 x 1080 presentation with aspect-safe browser scaling. Pixel
   texture/filter, sprite anchoring, and prop aspect rules are centralized
   in `src/rendering/pixelArt.ts`.
@@ -122,22 +125,18 @@ Last updated: 2026-10-09
 
 ## Next approved implementation work
 
-1. P9 commit 1 remains deliberately separate for later confirmation: remove
-   `recover`, add the shop-room fountain, revise branch-kind guarantees, and
-   define/measure the normal-combat gold multiplier. Route cards currently
-   describe the existing rewards and still support `recover` until that lands.
-2. Integrate per-weapon visuals only after matching final motion sheets are
+1. Integrate per-weapon visuals only after matching final motion sheets are
    delivered, then visually QC each loadout.
-3. Replace the Stage 2-7 palette placeholders with final theme-specific art
+2. Replace the Stage 2-7 palette placeholders with final theme-specific art
    and name/illustrate each boss. Escalating boss reward contents remain open.
-4. Add final weapon/projectile/melee-effect art once the matching sheets are
+3. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
-5. 2026-10-09 orchestrator review: user decisions (P10 numbers confirmed,
+4. 2026-10-09 orchestrator review: user decisions (P10 numbers confirmed,
    damage-cap sigil renamed '불굴'→'철벽', 26 sigils kept (now 33 after P11), stun source and
    P9 commit 1 deferred) and the open items (issue-6 sword grade reorder
    proposal awaiting a choice, P11 sigil rework scope) are in `DESIGN_LOG.md`
    ("오케스트레이터 점검 결과") and `.agent/STATUS.json`.
-6. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
+5. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
    항목"): 4-way job advancement (전직), locking a run to one weapon family
    at start, and character/monster palette recolor variants.
 

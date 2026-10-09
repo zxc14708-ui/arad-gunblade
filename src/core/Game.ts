@@ -394,17 +394,19 @@ export class Game {
     return `적 ${plan.enemies.length}명 · ${roster} · 체력×${this.routeMultiplier(plan.hpMul)} · 공격×${this.routeMultiplier(plan.dmgMul)} · 속도×${this.routeMultiplier(plan.speedMul)}`
   }
 
-  /** 현재 구현의 실제 보상만 표기한다. 전투 골드 배수는 P9 커밋 1에서 추가된다. */
+  /** 현재 구현의 실제 보상만 표기한다. */
   private routeReward(plan: RoomPlan) {
     switch (plan.kind) {
       case 'trait': return '각인 후보 3장 중 1장'
       case 'hardCombat': return `각인 후보 3장 중 1장 · 골드 +${20 + plan.depth * 8}`
       case 'elite': return `각인 후보 4장 중 1장 · 골드 +${35 + plan.depth * 12} · 증표 1`
       case 'boss': return '각인 후보 3장 중 1장 · 스테이지 보상'
-      case 'shop': return '상점 · 제련소'
+      case 'shop':
       case 'rest': return '상점 · 회복 우물 · 제련소'
-      case 'recover': return '회복 우물'
-      default: return plan.chests > 0 ? '기본 골드 · 보물상자' : '기본 골드'
+      default: {
+        const gold = `처치 골드 ×${CONFIG.economy.combatGoldMultiplier}`
+        return plan.chests > 0 ? `${gold} · 보물상자` : gold
+      }
     }
   }
 
@@ -513,10 +515,11 @@ export class Game {
     }
 
     // 회복 분수 — RunState.generateMap()이 맵 생성 시점에 hasFountain을 정해
-    // 재방문해도 나타났다 사라지지 않는다. 'rest'(깊이 8 고정 보스 준비방)와
-    // 'recover'(분기 노드, 작업 지시 P7 커밋2)만 hasFountain: true다.
+    // 재방문해도 나타났다 사라지지 않는다. 'shop'(깊이 4)과 'rest'(깊이 8 보스
+    // 준비방)만 hasFountain: true다(P9 커밋1 — 회복 노드 폐지). 상인(-6, -1)·
+    // 제련소(0, 4)와 겹치지 않는 오른쪽 자리에 둔다.
     if (plan.hasFountain) {
-      const p = plan.kind === 'rest' ? { x: 6, z: -1 } : this.room.randomPoint(5)
+      const p = { x: 6, z: -1 }
       this.interactables.push(new Interactable('fountain', p.x, p.z, plan.kind === 'rest' ? `보스전 회복 우물 · ${this.fountainLabel()}` : `회복의 우물 · ${this.fountainLabel()}`).addTo(this.scene))
     }
 
@@ -536,9 +539,8 @@ export class Game {
     }
 
     // 시설방은 입장 즉시 클리어 상태지만, 시설 이용 전에 경로 화면이 플레이를
-    // 막지 않도록 명시적인 진행 버튼으로만 다음 카드를 연다. recover는 P9
-    // 커밋 1에서 제거 예정이므로 그전까지 같은 안전 규칙을 적용한다.
-    if (this.roomCleared && (plan.kind === 'shop' || plan.kind === 'rest' || plan.kind === 'recover')) {
+    // 막지 않도록 명시적인 진행 버튼으로만 다음 카드를 연다.
+    if (this.roomCleared && (plan.kind === 'shop' || plan.kind === 'rest')) {
       this.hud.showRouteContinue(plan.kind === 'rest' ? '보스전 준비 완료 · 다음 경로 보기' : '다음 경로 보기')
     }
 
@@ -2021,8 +2023,10 @@ export class Game {
 
     // 골드 드랍
     const baseGold = e.kind === 'boss' ? 120 + Math.floor(Math.random() * 60) : Math.max(2, Math.round(e.maxHp * 0.22))
-    // '전리품'(P11) — 처치 골드만 늘린다(상자 골드는 제외).
-    const gold = Math.round(baseGold * (1 + this.player.mods.goldGainFrac))
+    // '전리품'(P11) — 처치 골드만 늘린다(상자 골드는 제외). 일반 전투 노드는
+    // 처치 골드 배수가 추가로 붙는다(P9 커밋1).
+    const roomGoldMul = this.curPlan?.kind === 'combat' ? CONFIG.economy.combatGoldMultiplier : 1
+    const gold = Math.round(baseGold * roomGoldMul * (1 + this.player.mods.goldGainFrac))
     this.pickups.dropGold(e.pos.x, e.pos.z, gold)
 
     if (this.player.mods.explodeOnKill > 0 && (!fromExplosion || this.player.mods.detonatorChain)) {

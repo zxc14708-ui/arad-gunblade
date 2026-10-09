@@ -95,12 +95,16 @@ export interface MapSampleResult {
   bossDepthWrong: number
   /** 분기 깊이(1·2·3·5·6·7) 수가 6이 아니었던 표본 수 */
   branchDepthCountWrong: number
-  /** 분기 깊이 중 선택지가 2~3개 범위를 벗어난 것이 있었던 표본 수 */
+  /** 분기 깊이 중 선택지 수가 규칙(각인계 노드가 있으면 3, 없으면 2)과
+   * 다른 것이 있었던 표본 수 (P9 커밋1) */
   branchChoiceCountWrong: number
+  /** 분기 깊이 중 전투·엘리트가 둘 다 있지 않은 것이 있었던 표본 수 (P9 커밋1) */
+  combatEliteMissing: number
+  /** 상점방(깊이 4)·보스 준비방(깊이 8) 중 분수가 없는 방이 있었던 표본 수,
+   * 또는 그 외의 방에 분수가 있었던 표본 수 (P9 커밋1) */
+  fountainPlacementWrong: number
   /** 각인 계열(각인+상위 전투) 노드 총수가 2~4 범위를 벗어난 표본 수 */
   traitNodeCountWrong: number
-  /** 회복 노드가 1개 미만이었던 표본 수 */
-  recoverMissing: number
   /** 상위 전투가 깊이 5 미만에 나온 표본 수 */
   hardCombatTooEarly: number
   /** 같은 깊이 선택지 중 종류가 겹친 것이 있었던 표본 수 */
@@ -254,7 +258,8 @@ export function installQcDebugHooks(game: Game) {
       branchDepthCountWrong: 0,
       branchChoiceCountWrong: 0,
       traitNodeCountWrong: 0,
-      recoverMissing: 0,
+      combatEliteMissing: 0,
+      fountainPlacementWrong: 0,
       hardCombatTooEarly: 0,
       duplicateKindAtDepth: 0,
       backwardEdge: 0,
@@ -282,23 +287,27 @@ export function installQcDebugHooks(game: Game) {
       let choiceCountBad = false
       let dupKind = false
       let hardCombatEarly = false
+      let combatEliteBad = false
       let traitFamilyCount = 0
-      let recoverCount = 0
       for (const d of branchDepths) {
         const kinds = at(d)
-        if (kinds.length < 2 || kinds.length > 3) choiceCountBad = true
+        const hasTraitFamily = kinds.some((k) => k === 'trait' || k === 'hardCombat')
+        if (kinds.length !== (hasTraitFamily ? 3 : 2)) choiceCountBad = true
+        if (!kinds.includes('combat') || !kinds.includes('elite')) combatEliteBad = true
         if (new Set(kinds).size !== kinds.length) dupKind = true
         for (const k of kinds) {
           if (k === 'trait' || k === 'hardCombat') traitFamilyCount++
-          if (k === 'recover') recoverCount++
           if (k === 'hardCombat' && d < 5) hardCombatEarly = true
         }
       }
       if (choiceCountBad) result.branchChoiceCountWrong++
+      if (combatEliteBad) result.combatEliteMissing++
       if (dupKind) result.duplicateKindAtDepth++
       if (hardCombatEarly) result.hardCombatTooEarly++
       if (traitFamilyCount < 2 || traitFamilyCount > 4) result.traitNodeCountWrong++
-      if (recoverCount < 1) result.recoverMissing++
+      const fountainBad = [...nodes.values()].some((node) =>
+        node.plan.hasFountain !== (node.plan.kind === 'shop' || node.plan.kind === 'rest'))
+      if (fountainBad) result.fountainPlacementWrong++
 
       let backward = false
       for (const node of nodes.values()) {

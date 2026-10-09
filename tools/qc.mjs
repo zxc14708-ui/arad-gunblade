@@ -382,9 +382,10 @@ const STEPS = [
     what: '경로 카드 이동 — 숫자키 선택·방 클리어 후 재표시·전진 전용 연결·표시 정보가 모두 동작하는가',
     async run(p) {
       const initialCards = await readRouteCards(p)
-      // 회복 같은 무전투 카드는 입장과 동시에 cleared라 debugClearEnemies()로
+      // 무전투 카드는 입장과 동시에 cleared라 debugClearEnemies()로
       // onRoomClear()를 다시 만들 수 없다. 경로 재표시까지 검증해야 하는 이
-      // 시나리오에서는 적이 있는 카드 중 첫 번째를 결정적으로 고른다.
+      // 시나리오에서는 적이 있는 카드 중 첫 번째를 결정적으로 고른다(P9 커밋1
+      // 이후 분기 깊이는 전부 전투방이지만 방어적으로 유지).
       const combatIndex = initialCards.findIndex((card) => card.enemyCount > 0)
       if (combatIndex < 0) throw new Error('첫 경로 카드 중 전투가 있는 방이 없음')
       const picked = await chooseRouteCard(p, { index: combatIndex, via: 'key' })
@@ -423,6 +424,14 @@ const STEPS = [
       if (r.entered.id !== r.picked.roomId) return '선택한 방으로 진입하지 않음'
       if (r.nextCards.some((card) => card.targetDepth !== r.entered.depth + 1)) {
         return `다음 카드에 되돌아가기/깊이 건너뛰기가 있음 (현재 ${r.entered.depth}, 대상 ${r.nextCards.map((card) => card.targetDepth).join(',')})`
+      }
+      // P9 커밋1 — 모든 분기 깊이에 일반 전투가 있고, 그 카드는 처치 골드
+      // 배수를 표시해야 한다.
+      for (const [label, cards] of [['첫', r.initialCards], ['클리어 후', r.nextCards]]) {
+        const combat = cards.filter((card) => card.planKind === 'combat')
+        if (combat.length !== 1) return `${label} 경로 카드에 일반 전투가 정확히 1장이 아님 (${combat.length})`
+        if (!combat[0].reward.includes('×1.5')) return `${label} 일반 전투 카드 보상에 처치 골드 ×1.5 표시가 없음 ("${combat[0].reward}")`
+        if (cards.some((card) => card.planKind === 'recover')) return `${label} 경로 카드에 폐지된 회복 노드가 있음`
       }
       return null
     },
@@ -1627,9 +1636,10 @@ const STEPS = [
       if (s.restDepthWrong > 0) return `깊이8이 보스 준비방이 아닌 표본 ${s.restDepthWrong}건`
       if (s.bossDepthWrong > 0) return `깊이9가 보스가 아닌 표본 ${s.bossDepthWrong}건`
       if (s.branchDepthCountWrong > 0) return `분기 깊이가 6개가 아닌 표본 ${s.branchDepthCountWrong}건`
-      if (s.branchChoiceCountWrong > 0) return `분기 선택지가 2~3개 범위를 벗어난 표본 ${s.branchChoiceCountWrong}건`
+      if (s.branchChoiceCountWrong > 0) return `분기 선택지 수가 규칙(각인계 깊이 3갈래, 나머지 2갈래)과 다른 표본 ${s.branchChoiceCountWrong}건`
+      if (s.combatEliteMissing > 0) return `분기 깊이에 전투·엘리트가 둘 다 있지 않은 표본 ${s.combatEliteMissing}건`
+      if (s.fountainPlacementWrong > 0) return `분수가 상점방·보스 준비방 외에 있거나 빠진 표본 ${s.fountainPlacementWrong}건`
       if (s.traitNodeCountWrong > 0) return `각인 계열 노드 수가 2~4개 범위를 벗어난 표본 ${s.traitNodeCountWrong}건`
-      if (s.recoverMissing > 0) return `회복 노드가 없는 표본 ${s.recoverMissing}건`
       if (s.hardCombatTooEarly > 0) return `상위 전투가 깊이 5 미만에 나온 표본 ${s.hardCombatTooEarly}건`
       if (s.duplicateKindAtDepth > 0) return `같은 깊이에 같은 종류 선택지가 겹친 표본 ${s.duplicateKindAtDepth}건`
       if (s.backwardEdge > 0) return `되돌아가기가 가능한 간선이 있는 표본 ${s.backwardEdge}건`
@@ -2892,8 +2902,48 @@ const STEPS = [
         if (!restShopNow) return '보스 준비방 재고가 사라짐'
         if (restShopNow.rerollCount !== restShop.rerollCount) return '보스 준비방 재고가 상점방 방문의 영향을 받음'
         if (restShopNow.items.map((it) => it.sold).some((v) => v)) return '보스 준비방 재고가 상점방과 독립적이지 않음 (구매하지 않았는데 sold)'
+        // P9 커밋1 — 회복 노드 폐지 대신 상점방(깊이 4)에 분수가 있어야 한다.
+        if (!g.interactables.some((it) => it.kind === 'fountain')) return '상점방에 회복 우물이 없음 (P9 커밋1)'
         return null
       })
+    },
+  },
+  {
+    name: 'combat-gold-mult',
+    needs: 'dungeon',
+    what: 'P9 커밋1 — 일반 전투 노드에서만 처치 골드 ×1.5 (엘리트 노드는 ×1)',
+    async run(p) {
+      await dismissLevelUp(p)
+      const drops = await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const origPlan = g.curPlan
+        const origDrop = g.pickups.dropGold
+        const out = {}
+        // 같은 적(브루트)을 방 종류만 바꿔 처치하고 드랍 골드 총액을 가로챈다.
+        // 전리품 등 다른 배수는 두 처치에 똑같이 걸리므로 비율만 본다.
+        try {
+          for (const kind of ['elite', 'combat']) {
+            g.curPlan = { ...origPlan, kind }
+            g.pickups.dropGold = (_x, _z, total) => { out[kind] = total }
+            const e = g.debugSpawnEnemy('brute')
+            g.killEnemy(e)
+          }
+        } finally {
+          g.pickups.dropGold = origDrop
+          g.curPlan = origPlan
+          g.debugClearEnemies()
+        }
+        return out
+      })
+      await p.evaluate((value) => { window.__qcCombatGold = value }, drops)
+    },
+    check: async (p) => {
+      const d = await p.evaluate(() => window.__qcCombatGold)
+      if (!d?.elite || !d?.combat) return `처치 골드를 가로채지 못함 (${JSON.stringify(d)})`
+      const ratio = d.combat / d.elite
+      if (Math.abs(ratio - 1.5) > 0.05) return `일반 전투 처치 골드 배율 ${ratio.toFixed(3)} (기대 1.5, 엘리트 ${d.elite} / 전투 ${d.combat})`
+      return null
     },
   },
   {
@@ -3207,6 +3257,7 @@ async function readRouteCards(p) {
         recharge: detail(card, 'recharge'),
         enemyCount: node?.plan?.enemies?.length ?? 0,
         targetDepth: node?.plan?.depth ?? null,
+        planKind: node?.plan?.kind ?? null,
       }
     })
   })

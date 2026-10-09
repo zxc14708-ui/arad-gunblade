@@ -13,7 +13,7 @@ task-specific document listed in `docs/INDEX.md`.
   are implemented; see `docs/systems/stages-2-7.md`.
 - Dungeon movement uses a separate route-card overlay (click or number keys
   1-3), not world door interactables. Combat rewards resolve before the route
-  overlay opens. Shop/recover/boss-prep facilities stay interactive until the
+  overlay opens. Shop/boss-prep facilities stay interactive until the
   player presses `다음 경로 보기`. The old depth-0 lobby is a hidden logical
   root only, preserving map generation/QC without adding a visible room.
 - Every loadout currently uses the finished default character art. Per-weapon
@@ -33,7 +33,8 @@ Per-weapon appearance, projectile, and melee-effect art is deliberately disabled
 until matched final sheets arrive. Stage 2-7 gameplay prototypes are complete;
 their final art, boss identities and escalating reward table remain future work.
 
-P9 commit 1 was intentionally not mixed into the route-card commit. Until the
-user resumes it, `recover` nodes and existing combat rewards remain unchanged.
-That later commit must independently handle recovery-node removal, the shop-room
-fountain, branch-kind guarantees, combat-gold tuning, and 300-map sampling.
+P9 commit 1 landed 2026-10-09: the `recover` node kind is gone, the depth-4
+shop room has a fountain (fountains are fixed to shop + boss-prep), branch
+depths are combat + elite (+ trait/hardCombat at 2-4 depths), and normal
+combat nodes pay ×1.5 kill gold. The `boss-prep` QC step samples 300 maps for
+these rules; `combat-gold-mult` checks the multiplier.
