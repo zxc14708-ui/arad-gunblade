@@ -58,18 +58,89 @@ slower in the QC browser (game clock 0.14× vs 0.26×); pooled lights bring it t
 ## Art request template (Gemini)
 
 Belt rooms currently reuse the Stage-1 forest floor, wall texture and
-foreground props. Final per-stage belt art should follow `ART_GUIDE.md` §7.
-Use this template when routing a request:
+foreground props. Final per-stage art follows `ART_GUIDE.md` §7 and is
+requested as **separate layers**, never as one finished painting.
+
+### Why layers — reference review (2026-10-09)
+
+The user supplied two reference illustrations (a half-timbered village with a
+smithy/tavern/stone arch, and overgrown forest ruins with an arch). Measured
+and judged against the game, neither can be dropped in as-is:
+
+| Problem | Measured / observed | Consequence in game |
+|---|---|---|
+| Side-view perspective | Eye-level horizon at ~55% height, floor stones grow toward the bottom | The game floor is an orthographic 3D plane seen from ~55° above; a perspective floor doubles the perspective and sprites look like they float |
+| Not seamless | Left/right edge colour difference 29–35 vs 4.5–5 between neighbouring columns | A 126-unit room (~4,860 screen px) shows a hard seam every repeat |
+| Size/format | 1671×941 lossy WebP | Spec is lossless PNG, 1920×1080 reference frame; WebP smears pixel edges |
+| Pixel density | "Pixel-style" painting, irregular grid, ~3,500–4,000 colours | Characters/monsters are true pixel art at ~2 screen px per art pixel; the backdrop reads as a different resolution |
+| Lighting/mood | Bright daylight, baked light | Stage 1 is a dark underground forest with fog and torches; baked daylight fights scene lighting |
+| Readability | Dense green foliage | Green goblins blend into mid-ground foliage |
+
+Verdict: the **composition and mood** are good references — village (1) fits
+the town, ruins (2) fit a Stage-1 belt backdrop — but they must be re-made as
+the layers below.
+
+### Layers
+
+| # | Layer | Native art size → delivered PNG | Rules | Code status |
+|---|---|---|---|---|
+| A | Backdrop band (sky, trees, buildings — the top half of a reference) | 960×300 art px → **1920×600** (×2 nearest) | Side view allowed (it stands behind the north wall); left/right edges seamless; opaque; no floor/ground in the band; dungeon version pre-darkened | Not wired — needs an unlit vertical plane behind the north wall (`Room.ts`) |
+| B | Floor tile (dirt, flagstones) | 64×64 art px → **256×256** (×4 nearest) | Seen from straight above, **no perspective**; seamless on all four sides; low contrast so sprites read | Wired (`art.floor`, 2×2 world units per tile — world size may be retuned to match density) |
+| C | North wall strip | 128×64 art px → **512×256** (×4 nearest) | Seamless left/right; top edge meets layer A | Not wired (wall is a generated texture) |
+| D | Props (smithy, arch, barrels, woodpile, stalls, ruins pillars, bushes) | each on its own canvas, ×2 nearest | One prop per PNG, transparent, bottom-centre anchor, real aspect ratio | Ruins/bush/tree slots wired; buildings need `Interactable`/decor wiring |
+
+Common rules for every layer:
+
+- 1 art pixel = 2 screen px (characters/monsters are 1.8–2.1); export with
+  nearest-neighbour scaling only.
+- PNG, RGBA for props, no lossy formats, no anti-aliasing or gradients.
+- ≤ 64 colours per layer; keep mid-ground foliage hue away from enemy greens
+  (goblins) or lower its saturation.
+- Stage 1 / dungeon: dark variant (night, torch-lit); town: daylight is fine.
+- Check the seam by placing two copies side by side before delivery.
+
+### Request form
 
 ```
-[횡스크롤 전투방 배경 요청]
-스테이지: N (테마: …)
+[배경 레이어 요청]
+대상: 마을 / 스테이지 N 횡스크롤 전투방 (테마: …)
+참조 이미지: (첨부) — 구도·분위기만 참조, 그대로 쓰지 않음
 산출물:
-  1. 바닥 타일  — 256×256 PNG, 좌우·상하 이음매 없이 반복(월드 2×2 단위)
-  2. 북쪽 벽 띠 — 512×256 PNG, 좌우 이음매 없이 반복(월드 4×2 단위)
-     (현재 벽은 코드 생성 텍스처 — 납품되면 Room.ts 배선 필요)
-  3. 구간 장식 세트 — 나무 2·덤불 2·바위 2·덩굴 1, 하단 중앙 기준, 투명 배경
-     (현재 크기: 나무 4.2×5.6, 덤불 2.6×1.75, 바위 1.5×2, 덩굴 3.6×1.8 월드 단위)
-  4. (선택·미구현) 원경 패럴랙스 띠 — 1920×540 PNG, 좌우 이음매 없음, 불투명
-확인: ART_GUIDE.md §8 체크리스트 + §7 횡스크롤 항목
+  A. 원경 띠   — 960×300 원본 → 1920×600 PNG(×2 최근접), 좌우 이음매 없음, 불투명,
+                 바닥 없이 하늘·나무·건물만, (던전) 어두운 버전
+  B. 바닥 타일 — 64×64 원본 → 256×256 PNG(×4 최근접), 정수리 시점(원근 없음),
+                 상하좌우 이음매 없음, 저대비
+  C. 북쪽 벽 띠 — 128×64 원본 → 512×256 PNG(×4 최근접), 좌우 이음매 없음,
+                 윗변이 원경 띠와 자연스럽게 이어질 것
+  D. 소품      — 1개당 1파일, 투명 배경, 하단 중앙 기준, ×2 최근접 (목록: …)
+공통: 1아트픽셀 = 화면 2px, 레이어당 64색 이하, 안티앨리어싱·그라데이션 금지,
+      적(녹색 고블린)과 겹치는 채도 높은 녹색 피하기
+확인: ART_GUIDE.md §8 체크리스트 + §7 배경 항목, 두 장 이어 붙여 이음매 확인
+```
+
+### Ready-to-send requests
+
+```
+[배경 레이어 요청 — 마을]
+대상: 마을 (현재 숲 소품 조합 임시본 대체)
+참조 이미지: 반목조 마을(대장간·선술집·돌 아치), 2026-10-09 사용자 제공
+산출물:
+  A. 원경 띠 — 대장간·선술집 2층 건물·아치·뒤편 숲과 언덕 위 성채, 낮
+  B. 바닥 타일 — 다져진 흙 + 드문드문 납작한 돌판
+  C. 북쪽 벽 띠 — 낮은 나무 울타리 + 돌 기단
+  D. 소품 — 모루, 나무통, 장작더미, 천막 노점, 걸이 간판(모루/맥주잔), 랜턴 기둥
+공통·확인: 위 양식과 동일
+```
+
+```
+[배경 레이어 요청 — 스테이지 1 횡스크롤 전투방]
+대상: 스테이지 1 "검은 숲 지하" 일반 전투방(126×16, 3구간)
+참조 이미지: 덩굴 덮인 숲 유적·아치, 2026-10-09 사용자 제공
+산출물:
+  A. 원경 띠 — 거목·무너진 석벽·덩굴 아치, 어두운 밤/지하 버전(횃불 빛 없이 어둡게)
+  B. 바닥 타일 — 이끼 낀 흙 + 깨진 돌판(현재 forest_floor_room.png 대체)
+  C. 북쪽 벽 띠 — 이끼 덮인 석벽, 횃불 걸이 자리 2곳(42단위마다)
+  D. 소품 — 무너진 석주 2종, 굵은 뿌리 2종, 덤불 2종, 바위 2종, 덩굴 1종
+      (현재 장식 슬롯: 나무 4.2×5.6, 덤불 2.6×1.75, 바위 1.5×2, 덩굴 3.6×1.8 월드 단위)
+공통·확인: 위 양식과 동일
 ```
