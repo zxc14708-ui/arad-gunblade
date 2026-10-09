@@ -1,6 +1,11 @@
 import { CONFIG } from '../config'
 import { GUNS, SWORDS, WeaponDef, weaponById } from './Weapons'
 
+/** 일반(common) 등급 무기는 처음부터 지급한다 — 해금 상점(weaponViews)에서도
+ * 같은 기준으로 빠지므로, 기본 해금 목록을 등급에서 파생해 둘이 어긋나지 않게 한다
+ * (한손검 rare→common, 2026-10-09 사용자 승인). */
+const STARTER_WEAPON_IDS = [...GUNS, ...SWORDS].filter((weapon) => weapon.rarity === 'common').map((weapon) => weapon.id)
+
 export type CrystalKind = 'faint' | 'decent' | 'strong'
 export type MetaUpgradeId = 'gunMastery' | 'swordMastery' | 'vitality' | 'revive' | 'ward'
 
@@ -64,7 +69,7 @@ function freshProfile(): MetaProfile {
     crystals: { faint: 0, decent: 0, strong: 0 },
     tokens: 0,
     upgrades: { gunMastery: 0, swordMastery: 0, vitality: 0, revive: 0, ward: 0 },
-    unlockedWeapons: ['m1911', 'katana'],
+    unlockedWeapons: [...STARTER_WEAPON_IDS],
     loadout: { gunId: 'm1911', swordId: 'katana' },
   }
 }
@@ -207,7 +212,7 @@ export class MetaProgression {
       }
       const validIds = new Set([...GUNS, ...SWORDS].map((weapon) => weapon.id))
       const storedUnlocks = Array.isArray(stored.unlockedWeapons) ? stored.unlockedWeapons.filter((id): id is string => typeof id === 'string' && validIds.has(id)) : []
-      profile.unlockedWeapons = [...new Set(['m1911', 'katana', ...storedUnlocks])]
+      profile.unlockedWeapons = [...new Set([...STARTER_WEAPON_IDS, ...storedUnlocks])]
       const gunId = stored.loadout?.gunId
       const swordId = stored.loadout?.swordId
       if (typeof gunId === 'string' && profile.unlockedWeapons.includes(gunId) && weaponById(gunId)?.kind === 'gun') profile.loadout.gunId = gunId

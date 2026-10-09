@@ -83,7 +83,7 @@ export const SWORDS: SwordDef[] = [
     damage: 27, cooldown: 0.42, range: 5.4, arc: Math.PI * 0.7, knockback: 9, lunge: 4.5,
   },
   {
-    kind: 'sword', id: 'daggers', name: '한손검', icon: '🗡️', rarity: 'rare',
+    kind: 'sword', id: 'daggers', name: '한손검', icon: '🗡️', rarity: 'common',
     desc: '초고속 연속 베기 · 짧은 사거리',
     damage: 12, cooldown: 0.18, range: 4.05, arc: Math.PI * 0.6, knockback: 4, lunge: 6,
   },

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-09T13:30:00+09:00",
+  "updated_at": "2026-10-09T14:30:00+09:00",
   "roles": {
     "orchestrator": {
       "agent": "Claude",
@@ -21,15 +21,6 @@
     }
   },
   "active_tasks": [
-    {
-      "task_id": "T-0002",
-      "title": "이슈 6 검 계열 등급 재정렬안 — 선택지 (a)/(b)/(c) 결정 대기",
-      "state": "design_needed",
-      "owner_role": "orchestrator",
-      "design_log_ref": "DESIGN_LOG.md#오케스트레이터-점검-결과-2026-10-09",
-      "created_at": "2026-10-09T11:30:00+09:00",
-      "updated_at": "2026-10-09T13:30:00+09:00"
-    },
     {
       "task_id": "T-0006",
       "title": "P11 각인 리워크 목표·범위 결정 (메타데이터 13/26 미기입)",

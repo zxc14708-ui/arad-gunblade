@@ -331,7 +331,20 @@ const STEPS = [
       const head = await p.textContent('#metaHead').catch(() => '')
       const unlocked = await p.locator('#metaItems .shop-item.sold').count()
       if (head !== '모험가 상점') return `상점 제목이 예상과 다름 ('${head}')`
-      return unlocked > 0 ? null : '무기 설계도가 해금 완료 상태로 갱신되지 않음'
+      if (unlocked === 0) return '무기 설계도가 해금 완료 상태로 갱신되지 않음'
+      // 일반(common) 무기는 기본 지급 — 처음부터 장착 가능하고 해금 상점엔 없어야 한다
+      // (한손검 rare→common 이후 "상점에도 없고 해금도 안 된" 무기가 생기지 않게).
+      const starter = await p.evaluate(() => {
+        const meta = window.__game.meta
+        const loadoutIds = [...meta.loadoutWeapons().guns, ...meta.loadoutWeapons().swords].map((w) => w.id)
+        const shopIds = meta.weaponViews().map((v) => v.def.id)
+        return { loadoutIds, shopIds }
+      })
+      for (const id of ['m1911', 'katana', 'daggers']) {
+        if (!starter.loadoutIds.includes(id)) return `기본 지급 무기 ${id}가 장착 목록에 없음`
+        if (starter.shopIds.includes(id)) return `기본 지급 무기 ${id}가 해금 상점에 나옴`
+      }
+      return null
     },
     async after(p) {
       await p.keyboard.press('Escape')
