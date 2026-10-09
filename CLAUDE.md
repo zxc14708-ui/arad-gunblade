@@ -33,9 +33,10 @@ in this project was visual and passed the type check: character frames sliced
 with a neighbour's sword in them, effect textures uploading black, the muzzle
 flash drawn behind the head, boss rewards never appearing.
 
-`npm run qc` builds, serves, and drives a real browser through fifteen steps
-(town idle/walk, shoot, reload, slash, dash, settings, dungeon entry, combat,
-boss charge/slam/phase-2, six elite affixes), then writes to `qc-out/`:
+`npm run qc` builds, serves, and drives a real browser through ~48 scenarios
+(town, shoot/reload/slash/dash, settings, route cards, combat, side-scrolling
+belt room, sigils/sets/stun, boss patterns, elite affixes, shop, run reset),
+then writes to `qc-out/`:
 
 - `contact.png` — every step on one page. **Look at this before claiming a
   change works.**

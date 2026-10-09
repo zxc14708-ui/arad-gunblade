@@ -51,7 +51,9 @@ committed snapshot doesn't match the code.
 - `RunState.ts` builds the connected room map. Cleared rooms never respawn
   enemies or duplicate rewards.
 - `Room.ts` owns room bounds and entrances; `HUD.ts` owns the minimap.
-- Enemy density comes from `CONFIG.spawn.roomDensity`.
+- Enemy density comes from `CONFIG.spawn.roomDensity`. Normal combat nodes are
+  side-scrolling belt rooms (`CONFIG.belt`, `docs/systems/belt-rooms.md`) that
+  split the same enemy list into locked sections.
 - Right click is gameplay-only; keep the browser context menu disabled.
 - The camera must never reveal floor-edge black voids.
 

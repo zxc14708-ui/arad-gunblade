@@ -518,6 +518,23 @@ canvas.pixelated {
 .route-proceed:active { transform: translate(-50%, 3px); }
 .route-proceed:disabled { cursor: default; filter: none; }
 .route-proceed[hidden] { display: none; }
+/* 횡스크롤 전투방 — 구간 정리 후 다음 구간으로 가라는 안내(오른쪽 중앙, 깜빡임) */
+.belt-go {
+  position: absolute;
+  right: 72px;
+  top: 46%;
+  z-index: 21;
+  color: #ffe58a;
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 10px rgba(255, 196, 60, 0.7), 0 3px 4px #000;
+  pointer-events: none;
+  animation: belt-go-blink 0.8s steps(2, end) infinite;
+}
+.belt-go span { font-size: 38px; }
+.belt-go[hidden] { display: none; }
+@keyframes belt-go-blink { 50% { opacity: 0.25; } }
 /* '예비 탄창'(작업 지시 P10) 잔여 충전 — 미보유 시 HUD.setReserveMag()가 hidden 처리. */
 .reserve-mag {
   font-size: 10px;

@@ -16,6 +16,9 @@ task-specific document listed in `docs/INDEX.md`.
   overlay opens. Shop/boss-prep facilities stay interactive until the
   player presses `다음 경로 보기`. The old depth-0 lobby is a hidden logical
   root only, preserving map generation/QC without adding a visible room.
+- Normal combat rooms are a side-scrolling pilot (126×16, three locked
+  sections, `GO ▶`, route cards after the last section) — see
+  `docs/systems/belt-rooms.md`. Other room kinds are unchanged.
 - Every loadout currently uses the finished default character art. Per-weapon
   visuals are paused until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.
@@ -28,6 +31,10 @@ task-specific document listed in `docs/INDEX.md`.
   in-game scale in the QC contact sheet.
 
 ## Current open work
+
+Belt-room pilot (2026-10-09) awaits playtest; its open follow-ups are listed in
+`DESIGN_LOG.md` "횡스크롤 전환" and per-stage belt background art has a request
+template in `docs/systems/belt-rooms.md`.
 
 Per-weapon appearance, projectile, and melee-effect art is deliberately disabled
 until matched final sheets arrive. Stage 2-7 gameplay prototypes are complete;

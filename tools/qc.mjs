@@ -438,7 +438,11 @@ const STEPS = [
     async after(p) {
       // 클릭 경로도 실제로 한 번 통과시킨 뒤, 이후 24개 던전 시나리오는
       // 경로 모달 재출현 없이 같은 방을 결정적 전투 샌드박스로 사용한다.
-      await chooseRouteCard(p, { index: 0, via: 'click' })
+      // 샌드박스는 일반 전투(횡스크롤 126×16)가 아닌 카드를 고른다 — 기존
+      // 시나리오의 좌표·경계 검사는 42×30 방 기준이다(엘리트는 매 깊이에 있다).
+      const cards = await readRouteCards(p)
+      const sandboxIndex = Math.max(0, cards.findIndex((card) => card.planKind !== 'combat'))
+      await chooseRouteCard(p, { index: sandboxIndex, via: 'click' })
       await p.evaluate(() => window.__game.debugStabilizeRouteSandbox())
     },
   },
@@ -670,6 +674,11 @@ const STEPS = [
         g.settingsOpen = false
         g.player.alive = true
         g.player.hp = g.player.stats.maxHp
+        // 앞 단계(route-choice)의 무작위 보상 각인을 비운다 — 예컨대 '총검일체'를
+        // 받았으면 검→총 전환 순간 +15%가 붙어 배율 검증이 흔들린다(실측 1.15배).
+        g.player.sigilGrades.clear()
+        g.player.recomputeSigilMods()
+        g.player.hybridStanceTimer = 0
 
         // ── 발도참(sword) — 0.5초 이상 정지 후 첫 베기 250% ──
         g.debugClearEnemies()
@@ -3171,6 +3180,117 @@ const STEPS = [
     },
   },
   {
+    name: 'belt-room',
+    needs: 'dungeon',
+    what: '횡스크롤 전투방(시범) — 126×16 방, 왼쪽 입장, 구간 잠금(플레이어·카메라), 구간 안 웨이브 스폰, 정리 후 GO 표시, 다음 구간 진입 시 스크롤·재잠금, 마지막 구간 뒤 경로 카드',
+    async run(p) {
+      await dismissLevelUp(p)
+      const err = await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const node = [...g.run.nodes.values()].find((n) => n.plan.kind === 'combat' && n.plan.depth > 1 && !n.cleared && n.plan.enemies.length >= 3)
+        if (!node) return '아직 클리어하지 않은 일반 전투방이 맵에 없음'
+        if (!g.debugLoadRoom(node.plan.id, false)) return '일반 전투방 직접 로드 실패'
+        g.player.invuln = 999 // 웨이브 진행만 본다 — 접촉 피해로 죽어 시계가 멈추지 않게
+        window.__qcBelt = { roomId: node.plan.id, enemyTotal: node.plan.enemies.length }
+        return null
+      })
+      if (err) throw new Error(err)
+      // 구간 웨이브가 전부 스폰될 때까지(대기열이 빌 때까지) 기다린 뒤 측정·처치한다.
+      const waveSpawned = (i) => p.waitForFunction(
+        (idx) => { const g = window.__game; return g.belt?.active === idx && g.spawnQueue.length === 0 && g.enemies.length > 0 },
+        i, { timeout: 90000 },
+      )
+      await waveSpawned(0)
+      const wave0 = await p.evaluate(() => {
+        const g = window.__game
+        const b = g.belt
+        const sec = b?.sections?.[0]
+        // 잠긴 구간 오른쪽 밖으로 밀어도 구간 안으로 돌아와야 한다
+        g.player.pos.x = 0
+        g.room.clamp(g.player.pos, 0.6)
+        g.clampToBeltLock(g.player.pos, 0.6)
+        const r = {
+          w: g.room.w, d: g.room.d, minX: g.room.bounds.minX,
+          active: b?.active, sections: b?.sections?.length,
+          secMaxX: sec?.maxX, secMinX: sec?.minX,
+          playerX: g.player.pos.x,
+          enemyXs: g.enemies.map((e) => e.pos.x),
+          camX: g.camTarget().x,
+          go: !document.querySelector('#beltGo').hidden,
+        }
+        g.player.pos.x = (sec?.minX ?? 0) + 8
+        for (const e of [...g.enemies]) e.takeDamage(1e9, 'ranged')
+        return r
+      })
+      // 시계 배속과 무관하게 "적이 다 사라짐"이 처리될 때까지 기다린다(구간 해제 판정은 그다음 프레임).
+      await p.waitForFunction(() => window.__game.enemies.length === 0 && window.__game.belt?.active !== 0, null, { timeout: 90000 }).catch(() => {})
+      const cleared0 = await p.evaluate(() => {
+        const g = window.__game
+        return { active: g.belt?.active, cleared: g.belt?.sections?.[0]?.cleared, go: !document.querySelector('#beltGo').hidden, enemies: g.enemies.length, state: g.state }
+      })
+      await p.screenshot({ path: 'qc-out/belt-go.png' })
+      // 다음 구간으로 걸어 들어간다
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.pos.x = g.belt.sections[1].minX + 6
+      })
+      await waveSpawned(1)
+      const wave1 = await p.evaluate(() => {
+        const g = window.__game
+        const sec = g.belt?.sections?.[1]
+        return { active: g.belt?.active, go: !document.querySelector('#beltGo').hidden, secMinX: sec?.minX, secMaxX: sec?.maxX, enemyXs: g.enemies.map((e) => e.pos.x), camX: g.camTarget().x }
+      })
+      await p.evaluate((v) => { Object.assign(window.__qcBelt, v) }, { wave0, cleared0, wave1 })
+    },
+    check: async (p) => {
+      const r = await p.evaluate(() => window.__qcBelt)
+      if (!r?.wave0) return '결과 없음'
+      const { wave0: w0, cleared0: c0, wave1: w1 } = r
+      if (w0.w !== 126 || w0.d !== 16) return `횡스크롤 전투방 크기가 126×16이 아님 (${w0.w}×${w0.d})`
+      if (w0.sections !== 3) return `구간 수가 3이 아님 (${w0.sections})`
+      if (w0.active !== 0) return `입장 직후 첫 구간이 잠기지 않음 (active ${w0.active})`
+      if (!(w0.playerX <= w0.secMaxX)) return `잠긴 구간 밖으로 나가짐 (x ${w0.playerX.toFixed(1)} > 구간 끝 ${w0.secMaxX.toFixed(1)})`
+      if (w0.enemyXs.length === 0) return '첫 구간 웨이브가 스폰되지 않음'
+      if (w0.enemyXs.some((x) => x < w0.secMinX || x > w0.secMaxX)) return `첫 웨이브가 구간 밖에서 스폰됨 (${w0.enemyXs.map((x) => x.toFixed(1)).join(',')})`
+      if (w0.go) return '웨이브 진행 중인데 GO 표시가 보임'
+      if (!(c0.cleared && c0.active === -1 && c0.go)) return `첫 구간 정리 후 잠금 해제·GO 표시가 안 됨 (${JSON.stringify(c0)})`
+      if (c0.state !== 'play') return `첫 구간만 정리했는데 방 클리어로 넘어감 (state ${c0.state})`
+      if (w1.active !== 1) return `다음 구간에 들어섰는데 잠기지 않음 (active ${w1.active})`
+      if (w1.go) return '다음 구간 잠금 뒤에도 GO 표시가 남음'
+      if (w1.enemyXs.length === 0) return '두 번째 구간 웨이브가 스폰되지 않음'
+      if (w1.enemyXs.some((x) => x < w1.secMinX || x > w1.secMaxX)) return '두 번째 웨이브가 구간 밖에서 스폰됨'
+      if (!(w1.camX > w0.camX + 20)) return `구간 이동에 카메라가 오른쪽으로 스크롤되지 않음 (${w0.camX.toFixed(1)} → ${w1.camX.toFixed(1)})`
+
+      // 나머지 구간 정리 → 마지막 구간 뒤 경로 카드
+      for (const idx of [1, 2]) {
+        await p.evaluate((i) => {
+          const g = window.__game
+          if (g.belt && g.belt.active !== i) g.player.pos.x = g.belt.sections[i].minX + 6
+        }, idx)
+        await p.waitForFunction(
+          (i) => { const g = window.__game; return g.belt?.active === i && g.spawnQueue.length === 0 && g.enemies.length > 0 },
+          idx, { timeout: 90000 },
+        )
+        await p.evaluate(() => { for (const e of [...window.__game.enemies]) e.takeDamage(1e9, 'ranged') })
+        await p.waitForFunction((i) => window.__game.enemies.length === 0 && (!window.__game.belt || window.__game.belt.active !== i), idx, { timeout: 90000 }).catch(() => {})
+      }
+      await p.waitForFunction(() => window.__game.state === 'route', null, { timeout: 90000 }).catch(() => {})
+      const end = await p.evaluate(() => ({ belt: window.__game.belt, state: window.__game.state, routeShown: document.querySelector('#routeOv')?.classList.contains('show') }))
+      if (end.belt) return '세 구간을 모두 정리했는데 횡스크롤 상태가 남음'
+      if (!(end.state === 'route' && end.routeShown)) return `마지막 구간 정리 뒤 경로 카드가 뜨지 않음 (state ${end.state})`
+      return null
+    },
+    async after(p) {
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.invuln = 0
+        g.debugClearEnemies()
+        g.debugStabilizeRouteSandbox()
+      })
+    },
+  },
+  {
     name: 'trait-panel-axis',
     what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 35종을 전부 보유해도 패널이 화면을 넘지 않는가, 켜진 세트 표시',
     async run(p) {
@@ -3551,7 +3671,10 @@ async function ensureRouteNotBlocking(p) {
   await dismissLevelUp(p)
   const state = await p.evaluate(() => window.__game?.state).catch(() => null)
   if (state === 'route' || await routeVisible(p)) {
-    await chooseRouteCard(p, { index: 0, via: 'click' })
+    // 공용 전투 샌드박스는 42×30 방이어야 한다 — 횡스크롤 전투(combat)가 아닌 카드를 고른다.
+    const cards = await readRouteCards(p)
+    const index = Math.max(0, cards.findIndex((card) => card.planKind !== 'combat'))
+    await chooseRouteCard(p, { index, via: 'click' })
   }
   await p.evaluate(() => window.__game.debugStabilizeRouteSandbox?.())
 }

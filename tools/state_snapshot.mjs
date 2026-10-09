@@ -194,6 +194,7 @@ function writeSnapshot(m) {
   L.push('')
   L.push(`스테이지 ${STAGES.length}개: ${STAGES.map((s) => s.name).join(', ')}`)
   L.push('방 구성(작업 지시 P7 커밋2, P9 커밋1 개정) = 선형 분기 깊이 9 고정: 1·2·3·5·6·7 분기(전투+엘리트, 각인계 노드가 있는 2~4개 깊이는 3갈래) · 4 상점(분수) · 8 보스 준비방(분수) · 9 보스.')
+  L.push(`일반 전투 노드 = 횡스크롤 시범 방 ${CONFIG.belt.width}×${CONFIG.belt.depth}, ${CONFIG.belt.sections}구간 잠금 웨이브(적 총수는 방 밀도 공식 그대로, 구간마다 나눠 등장) · 그 외 전투계 방은 스테이지 roomSize(${STAGES[0].roomSize.combat.w}×${STAGES[0].roomSize.combat.d}).`)
   L.push('')
   L.push(`- 제련소: ${ladder(e.dungeonForgeBasePrice, e.dungeonForgePriceRatio, 3).join(' → ')} G (런 단위 누적)`)
   L.push(`- 분수: 첫 사용 무료, 이후 ${ladder(e.fountainBasePrice, e.fountainPriceRatio, 3).join(' → ')} G`)

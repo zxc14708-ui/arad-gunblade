@@ -22,6 +22,13 @@ Last updated: 2026-10-09
   Stage 2 enemy set plus temporary Stages 3-7 environments/roster
   (`docs/systems/stages-2-7.md`); stage themes/final boss identities remain
   open (`DESIGN_LOG.md`).
+- **Side-scrolling combat rooms (pilot, 2026-10-09).** Normal `combat` nodes
+  are 126×16 belt rooms entered from the west: three 42-unit sections lock the
+  player and camera until that section's wave (a third of the room's enemies)
+  is cleared, a blinking `GO ▶` points onward, and route cards open after the
+  last section. Camera angle and 360° aim are unchanged; other room kinds stay
+  single-screen. Details: `docs/systems/belt-rooms.md`; open follow-ups in
+  `DESIGN_LOG.md` "횡스크롤 전환".
 - **No active skills (Q/E/R) and no experience/leveling.** Combat is
   shoot/slash/dash/reload only. Trait acquisition comes from chests, elite
   kills, the dungeon forge, and map reward nodes (각인/상위 전투) — leveling
@@ -114,6 +121,9 @@ Last updated: 2026-10-09
   (`gameover` stops the clock). Fixed 2026-10-09 by setting the post-hit
   invulnerability timer for that step; `waitGame()` failures now also print
   `state`/`settingsOpen`/player HP so a stalled clock names its cause.
+- The shared combat sandbox used by most dungeon QC scenarios is a 42×30
+  non-combat room on purpose (`route-choice` picks a non-`combat` card); the
+  belt room is covered by its own `belt-room` scenario.
 - QC needs Python Pillow + NumPy for `tools/measure_sprites.py`
   (`pip install pillow numpy`); a fresh sandbox without them fails the asset
   integrity gate with `ModuleNotFoundError: PIL`.
@@ -130,18 +140,22 @@ Last updated: 2026-10-09
 
 ## Next approved implementation work
 
-1. Integrate per-weapon visuals only after matching final motion sheets are
+1. Playtest the belt-room pilot, then decide the `DESIGN_LOG.md` "횡스크롤
+   전환" follow-ups (wave size, extending to other room kinds, route-card
+   timing, issue-6 re-measurement) and request per-stage belt background art
+   (template in `docs/systems/belt-rooms.md`).
+2. Integrate per-weapon visuals only after matching final motion sheets are
    delivered, then visually QC each loadout.
-2. Replace the Stage 2-7 palette placeholders with final theme-specific art
+3. Replace the Stage 2-7 palette placeholders with final theme-specific art
    and name/illustrate each boss. Escalating boss reward contents remain open.
-3. Add final weapon/projectile/melee-effect art once the matching sheets are
+4. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
-4. All 2026-10-09 orchestrator-review items are decided and implemented
+5. All 2026-10-09 orchestrator-review items are decided and implemented
    (P10 numbers, '철벽' rename, issue-6 한손검 starter, P11 families/partner
    sigils, stun sigils, P9 commit 1, set bonuses) — history in `DESIGN_LOG.md`
    ("오케스트레이터 점검 결과"). Synergy weights and set values await playtest
    feedback.
-5. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
+6. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
    항목"): 4-way job advancement (전직), locking a run to one weapon family
    at start, and character/monster palette recolor variants.
 

@@ -115,6 +115,8 @@ export class HUD {
 
       <button class="route-proceed" id="routeContinue" type="button" hidden>다음 경로 보기</button>
 
+      <div class="belt-go" id="beltGo" hidden>GO <span>▶</span></div>
+
       <div id="bossBar">
         <div class="name">◆ 마계의 지배자 ◆</div>
         <div class="bar"><div class="fill" id="bossFill" style="width:100%"></div></div>
@@ -682,6 +684,11 @@ export class HUD {
     this.routeContinue.disabled = false
     this.routeContinue.hidden = false
     this.routeContinueLocked = false
+  }
+
+  /** 횡스크롤 전투방 — 현재 구간을 정리했고 다음 구간이 남았을 때 "GO ▶" 표시. */
+  setBeltGo(show: boolean) {
+    this.q('#beltGo').hidden = !show
   }
 
   hideRouteContinue() {

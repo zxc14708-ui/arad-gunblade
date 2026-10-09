@@ -11,6 +11,8 @@ const FLOOR_BLEED = 28
 // 카메라와 가까운 남쪽 벽은 화면 아래 전경을 차지하므로, 전투 개체가 그 뒤로
 // 들어가 완전히 가려지지 않도록 플레이 가능 경계를 안쪽으로 당긴다.
 const FOREGROUND_SAFE_INSET = 2.4
+// 장식·횃불 한 세트가 담당하는 방 폭 — 기존 단일 화면 전투방(42) 기준.
+const SEGMENT_WIDTH = 42
 
 export type RoomVisualKind = 'dungeon' | 'boss' | 'town'
 
@@ -63,6 +65,10 @@ export class Room {
   private scene: THREE.Scene
   private torchMap: THREE.Texture | null = null
   private torchTime = 0
+  /** 횃불 위치(x)와 조명 — 조명은 최대 2개만 만들고 카메라에 가까운 횃불로
+   * 옮겨 다닌다(가로로 긴 방에서 PointLight 6개가 렌더 비용을 크게 늘렸다). */
+  private torchXs: number[] = []
+  private torchLights: THREE.PointLight[] = []
 
   /** size/art는 호출부(Game.ts)가 스테이지 정의에서 뽑아 넘긴다 — Room 자신은
    * 더 이상 ASSET.stage1을 직접 참조하지 않는다(작업 지시 커밋1). art는
@@ -125,6 +131,14 @@ export class Room {
     addWall(-halfW - WT / 2, 0, WT, this.d) // 서
     addWall(halfW + WT / 2, 0, WT, this.d) // 동
 
+    // 가로로 긴 방(횡스크롤 전투방)은 화면 한 장 폭(SEGMENT_WIDTH) 단위로
+    // 나눠 같은 장식 세트를 구간마다 반복한다. 기존 방(폭 60 이하)은 구간이
+    // 1개라 배치가 예전과 똑같다.
+    const segments = Math.max(1, Math.round(this.w / SEGMENT_WIDTH))
+    const segW = this.w / segments
+    const segHalf = segW / 2
+    const segCenters = Array.from({ length: segments }, (_, i) => -halfW + segHalf + i * segW)
+
     if (useForestBackdrop) {
       const addDecor = (path: string, x: number, z: number, w: number, h: number) => {
         const mat = noOutline(new THREE.MeshBasicMaterial({ map: loadTex(path), transparent: true, depthWrite: false, side: THREE.DoubleSide }))
@@ -134,13 +148,17 @@ export class Room {
         this.group.add(decor)
       }
       const fg = art!.foreground
-      addDecor(fg.treeA, -halfW + 4, -halfD + 4.2, 4.2, 5.6)
-      addDecor(fg.treeB, halfW - 4, -halfD + 4.2, 4.2, 5.6)
-      addDecor(fg.bushA, -halfW + 3.2, halfD - 2.3, 2.6, 1.75)
-      addDecor(fg.bushB, halfW - 3.2, halfD - 2.3, 2.6, 1.75)
-      addDecor(fg.stoneA, -halfW + 3, -1.4, 1.5, 2)
-      addDecor(fg.stoneB, halfW - 3, 1.4, 1.5, 2)
-      addDecor(fg.vineTop, 0, -halfD + 1.8, 3.6, 1.8)
+      // 세로 폭이 좁은 방은 바위를 벽 쪽으로 붙여 동선을 막지 않게 한다.
+      const stoneZ = Math.min(1.4, halfD * 0.2)
+      for (const cx of segCenters) {
+        addDecor(fg.treeA, cx - segHalf + 4, -halfD + 4.2, 4.2, 5.6)
+        addDecor(fg.treeB, cx + segHalf - 4, -halfD + 4.2, 4.2, 5.6)
+        addDecor(fg.bushA, cx - segHalf + 3.2, halfD - 2.3, 2.6, 1.75)
+        addDecor(fg.bushB, cx + segHalf - 3.2, halfD - 2.3, 2.6, 1.75)
+        addDecor(fg.stoneA, cx - segHalf + 3, -stoneZ, 1.5, 2)
+        addDecor(fg.stoneB, cx + segHalf - 3, stoneZ, 1.5, 2)
+        addDecor(fg.vineTop, cx, -halfD + 1.8, 3.6, 1.8)
+      }
     } else {
       this.addTownVillageDecor(halfW, halfD)
     }
@@ -152,10 +170,14 @@ export class Room {
       const torchMat = noOutline(
         new THREE.SpriteMaterial({ map: this.torchMap, transparent: true, depthWrite: false }),
       )
-      for (const tx of [-halfW * 0.55, halfW * 0.55]) {
+      this.torchXs = segCenters.flatMap((cx) => [cx - segHalf * 0.55, cx + segHalf * 0.55])
+      for (const tx of this.torchXs.slice(0, 2)) {
         const light = new THREE.PointLight(0xff8030, 8, 20, 2)
         light.position.set(tx, 3.4, -halfD + 0.5)
         this.group.add(light)
+        this.torchLights.push(light)
+      }
+      for (const tx of this.torchXs) {
         const torch = new THREE.Sprite(torchMat)
         torch.scale.set(1.15, 1.7, 1)
         torch.position.set(tx, 2.6, -halfD + 0.5)
@@ -230,9 +252,13 @@ export class Room {
     this.group.add(light)
   }
 
-  /** 횃불 불꽃 애니메이션 */
-  update(dt: number) {
+  /** 횃불 불꽃 애니메이션 + (횃불이 3개 이상인 방) 조명을 카메라 가까운 횃불로 이동 */
+  update(dt: number, viewX = 0) {
     if (!this.torchMap) return
+    if (this.torchXs.length > this.torchLights.length) {
+      const nearest = [...this.torchXs].sort((a, b) => Math.abs(a - viewX) - Math.abs(b - viewX)).slice(0, this.torchLights.length).sort((a, b) => a - b)
+      this.torchLights.forEach((l, i) => { l.position.x = nearest[i] })
+    }
     this.torchTime += dt
     this.torchMap.offset.x = (Math.floor(this.torchTime * 7) % TORCH_FRAMES) / TORCH_FRAMES
   }

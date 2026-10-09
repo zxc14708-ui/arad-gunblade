@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-10T00:00:00+09:00",
+  "updated_at": "2026-10-10T01:00:00+09:00",
   "roles": {
     "orchestrator": {
       "agent": "Claude",
@@ -20,7 +20,26 @@
       "note": "Runs today as an internal Orchestrator step. Can move to a dedicated agent later by changing only this entry - see .agent/ROUTING.md."
     }
   },
-  "active_tasks": [],
+  "active_tasks": [
+    {
+      "task_id": "T-0011",
+      "title": "횡스크롤 전투방 시범 플레이 후 후속 결정(웨이브 적 수·적용 범위 확대·경로 카드 시점·이슈 6 재계측)",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "DESIGN_LOG.md#횡스크롤-전환-2026-10-09",
+      "created_at": "2026-10-10T01:00:00+09:00",
+      "updated_at": "2026-10-10T01:00:00+09:00"
+    },
+    {
+      "task_id": "T-0012",
+      "title": "스테이지별 횡스크롤 배경 아트 요청(Gemini) — 양식 docs/systems/belt-rooms.md",
+      "state": "design_needed",
+      "owner_role": "orchestrator",
+      "design_log_ref": "docs/systems/belt-rooms.md#art-request-template-gemini",
+      "created_at": "2026-10-10T01:00:00+09:00",
+      "updated_at": "2026-10-10T01:00:00+09:00"
+    }
+  ],
   "last_qc_run": {
     "task_id": "T-0004",
     "result": "passed",

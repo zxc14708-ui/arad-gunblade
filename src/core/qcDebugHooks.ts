@@ -43,7 +43,10 @@ interface GameInternals {
     hideRouteChoices?: () => void
     hideRouteContinue?: () => void
     /** routeContinue 명칭으로 정리되기 전 작업 트리와도 QC 훅이 호환되게 한다. */
+    setBeltGo(show: boolean): void
   }
+  /** 횡스크롤 전투방 구간 상태(Game.belt) — QC는 비우기만 한다. */
+  belt: unknown
   mode: 'town' | 'dungeon'
   state: string
   roomCleared: boolean
@@ -171,6 +174,8 @@ export function installQcDebugHooks(game: Game) {
     g.hud.hideRouteContinue?.()
     g.state = 'play'
     g.roomCleared = true
+    g.belt = null
+    g.hud.setBeltGo(false)
   }
 
   /**
@@ -333,6 +338,10 @@ export function installQcDebugHooks(game: Game) {
     // 접촉 피해로 player.invuln을 불시에 갱신해 이후 피해 판정 검증을
     // 흔들 수 있다 — 디버그 구간에서는 걷어낸다.
     g.spawnQueue.length = 0
+    // 횡스크롤 전투방의 남은 구간도 걷어낸다 — 안 그러면 다음 구간 적이 다시
+    // 대기열로 들어오고 방 클리어 판정도 영영 나지 않는다.
+    g.belt = null
+    g.hud.setBeltGo(false)
   }
 
   api.debugEnterStage = (stage) => {

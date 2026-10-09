@@ -71,6 +71,11 @@ export class Game {
   private roomCleared = false
   /** 룸 입장 시 순차 스폰 대기열 */
   private spawnQueue: RoomEnemy[] = []
+  /** 횡스크롤 전투방(시범, CONFIG.belt) 진행 상태 — 일반 전투 노드에서만 있다.
+   * 방을 구간으로 나눠 구간마다 적을 나눠 두고, active 구간이 있는 동안은
+   * 플레이어·카메라가 그 구간 안에 잠긴다. */
+  private belt: { sections: { minX: number; maxX: number; enemies: RoomEnemy[]; cleared: boolean }[]; active: number } | null = null
+  private keyLight!: THREE.DirectionalLight
   private slowZones: { position: THREE.Vector3; radius: number; timer: number; multiplier: number; ring: THREE.Mesh }[] = []
   /** '잔재'(고유·레전더리, 작업 지시 P8c4) — 처치 지점에 남는 잔상 공격체.
    * 자체 스프라이트 없이 주기적으로 가장 가까운 적을 타격만 한다(간단한
@@ -161,6 +166,9 @@ export class Game {
     key.shadow.camera.bottom = -s
     key.shadow.bias = -0.0004
     this.scene.add(key)
+    // 가로로 긴 방에서도 그림자가 끊기지 않도록 카메라를 따라 움직인다(render 루프).
+    this.scene.add(key.target)
+    this.keyLight = key
     const rim = new THREE.DirectionalLight(0x6a8cff, 0.85)
     rim.position.set(-15, 14, -22)
     this.scene.add(rim)
@@ -284,6 +292,8 @@ export class Game {
     this.enemies.forEach((e) => this.scene.remove(e.group))
     this.enemies = []
     this.spawnQueue = []
+    this.belt = null
+    this.hud.setBeltGo(false)
     this.slowZones.forEach((z) => {
       this.scene.remove(z.ring)
       z.ring.geometry.dispose()
@@ -404,7 +414,7 @@ export class Game {
       case 'shop':
       case 'rest': return '상점 · 회복 우물 · 제련소'
       default: {
-        const gold = `처치 골드 ×${CONFIG.economy.combatGoldMultiplier}`
+        const gold = `처치 골드 ×${CONFIG.economy.combatGoldMultiplier} · 횡스크롤 ${CONFIG.belt.sections}구간`
         return plan.chests > 0 ? `${gold} · 보물상자` : gold
       }
     }
@@ -476,24 +486,31 @@ export class Game {
     // 'elite'는 스테이지 정의에 크기가 없다 — 기존에도 SIZES['elite'] 미존재로
     // SIZES.combat 폴백이었던 것과 동일하게 'combat' 크기를 쓴다.
     const sizeKey = plan.kind === 'elite' ? 'combat' : plan.kind
-    const size = this.run.cfg.roomSize[sizeKey as keyof typeof this.run.cfg.roomSize] ?? DEFAULT_ROOM_SIZES[sizeKey] ?? DEFAULT_ROOM_SIZES.combat
+    const isBelt = isBeltPlan(plan)
+    const size = isBelt
+      ? { w: CONFIG.belt.width, d: CONFIG.belt.depth }
+      : this.run.cfg.roomSize[sizeKey as keyof typeof this.run.cfg.roomSize] ?? DEFAULT_ROOM_SIZES[sizeKey] ?? DEFAULT_ROOM_SIZES.combat
     this.room = new Room(this.scene, size, visual, this.run.cfg.art)
     this.curPlan = plan
     this.state = 'play'
     this.player.group.visible = true
 
-    // 적 스폰 대기열
+    // 적 스폰 대기열 — 횡스크롤 전투방은 구간별로 나눠 두고, 플레이어가 각
+    // 구간에 들어설 때 그 구간 몫만 대기열에 넣는다(updateBelt).
     const alreadyCleared = this.run.isCurrentCleared()
-    this.spawnQueue = alreadyCleared ? [] : [...plan.enemies]
+    this.belt = isBelt && !alreadyCleared ? this.planBelt(plan.enemies) : null
+    this.spawnQueue = alreadyCleared || this.belt ? [] : [...plan.enemies]
     this.spawnTimer = 0.25
     this.entrySafeTimer = alreadyCleared ? 0 : 1
     if (plan.enemies.length === 0) this.run.markCurrentCleared()
     this.roomCleared = this.run.isCurrentCleared()
 
-    // 보물상자
+    // 보물상자 — 횡스크롤 전투방은 마지막 구간(방 끝)에 둔다.
     for (let i = 0; i < plan.chests; i++) {
       if (this.run.isObjectUsed('chests-opened')) break
-      const p = this.room.randomPoint(5)
+      const p = isBelt
+        ? { x: this.room.bounds.maxX - 6, z: this.room.randomPoint(4).z }
+        : this.room.randomPoint(5)
       this.interactables.push(new Interactable('chest', p.x, p.z, '상자 열기').addTo(this.scene))
     }
 
@@ -523,8 +540,8 @@ export class Game {
       this.interactables.push(new Interactable('fountain', p.x, p.z, plan.kind === 'rest' ? `보스전 회복 우물 · ${this.fountainLabel()}` : `회복의 우물 · ${this.fountainLabel()}`).addTo(this.scene))
     }
 
-    // 플레이어 진입 위치
-    const e = this.room.entryPoint()
+    // 플레이어 진입 위치 — 횡스크롤 전투방은 왼쪽 끝에서 오른쪽으로 진행한다.
+    const e = this.room.entryPoint(isBelt ? 'west' : 'south')
     this.player.pos.set(e.x, 0, e.z)
 
     // 배너 / 진행 표시
@@ -708,12 +725,18 @@ export class Game {
     const pitchSin = this.camOffset.y / Math.hypot(this.camOffset.y, this.camOffset.z)
     const halfZ = this.viewSize / pitchSin
 
-    const cx = (b.minX + b.maxX) / 2
+    // 횡스크롤 구간이 잠겨 있으면 카메라도 그 구간 안에서만 움직인다.
+    const lock = this.beltLock()
+    const minX = lock ? lock.minX : b.minX
+    const maxX = lock ? lock.maxX : b.maxX
+    const cx = (minX + maxX) / 2
     const cz = (b.minZ + b.maxZ) / 2
-    const roomHalfX = (b.maxX - b.minX) / 2
+    const roomHalfX = (maxX - minX) / 2
     const roomHalfZ = (b.maxZ - b.minZ) / 2
 
-    const x = roomHalfX <= halfX ? cx : Math.min(b.maxX - halfX, Math.max(b.minX + halfX, this.player.pos.x))
+    let x = roomHalfX <= halfX ? cx : Math.min(maxX - halfX, Math.max(minX + halfX, this.player.pos.x))
+    // 잠긴 구간이 화면보다 좁아도, 방 전체가 화면보다 넓으면 방 밖이 보이지 않게 다시 제한한다.
+    if (lock && (b.maxX - b.minX) / 2 > halfX) x = Math.min(b.maxX - halfX, Math.max(b.minX + halfX, x))
     const z = roomHalfZ <= halfZ ? cz : Math.min(b.maxZ - halfZ, Math.max(b.minZ + halfZ, this.player.pos.z))
     return { x, z }
   }
@@ -1198,6 +1221,9 @@ export class Game {
         this.camera.position.z - this.camOffset.z,
       )
       this.camera.lookAt(look)
+      // 그림자 범위(±34)를 카메라 시선 위치에 맞춰 옮긴다 — 가로로 긴 방에서도 끊기지 않게.
+      this.keyLight.position.set(look.x + 20, 40, look.z + 18)
+      this.keyLight.target.position.set(look.x, 0, look.z)
     }
 
     this.effects.update(running ? worldDt : 0, this.camera)
@@ -1224,6 +1250,7 @@ export class Game {
     ENEMY_VULN.stunnedTakenMult = this.player.mods.stunnedTakenMult
     const { bullets, slash, startedReload, reloadTriggerAttempt } = this.player.update(playerDt, this.input, this.aimGround)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
+    this.clampToBeltLock(this.player.pos, CONFIG.player.radius)
 
     for (const b of bullets) {
       this.projectiles.spawnBullet(b.pos, b.dir, this.player.stats.bulletSpeed, b.damage, b.crit, this.player.stats.pierce, b.shockwave)
@@ -1304,7 +1331,8 @@ export class Game {
     const gauge = this.player.conditionGauge()
     if (gauge) this.effects.requestGauge(this.player.pos.x, this.player.pos.z, gauge.progress, gauge.color, gauge.decreasing)
 
-    // ── 룸 적 스폰 ──
+    // ── 횡스크롤 구간 진행 → 룸 적 스폰 ──
+    this.updateBelt()
     if (this.spawnQueue.length > 0 && this.entrySafeTimer <= 0) {
       this.spawnTimer -= worldDt
       if (this.spawnTimer <= 0) {
@@ -1338,12 +1366,12 @@ export class Game {
     if (got.gold > 0) this.run.addGold(got.gold)
 
     // ── 방 장식 / 상호작용 오브젝트 ──
-    this.room.update(worldDt)
+    this.room.update(worldDt, this.camera.position.x - this.camOffset.x)
     for (const o of this.interactables) o.update(worldDt)
     this.handleInteract()
 
     // ── 방 클리어 판정 ──
-    if (!this.roomCleared && this.spawnQueue.length === 0 && this.enemies.length === 0) this.onRoomClear()
+    if (!this.roomCleared && this.spawnQueue.length === 0 && this.enemies.length === 0 && !this.belt) this.onRoomClear()
 
     // ── 보스 체력바 ──
     if (this.boss) {
@@ -1697,8 +1725,84 @@ export class Game {
     for (const e of es) this.room.clamp(e.pos, e.radius * 0.6)
   }
 
+  // ══════════════════ 횡스크롤 전투방(시범, CONFIG.belt) ══════════════════
+
+  /** 방을 CONFIG.belt.sections개 구간으로 나누고 적을 순서대로 고르게 나눠 담는다. */
+  private planBelt(enemies: RoomEnemy[]) {
+    const n = CONFIG.belt.sections
+    const b = this.room.bounds
+    const secW = (b.maxX - b.minX) / n
+    const sections = Array.from({ length: n }, (_, i) => ({
+      minX: b.minX + i * secW,
+      maxX: b.minX + (i + 1) * secW,
+      enemies: [] as RoomEnemy[],
+      cleared: false,
+    }))
+    // 앞 구간부터 1명씩 돌려 담는다 — 적 총수(방 밀도 공식)는 그대로다.
+    enemies.forEach((e, i) => sections[i % n].enemies.push(e))
+    return { sections, active: -1 }
+  }
+
+  /** 지금 잠겨 있는 구간(없으면 null). */
+  private beltLock() {
+    if (!this.belt || this.belt.active < 0) return null
+    return this.belt.sections[this.belt.active]
+  }
+
+  /** 잠긴 구간 밖으로 나가지 못하게 x만 제한한다(z는 Room.clamp가 담당). */
+  private clampToBeltLock(pos: THREE.Vector3, radius: number) {
+    const lock = this.beltLock()
+    if (!lock) return
+    pos.x = Math.min(lock.maxX - radius, Math.max(lock.minX + radius, pos.x))
+  }
+
+  /**
+   * 매 프레임 구간 진행 — 잠긴 구간의 적을 다 잡으면 잠금을 풀고 "GO ▶"를
+   * 띄운다. 다음 구간 왼쪽 경계에서 triggerInset만큼 들어서면 그 구간을 잠그고
+   * 그 몫의 적을 대기열에 넣는다. 마지막 구간까지 정리되면 belt를 비워
+   * 일반 방 클리어 판정(onRoomClear)으로 넘긴다 — 경로 카드는 방 끝에서 뜬다.
+   */
+  private updateBelt() {
+    const belt = this.belt
+    if (!belt) return
+    if (belt.active >= 0) {
+      if (this.spawnQueue.length > 0 || this.enemies.length > 0) return
+      belt.sections[belt.active].cleared = true
+      belt.active = -1
+      if (belt.sections.every((s) => s.cleared)) {
+        this.belt = null
+        this.hud.setBeltGo(false)
+        return
+      }
+      this.hud.setBeltGo(true)
+      this.audio.pick()
+    }
+    const next = belt.sections.findIndex((s) => !s.cleared)
+    if (next < 0) return
+    const sec = belt.sections[next]
+    // 첫 구간은 입장과 동시에 잠근다(입장 유예 entrySafeTimer 뒤에 스폰).
+    if (next > 0 && this.player.pos.x < sec.minX + CONFIG.belt.triggerInset) return
+    belt.active = next
+    this.spawnQueue = [...sec.enemies]
+    this.spawnTimer = 0.25
+    this.hud.setBeltGo(false)
+  }
+
   /** 진입 위치와 출입구 주변은 비워, 방을 여는 순간의 불합리한 피격을 막는다. */
   private safeSpawnPoint() {
+    // 횡스크롤 구간 — 잠긴 구간 안, 플레이어에게서 떨어진 곳(주로 화면 양옆)에 낸다.
+    const lock = this.beltLock()
+    if (lock) {
+      const b = this.room.bounds
+      for (let i = 0; i < 18; i++) {
+        const p = {
+          x: lock.minX + 3 + Math.random() * (lock.maxX - lock.minX - 6),
+          z: b.minZ + 3 + Math.random() * Math.max(0.1, b.maxZ - b.minZ - 6),
+        }
+        if (Math.abs(p.x - this.player.pos.x) >= 9) return p
+      }
+      return { x: lock.maxX - 3, z: 0 }
+    }
     const edges: Direction[] = ['north', 'east', 'south', 'west']
     for (let i = 0; i < 18; i++) {
       const p = this.room.randomPoint(5)
@@ -2127,4 +2231,9 @@ export class Game {
     this.hud.setPrompt(null)
     this.hud.showGameOver(this.run.depth, this.kills, this.run.gold)
   }
+}
+
+/** 횡스크롤 전투방(시범) 대상 — 일반 전투 노드만(깊이 0 로비 앵커 제외). */
+function isBeltPlan(plan: RoomPlan) {
+  return plan.kind === 'combat' && plan.depth > 0
 }
