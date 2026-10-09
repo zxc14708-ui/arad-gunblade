@@ -151,6 +151,16 @@ function writeSnapshot(m) {
   }
   L.push('')
 
+  // P11 각인 계열 — 보상 카드 표시·시너지 가중 추첨(Upgrades.offerWeight)의 입력.
+  const byTag = new Map()
+  for (const u of sigils) for (const t of SIGIL_DEFS[u.id]?.tags ?? []) byTag.set(t, [...(byTag.get(t) ?? []), u.name])
+  L.push('### 각인 계열 (P11 — 보상 카드 표시·시너지 가중 추첨)')
+  L.push('')
+  L.push('| 계열 | 수 | 각인 |')
+  L.push('|---|---:|---|')
+  for (const [t, names] of [...byTag].sort((a, b) => b[1].length - a[1].length)) L.push(`| ${t} | ${names.length} | ${names.join(', ')} |`)
+  L.push('')
+
   // ── 적 ──
   L.push('## 적')
   L.push('')

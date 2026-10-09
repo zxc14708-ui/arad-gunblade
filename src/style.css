@@ -1169,6 +1169,29 @@ canvas.pixelated {
   color: var(--gold);
 }
 
+/* P11 각인 계열 태그·시너지 표시 */
+.ctraits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.ctraits span {
+  font-size: 13px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #d8d2c4;
+}
+.csyn {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #ffd56b;
+}
+
 /* 설정창 장착 무기 */
 .equipped {
   display: flex;

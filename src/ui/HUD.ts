@@ -728,6 +728,9 @@ export class HUD {
       choices.map((u) => ({
         icon: u.icon, name: u.name, desc: u.desc, badgeClass: `slot-${u.slot}`, badgeLabel: SLOT_LABEL[u.slot],
         tag: u.grade ? GRADE_LABEL[u.grade] : undefined,
+        // P11 — 각인 계열 태그와, 이미 보유한 각인과의 시너지(있을 때만)
+        traits: u.tags,
+        synergy: u.synergyWith?.length ? `보유 중인 ${u.synergyWith.join('·')}와 시너지` : undefined,
       })),
       (i) => onPick(choices[i]),
     )
@@ -775,7 +778,7 @@ export class HUD {
    * 같은 색(epic)으로 뜨는 표기 오류가 있었다(작업 지시 skill_slot_and_rarity).
    */
   private renderCards(
-    items: { icon: string; name: string; desc: string; badgeClass: string; badgeLabel: string; tag?: string }[],
+    items: { icon: string; name: string; desc: string; badgeClass: string; badgeLabel: string; tag?: string; traits?: readonly string[]; synergy?: string }[],
     onPick: (index: number) => void,
   ) {
     const cards = this.q('#cards')
@@ -788,6 +791,8 @@ export class HUD {
         <div class="cicon">${it.icon}</div>
         <div class="cname">${it.name}</div>
         <div class="cdesc">${it.desc}</div>
+        ${it.traits?.length ? `<div class="ctraits">${it.traits.map((t) => `<span>#${t}</span>`).join('')}</div>` : ''}
+        ${it.synergy ? `<div class="csyn">◆ ${it.synergy}</div>` : ''}
         <div class="crar">${it.badgeLabel}</div>`
       card.onclick = () => {
         this.levelOv.classList.remove('show')

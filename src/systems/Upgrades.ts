@@ -53,7 +53,7 @@ export const gradeIndex = (g: Grade) => GRADES.indexOf(g)
 export const gradeAbove = (g1: Grade, g2: Grade) => gradeIndex(g1) > gradeIndex(g2)
 
 /** P11 각인 계열 메타데이터 — 표시와 향후 선택 알고리즘용이며 효과 계산에는 쓰지 않는다. */
-export type SigilTag = '감전' | '출혈' | '과열' | '연참' | '총검연계' | '골드' | '하이리스크' | '태세'
+export type SigilTag = '감전' | '출혈' | '과열' | '연참' | '총검연계' | '골드' | '하이리스크' | '태세' | '장전' | '치명' | '생존' | '처치' | '기동' | '정지'
 export type SigilRole = '부여' | '증폭' | '소비'
 
 export interface SigilMetadata {
@@ -79,6 +79,8 @@ export interface Upgrade {
   role?: SigilRole
   synergy?: readonly string[]
   conflict?: readonly string[]
+  /** 이 제안 카드와 시너지가 있는 "이미 보유한" 각인 이름(카드 표시용, P11). */
+  synergyWith?: readonly string[]
 }
 
 /**
@@ -109,7 +111,7 @@ const pct = (v: number) => {
 export const SIGIL_DEFS: Record<string, SigilDef> = {
   // ══════ 기존 7종(P8 커밋3) ══════
   reload: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['장전'], synergy: ['rapid_reload', 'reserve_mag'], conflict: [],
     // 에픽 규칙 변경("리듬 재장전 성공 구간 확대")은 리듬 장전 폐지로
     // 함께 제거했다(작업 지시 P10 커밋1) — 수치(-50%)는 그대로 유지, 다른
     // 등급과 같은 방식(수치 스케일링만)으로 표시한다.
@@ -119,42 +121,42 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `장전 시간 -${pct(v.frac)}`,
   },
   crit: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['치명'], synergy: ['crit_dmg'], conflict: [],
     values: {
       normal: { frac: 0.08 }, rare: { frac: 0.11 }, unique: { frac: 0.15 }, legendary: { frac: 0.20 }, epic: { frac: 0.26 },
     },
     desc: (v) => `치명타 확률 +${pct(v.frac)}p`,
   },
   crit_dmg: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['치명'], synergy: ['crit'], conflict: [],
     values: {
       normal: { amount: 0.4 }, rare: { amount: 0.6 }, unique: { amount: 0.85 }, legendary: { amount: 1.15 }, epic: { amount: 1.5 },
     },
     desc: (v) => `치명타 배율 +${v.amount.toFixed(2)}`,
   },
   lifesteal: {
-    tags: ['출혈'], synergy: ['bleed_blade', 'blood_trace'], conflict: [],
+    tags: ['출혈', '생존'], synergy: ['bleed_blade', 'blood_trace', 'blood_bullet'], conflict: [],
     values: {
       normal: { frac: 0.04 }, rare: { frac: 0.06 }, unique: { frac: 0.08 }, legendary: { frac: 0.11 }, epic: { frac: 0.14 },
     },
     desc: (v) => `가한 피해의 ${pct(v.frac)} 회복`,
   },
   hp: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['생존'], synergy: ['undaunted', 'lifesteal'], conflict: [],
     values: {
       normal: { amount: 20 }, rare: { amount: 30 }, unique: { amount: 42 }, legendary: { amount: 56 }, epic: { amount: 72 },
     },
     desc: (v) => `최대 체력 +${v.amount}, 완전 회복`,
   },
   speed: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['기동'], synergy: [], conflict: [],
     values: {
       normal: { frac: 0.08 }, rare: { frac: 0.12 }, unique: { frac: 0.16 }, legendary: { frac: 0.22 }, epic: { frac: 0.28 },
     },
     desc: (v) => `이동 속도 +${pct(v.frac)}`,
   },
   lg_detonator: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['처치'], synergy: ['remnant', 'execute_blade'], conflict: [],
     values: {
       normal: { amount: 14 }, rare: { amount: 20 }, unique: { amount: 28 }, legendary: { amount: 38 }, epic: { amount: 50 },
     },
@@ -164,7 +166,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
 
   // ══════ 총 축 신규 4종(P8c4) ══════
   blood_bullet: {
-    tags: ['하이리스크'], synergy: [], conflict: [],
+    tags: ['하이리스크'], synergy: ['lifesteal'], conflict: [],
     values: {
       normal: { dmgFrac: 0.15, hpCost: 1 }, rare: { dmgFrac: 0.22, hpCost: 1.3 }, unique: { dmgFrac: 0.30, hpCost: 1.6 },
       legendary: { dmgFrac: 0.40, hpCost: 2.0 }, epic: { dmgFrac: 0.55, hpCost: 2.5 },
@@ -198,13 +200,13 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
   // '연쇄 장전'(chain_reload)은 리듬 재장전 폐지로 전제가 사라져 폐지했다
   // (작업 지시 P10 커밋2) — '예비 탄창'(reserve_mag)으로 대체.
   reserve_mag: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['장전'], synergy: ['rapid_reload', 'reload'], conflict: [],
     unique: 'legendary',
     values: { legendary: { maxCharges: 3 } },
     desc: (v) => `재장전이 즉시 완료된다. 런당 사용 횟수 제한(최대 ${v.maxCharges}) — 상인 노드·보스 준비방에서 충전 (고유·레전더리)`,
   },
   rapid_reload: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['장전'], synergy: ['reserve_mag', 'reload'], conflict: [],
     values: {
       normal: { duration: 2.0, cutFrac: 0.12 }, rare: { duration: 2.3, cutFrac: 0.18 }, unique: { duration: 2.6, cutFrac: 0.25 },
       legendary: { duration: 3.0, cutFrac: 0.34 }, epic: { duration: 3.5, cutFrac: 0.45 },
@@ -212,7 +214,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `재장전 직후 ${v.duration}s간 사격 쿨타임 -${pct(v.cutFrac)}`,
   },
   zero_shot: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['정지'], synergy: [], conflict: [],
     unique: 'epic',
     values: { epic: { perSecond: 0.08, cap: 0.40 } },
     desc: (v) => `정지 시간에 비례해 총 피해 +${pct(v.perSecond)}/s(최대 +${pct(v.cap)}), 이동 시 초기화 (고유·에픽)`,
@@ -220,7 +222,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
 
   // ══════ 검 축 신규 4종(P8c4) ══════
   berserk_blade: {
-    tags: ['하이리스크'], synergy: [], conflict: [],
+    tags: ['하이리스크'], synergy: ['undaunted', 'lifesteal'], conflict: [],
     values: {
       normal: { swordFrac: 0.15, dmgTakenFrac: 0.10 }, rare: { swordFrac: 0.22, dmgTakenFrac: 0.14 }, unique: { swordFrac: 0.30, dmgTakenFrac: 0.18 },
       legendary: { swordFrac: 0.40, dmgTakenFrac: 0.23 }, epic: { swordFrac: 0.55, dmgTakenFrac: 0.30 },
@@ -258,7 +260,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: () => '벤 적에게 출혈 1중첩 부여(단독 작동) · 출혈 적을 다시 베면 남은 출혈 잔여 피해가 즉시 폭발한다 (고유·레전더리)',
   },
   execute_blade: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['처치'], synergy: ['lg_detonator', 'remnant'], conflict: [],
     unique: 'epic',
     values: { epic: { executeThreshold: 0.30, bossFrac: 0.06 } },
     desc: (v) => `체력 ${pct(v.executeThreshold)} 이하 일반 적 즉사 · 보스·엘리트에는 최대 체력의 ${pct(v.bossFrac)} 고정 피해 (고유·에픽)`,
@@ -266,7 +268,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
 
   // ══════ 캐릭터 축 신규 4종(P8c4) ══════
   berserker: {
-    tags: ['하이리스크'], synergy: [], conflict: [],
+    tags: ['하이리스크'], synergy: ['undaunted', 'reversal'], conflict: [],
     values: {
       normal: { maxHpPenalty: 0.10, dmgTakenFrac: 0.08, allDmgFrac: 0.10 }, rare: { maxHpPenalty: 0.14, dmgTakenFrac: 0.12, allDmgFrac: 0.15 },
       unique: { maxHpPenalty: 0.18, dmgTakenFrac: 0.16, allDmgFrac: 0.21 }, legendary: { maxHpPenalty: 0.23, dmgTakenFrac: 0.21, allDmgFrac: 0.28 },
@@ -275,7 +277,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `최대 체력 -${pct(v.maxHpPenalty)} · 받는 피해 +${pct(v.dmgTakenFrac)} · 모든 피해 +${pct(v.allDmgFrac)} (하이리스크)`,
   },
   reversal: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['하이리스크'], synergy: ['berserker', 'undaunted'], conflict: [],
     values: {
       normal: { maxDmgFrac: 0.15, maxSpeedFrac: 0.10 }, rare: { maxDmgFrac: 0.20, maxSpeedFrac: 0.14 }, unique: { maxDmgFrac: 0.27, maxSpeedFrac: 0.18 },
       legendary: { maxDmgFrac: 0.36, maxSpeedFrac: 0.24 }, epic: { maxDmgFrac: 0.48, maxSpeedFrac: 0.32 },
@@ -299,7 +301,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `골드 200당 모든 피해 +${pct(v.ratePer200)}(최대 +${pct(v.cap)})`,
   },
   remnant: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['처치'], synergy: ['lg_detonator', 'execute_blade'], conflict: [],
     unique: 'legendary',
     values: { legendary: { duration: 3, dmgFrac: 0.5 } },
     desc: (v) => `처치 시 ${v.duration}초간 잔상이 남아 현재 총 피해의 ${pct(v.dmgFrac)}로 대신 공격 (고유·레전더리)`,
@@ -307,7 +309,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
   // '최후의 저항'(last_stand)은 효과가 약하고 런당 1회라 존재감이 없어
   // 폐지했다(작업 지시 P10 커밋2) — '철벽'(undaunted, P10 당시 표시명 '불굴')로 대체.
   undaunted: {
-    tags: [], synergy: [], conflict: [],
+    tags: ['생존'], synergy: ['berserker', 'berserk_blade', 'reversal', 'hp'], conflict: [],
     unique: 'epic',
     values: { epic: { capFrac: 0.20 } },
     desc: (v) => `받는 피해가 최대 체력의 ${pct(v.capFrac)}를 넘으면 ${pct(v.capFrac)}로 제한된다(무적 아님, 상시 작동) (고유·에픽)`,
@@ -441,8 +443,54 @@ const RAW_POOL: Upgrade[] = [
 
 export const POOL: Upgrade[] = RAW_POOL
 
+/**
+ * P11 시너지 가중 추첨(2026-10-09 사용자 승인: 카드 표시 + 추첨 가중, 세트
+ * 효과는 보류, 상충은 수치 상쇄 유지). 가중 강도는 오케스트레이터가 정한
+ * 초기값이며 플레이 후 조정 대상이다 — DESIGN_LOG.md "P11" 참고.
+ *   - 보유 각인과 명시적 시너지(synergy 목록) → ×explicit
+ *   - 그 외 보유 각인과 계열 태그 공유 → ×sameTag
+ *   - 한 번의 추첨에서 이미 뽑힌 각인과 태그가 겹치면 가중 없음(×1) —
+ *     같은 계열만 줄줄이 나오는 걸 막는 상한.
+ * 상충(conflict)은 감점하지 않는다(사용자 결정: 수치로만 상쇄).
+ * 핵심 슬롯 특성은 항상 ×1.
+ */
+export const SYNERGY_WEIGHT = { sameTag: 2, explicit: 3 } as const
+
+/** id 각인과 시너지가 있는 보유 각인 id 목록(자기 자신 제외, 양방향). */
+export function synergyPartners(id: string, owned: ReadonlyMap<string, Grade>): string[] {
+  const def = SIGIL_DEFS[id]
+  if (!def) return []
+  return [...owned.keys()].filter((o) => o !== id && (def.synergy.includes(o) || SIGIL_DEFS[o]?.synergy.includes(id)))
+}
+
+function sharesOwnedTag(id: string, owned: ReadonlyMap<string, Grade>): boolean {
+  const tags = SIGIL_DEFS[id]?.tags ?? []
+  return [...owned.keys()].some((o) => o !== id && (SIGIL_DEFS[o]?.tags ?? []).some((t) => tags.includes(t)))
+}
+
+/** 추첨 가중치 — 위 주석의 규칙. chosen은 이번 추첨에서 이미 뽑힌 카드. */
+export function offerWeight(u: Upgrade, owned: ReadonlyMap<string, Grade>, chosen: readonly Upgrade[]): number {
+  const def = SIGIL_DEFS[u.id]
+  if (!isSigilSlot(u.slot) || !def) return 1
+  const chosenTags = new Set(chosen.flatMap((c) => SIGIL_DEFS[c.id]?.tags ?? []))
+  if (def.tags.some((t) => chosenTags.has(t))) return 1
+  if (synergyPartners(u.id, owned).length > 0) return SYNERGY_WEIGHT.explicit
+  if (sharesOwnedTag(u.id, owned)) return SYNERGY_WEIGHT.sameTag
+  return 1
+}
+
+function weightedPick(pool: Upgrade[], owned: ReadonlyMap<string, Grade>, chosen: readonly Upgrade[]): Upgrade {
+  const weights = pool.map((u) => offerWeight(u, owned, chosen))
+  let r = Math.random() * weights.reduce((a, b) => a + b, 0)
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i]
+    if (r < 0) return pool[i]
+  }
+  return pool[pool.length - 1]
+}
+
 /** POOL의 정적 정의를 특정 등급의 "제안 카드"로 복제한다(원본을 변형하지 않는다). */
-function offerSigil(u: Upgrade, grade: Grade): Upgrade {
+function offerSigil(u: Upgrade, grade: Grade, owned: ReadonlyMap<string, Grade> = new Map()): Upgrade {
   const metadata = SIGIL_DEFS[u.id]
   return {
     ...u,
@@ -452,6 +500,7 @@ function offerSigil(u: Upgrade, grade: Grade): Upgrade {
     role: metadata.role,
     synergy: metadata.synergy,
     conflict: metadata.conflict,
+    synergyWith: synergyPartners(u.id, owned).map((id) => upgradeById(id)?.name ?? id),
   }
 }
 
@@ -497,8 +546,8 @@ export function rollChoices(
   const sigilOffers: Upgrade[] = []
   for (const u of POOL.filter((u) => isSigilSlot(u.slot) && !isUniqueSigil(u.id))) {
     const cur = sigilGrades.get(u.id)
-    if (!cur) sigilOffers.push(offerSigil(u, 'normal'))
-    else if (cur !== 'epic') sigilOffers.push(offerSigil(u, GRADES[gradeIndex(cur) + 1]))
+    if (!cur) sigilOffers.push(offerSigil(u, 'normal', sigilGrades))
+    else if (cur !== 'epic') sigilOffers.push(offerSigil(u, GRADES[gradeIndex(cur) + 1], sigilGrades))
   }
   const ownedSigilOffers = sigilOffers.filter((u) => sigilGrades.has(u.id))
 
@@ -506,7 +555,7 @@ export function rollChoices(
   const takeRandom = (arr: Upgrade[]) => {
     const pool = arr.filter((u) => !chosen.includes(u))
     if (pool.length === 0) return null
-    const u = pool[Math.floor(Math.random() * pool.length)]
+    const u = weightedPick(pool, sigilGrades, chosen)
     chosen.push(u)
     return u
   }
@@ -572,7 +621,7 @@ export function forgeSwapCandidates(
     return coreSlots.get(u.slot as CoreSlot) !== u.id
   })
   if (!isSigilSlot(current.slot)) return candidates
-  return candidates.map((u) => offerSigil(u, curGrade!))
+  return candidates.map((u) => offerSigil(u, curGrade!, sigilGrades))
 }
 
 /**
@@ -626,9 +675,9 @@ export function rollNodeSigilRewards(
     const def = SIGIL_DEFS[u.id]
     const cur = sigilGrades.get(u.id)
     if (def?.unique) {
-      if (!cur && gradeIndex(nodeGrade) >= gradeIndex(def.unique)) sigilCandidates.push(offerSigil(u, def.unique))
+      if (!cur && gradeIndex(nodeGrade) >= gradeIndex(def.unique)) sigilCandidates.push(offerSigil(u, def.unique, sigilGrades))
     } else if (!cur || gradeAbove(nodeGrade, cur)) {
-      sigilCandidates.push(offerSigil(u, nodeGrade))
+      sigilCandidates.push(offerSigil(u, nodeGrade, sigilGrades))
     }
   }
 
@@ -636,7 +685,7 @@ export function rollNodeSigilRewards(
   const takeRandom = (arr: Upgrade[]) => {
     const pool = arr.filter((u) => !chosen.some((c) => c.id === u.id))
     if (pool.length === 0) return null
-    const u = pool[Math.floor(Math.random() * pool.length)]
+    const u = weightedPick(pool, sigilGrades, chosen)
     chosen.push(u)
     return u
   }

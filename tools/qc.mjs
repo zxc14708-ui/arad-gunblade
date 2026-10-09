@@ -2481,6 +2481,47 @@ const STEPS = [
     }),
   },
   {
+    name: 'sigil-card-traits',
+    needs: 'dungeon',
+    what: '각인 보상 카드 표시(P11) — 계열 태그(#장전 등)가 모든 각인 카드에, "보유 중인 ○○와 시너지"가 시너지 카드에만 뜨는가',
+    async run(p) {
+      await dismissLevelUp(p)
+      // 추첨·synergyWith 배선은 tools/verify_synergy_weights.mjs가 표본으로 본다 —
+      // 여기서는 카드 렌더링만 보려고 시너지 유무가 섞인 카드 3장을 고정해 띄운다.
+      await p.evaluate(() => {
+        const g = window.__game
+        g.hud.showLevelUp('각인 획득!', '특성 하나를 선택하세요', [
+          { id: 'lifesteal', name: '흡혈', desc: '가한 피해의 4% 회복', icon: '🩸', slot: 'sword-sigil', grade: 'normal', tags: ['출혈', '생존'], synergyWith: ['출혈 칼날'], apply: () => {} },
+          { id: 'speed', name: '경신법', desc: '이동 속도 +8%', icon: '💨', slot: 'character-sigil', grade: 'normal', tags: ['기동'], synergyWith: [], apply: () => {} },
+          { id: 'reload', name: '신속 장전', desc: '장전 시간 -15%', icon: '⚡', slot: 'gun-sigil', grade: 'normal', tags: ['장전'], synergyWith: [], apply: () => {} },
+        ], () => {})
+      })
+      await p.waitForTimeout(350)
+    },
+    check: async (p) => p.evaluate(() => {
+      const cards = [...document.querySelectorAll('#cards .card')]
+      if (cards.length !== 3) return `카드가 3장이 아님 (${cards.length})`
+      const info = cards.map((c) => ({
+        name: c.querySelector('.cname')?.textContent,
+        traits: [...c.querySelectorAll('.ctraits span')].map((s) => s.textContent),
+        syn: c.querySelector('.csyn')?.textContent ?? null,
+        overflow: c.scrollHeight > c.clientHeight + 1,
+      }))
+      for (const c of info) {
+        if (c.traits.length === 0) return `${c.name} 카드에 계열 태그가 없음`
+        if (c.overflow) return `${c.name} 카드 내용이 카드 높이를 넘침`
+      }
+      if (info[0].traits.join(' ') !== '#출혈 #생존') return `흡혈 태그 표시가 다름 (${info[0].traits})`
+      if (!info[0].syn?.includes('출혈 칼날')) return `흡혈 카드에 시너지 표시가 없음 (${info[0].syn})`
+      if (info[1].syn || info[2].syn) return '시너지 없는 카드에 시너지 표시가 뜸'
+      return null
+    }),
+    async after(p) {
+      await p.click('#cards .card').catch(() => {})
+      await p.waitForTimeout(200)
+    },
+  },
+  {
     name: 'conflict-triple',
     needs: 'dungeon',
     what: '상충 각인 3종 실제 피해 배수(작업 지시 P10 커밋3-4) — 총구 집중×검날 집중(곱셈, 서로 거의 상쇄)· 총검일체 추가(별도 배율 계층, 덧셈 항) 조합 3가지',
@@ -3300,6 +3341,7 @@ const assetReport = checkAssetIntegrity()
 checkStateSnapshot()
 checkRollChoices()
 checkNodeGradeRewards()
+checkSynergyWeights()
 
 let server = null
 let port = PORT
@@ -3480,6 +3522,22 @@ function checkRollChoices() {
     const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
     console.log(out)
     errors.push('rollChoices() 구성 규칙 검증 실패 (tools/verify_roll_choices.mjs) — 위 출력 참조')
+  }
+}
+
+/**
+ * P11 각인 계열 태그·시너지 가중 추첨 규칙을 표본으로 정적 검증한다(브라우저
+ * 불필요) — tools/verify_synergy_weights.mjs 참고.
+ */
+function checkSynergyWeights() {
+  console.log('· 각인 시너지 가중 검사 (tools/verify_synergy_weights.mjs)')
+  try {
+    const out = execSync('node tools/verify_synergy_weights.mjs 4000', { cwd: ROOT, encoding: 'utf-8' })
+    console.log(out)
+  } catch (e) {
+    const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
+    console.log(out)
+    errors.push('각인 시너지 가중 검증 실패 (tools/verify_synergy_weights.mjs) — 위 출력 참조')
   }
 }
 
