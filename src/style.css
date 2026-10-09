@@ -675,6 +675,27 @@ canvas.pixelated {
 .trait-axis-head.axis-gun { color: #4ade80; }
 .trait-axis-head.axis-sword { color: #ff5c5c; }
 .trait-axis-head.axis-character { color: #38d1d1; }
+.trait-sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-bottom: 6px;
+}
+.trait-set {
+  font-size: 12px;
+  font-weight: bold;
+  color: #8fe3c8;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(143, 227, 200, 0.08);
+  border: 1px solid rgba(143, 227, 200, 0.3);
+}
+.trait-set em {
+  font-style: normal;
+  font-weight: normal;
+  color: #c9d6d0;
+  margin-left: 4px;
+}
 .trait-axis-sigil-empty {
   font-size: 12px;
   color: #6b7280;
@@ -1190,6 +1211,12 @@ canvas.pixelated {
   font-size: 13px;
   font-weight: bold;
   color: #ffd56b;
+}
+.cset {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #8fe3c8;
 }
 
 /* 설정창 장착 무기 */

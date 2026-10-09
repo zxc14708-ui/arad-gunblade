@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { Enemy, EnemyKind, DamageSource } from '../entities/Enemy'
 import type { EliteAffix } from '../systems/EliteAffixes'
 import { weaponById } from '../systems/Weapons'
+import { rollNodeSigilRewards, type Upgrade, type Grade, type CoreSlot } from '../systems/Upgrades'
 import { RunState, RoomKind, RoomPlan } from '../systems/RunState'
 import type { Bullet } from '../systems/Projectiles'
 import type { Game } from './Game'
@@ -154,6 +155,7 @@ export function installQcDebugHooks(game: Game) {
     debugEnterStage: (stage: number) => boolean
     debugLoadRoom: (roomId: string, stabilize?: boolean) => boolean
     debugStabilizeRouteSandbox: () => void
+    debugSigilOffers: (count: number, grade: Grade) => Upgrade[]
   }
 
   /**
@@ -411,5 +413,12 @@ export function installQcDebugHooks(game: Game) {
   api.debugSetCoreSlot = (slot, id) => {
     const g = internals(game)
     g.player.coreSlots.set(slot, id)
+  }
+
+  // 현재 보유 각인 기준으로 실제 노드 보상 제안 카드를 만든다 — 카드에 붙는
+  // 시너지·세트 완성 표시(offerSigil)를 QC가 실제 생성 경로로 검증하기 위한 훅.
+  api.debugSigilOffers = (count, grade) => {
+    const p = (game as unknown as { player: { sigilGrades: Map<string, Grade>; coreSlots: Map<CoreSlot, string> } }).player
+    return rollNodeSigilRewards(count, grade, p.sigilGrades, p.coreSlots)
   }
 }

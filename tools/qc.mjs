@@ -2222,8 +2222,8 @@ const STEPS = [
         }
       })
 
-      // ── 상충 각인(총구 집중 × 검날 집중) — 완화 코드 없이 곱셈만으로 서로
-      // 거의 무력화하는지(1.45 × 0.70 ≈ 1.015, 완전한 1.0도 배가도 아니다) ──
+      // ── 상충 각인(총구 집중 × 검날 집중) — 곱셈 누적에 태세 세트(페널티 절반)만
+      // 더해진다(1.45 × 0.85 ≈ 1.2325, 세트 이전엔 1.015) ──
       await reset()
       out.conflict = await p.evaluate(() => {
         const g = window.__game
@@ -2434,8 +2434,10 @@ const STEPS = [
       if (!w.undaunted.undauntedOwned || Math.abs(w.undaunted.undauntedCapFrac - 0.20) > 0.01) return `철벽 파라미터가 다름`
 
       // 상충 각인
-      if (!(r.conflict.gunRatio > 0.95 && r.conflict.gunRatio < 1.1)) return `총구 집중+검날 집중 동시 보유 시 총 피해 배율이 거의 상쇄되지 않음 (${r.conflict.gunRatio.toFixed(3)} / 기대 약 1.015, 참고: 절반씩 보정 같은 완화 로직이 있으면 안 됨)`
-      if (!(r.conflict.swordRatio > 0.95 && r.conflict.swordRatio < 1.1)) return `총구 집중+검날 집중 동시 보유 시 검 피해 배율이 거의 상쇄되지 않음 (${r.conflict.swordRatio.toFixed(3)} / 기대 약 1.015)`
+      // 둘 다 '태세' 계열이라 태세 세트(2026-10-09 승인)가 켜져 상충 페널티가
+      // 절반이 된다 — 1.45 × (1 - 0.30×0.5) = 1.2325. 세트 외의 완화 로직은 없어야 한다.
+      if (Math.abs(r.conflict.gunRatio - 1.2325) > 0.02) return `총구 집중+검날 집중 동시 보유(태세 세트) 시 총 피해 배율이 1.2325가 아님 (${r.conflict.gunRatio.toFixed(3)})`
+      if (Math.abs(r.conflict.swordRatio - 1.2325) > 0.02) return `총구 집중+검날 집중 동시 보유(태세 세트) 시 검 피해 배율이 1.2325가 아님 (${r.conflict.swordRatio.toFixed(3)})`
 
       // 하이리스크 대가
       if (Math.abs(r.berserkBladeDamageTaken - 87) > 0.5) return `광전 에픽 보유 중 받는 피해 증가가 실제로 적용되지 않음 (100→${r.berserkBladeDamageTaken} / 기대 87)`
@@ -2639,9 +2641,229 @@ const STEPS = [
     }),
   },
   {
+    name: 'sigil-stun',
+    needs: 'dungeon',
+    what: '기절 계열 각인(2026-10-09 승인) — 뇌진탕(베기 확률 기절)·충격 대시(관통 기절) 배선, 엘리트 절반·보스 면역·기절 중 재적용 무시·종료 후 2초 면역, 기절 세트(기절한 적 피해 +15%)',
+    async run(p) {
+      await dismissLevelUp(p)
+      const out = await p.evaluate(() => {
+        const g = window.__game
+        const pl = g.player
+        g.debugClearEnemies()
+        pl.sigilGrades.clear()
+        pl.recomputeSigilMods()
+        pl.pos.set(0, 0, 0)
+        const dummy = (kind, x, z, elite) => {
+          const e = elite ? g.debugSpawnElite(kind, 'regen') : g.debugSpawnEnemy(kind)
+          e.pos.set(x, 0, z)
+          e.speed = 0
+          e.damage = 0
+          e.maxHp = 100000
+          e.hp = 100000
+          return e
+        }
+        pl.applySigil('concussion', 'epic')
+        pl.applySigil('shock_dash', 'epic')
+        const wiring = { chance: pl.mods.stunOnSlashChance, slashDur: pl.mods.stunOnSlashDuration, dashDur: pl.mods.stunDashDuration }
+
+        // 1. 뇌진탕 — 확률을 0으로 고정해 결정적으로 발동시킨다
+        const slashTarget = dummy('brute', 0, 2, false)
+        const origRandom = Math.random
+        Math.random = () => 0
+        try {
+          g.resolveSlash(pl.pos.clone(), 0, pl.stats.swordArc, pl.stats.swordRange, 10, false, 0)
+        } finally {
+          Math.random = origRandom
+        }
+        const slashStun = slashTarget.stunTimer
+        const reapplied = slashTarget.applyStun(5)
+        const afterReapply = slashTarget.stunTimer
+
+        // 2. 엘리트는 절반, 보스는 면역
+        const elite = dummy('brute', 8, 8, true)
+        elite.applyStun(0.6)
+        const eliteStun = elite.stunTimer
+        const boss = g.debugSpawnBoss()
+        const bossStunned = boss.applyStun(0.6)
+
+        // 3. 충격 대시 — 대시 선분 위의 적만 기절
+        const onPath = dummy('imp', 0, 4, false)
+        const offPath = dummy('imp', 6, 4, false)
+        g.resolveDashPass(pl.pos.clone(), pl.pos.clone().set(0, 0, 7))
+        window.__qcStun = { slashTarget, onPath }
+        g.scene.remove(boss.group)
+        g.enemies.splice(g.enemies.indexOf(boss), 1)
+        g.boss = null
+        g.hud.showBoss(false)
+        return { wiring, slashStun, reapplied, afterReapply, eliteStun, bossStunned, dashStun: onPath.stunTimer, offPathStunned: offPath.stunned }
+      })
+      await p.evaluate((r) => { window.__qcStunResult = r }, out)
+    },
+    check: async (p) => {
+      const r = await p.evaluate(() => window.__qcStunResult)
+      if (!r) return '결과 없음'
+      const near = (a, b, eps = 0.02) => Math.abs(a - b) <= eps
+      if (!near(r.wiring.chance, 0.3) || !near(r.wiring.slashDur, 0.6) || !near(r.wiring.dashDur, 0.9)) return `기절 각인 신화 수치 배선이 다름 (${JSON.stringify(r.wiring)})`
+      if (!near(r.slashStun, 0.6)) return `뇌진탕 — 확률 100%로 고정한 베기에 0.6초 기절이 걸리지 않음 (${r.slashStun})`
+      if (r.reapplied || !near(r.afterReapply, 0.6)) return `기절 중 재적용이 무시되지 않음 (반환 ${r.reapplied}, 남은 시간 ${r.afterReapply})`
+      if (!near(r.eliteStun, 0.3)) return `엘리트 기절 시간이 절반(0.3초)이 아님 (${r.eliteStun})`
+      if (r.bossStunned) return '보스가 각인 기절에 걸림 — 보스는 면역이어야 함'
+      if (!near(r.dashStun, 0.9)) return `충격 대시 — 관통한 적 기절 0.9초가 아님 (${r.dashStun})`
+      if (r.offPathStunned) return '충격 대시 — 대시 경로 밖의 적까지 기절함'
+
+      // 4. 기절이 끝난 적은 2초간 면역, 기절 세트(뇌진탕+충격 대시)로 기절한 적 피해 +15%
+      await waitGame(p, 1.0)
+      const after = await p.evaluate(() => {
+        const g = window.__game
+        const { slashTarget, onPath } = window.__qcStun
+        const stillStunned = slashTarget.stunned
+        const reStun = slashTarget.applyStun(0.6)
+        const dashStillStunned = onPath.stunned
+        // onPath는 아직 기절 중(0.9초 중 일부 경과)일 수 있다 — 기절 상태를 직접 만든다.
+        const fresh = g.debugSpawnEnemy('brute')
+        fresh.pos.set(-8, 0, -8)
+        fresh.speed = 0
+        fresh.damage = 0
+        fresh.maxHp = 100000
+        fresh.hp = 100000
+        fresh.applyStun(5)
+        fresh.takeDamage(100, 'ranged')
+        const stunnedLoss = 100000 - fresh.hp
+        slashTarget.hp = 100000
+        slashTarget.takeDamage(100, 'ranged')
+        const normalLoss = 100000 - slashTarget.hp
+        g.debugClearEnemies()
+        g.player.sigilGrades.clear()
+        g.player.recomputeSigilMods()
+        return { stillStunned, reStun, dashStillStunned, stunnedLoss, normalLoss }
+      })
+      if (after.stillStunned) return '뇌진탕 기절이 0.6초 뒤에도 풀리지 않음'
+      if (after.reStun) return '기절이 끝난 직후(2초 면역 중)에 다시 기절이 걸림 — 영구 기절 방지 규칙 위반'
+      if (!near(after.normalLoss, 100, 0.5)) return `기절하지 않은 적이 받은 피해가 100이 아님 (${after.normalLoss})`
+      if (!near(after.stunnedLoss, 115, 0.5)) return `기절 세트 — 기절한 적이 받은 피해가 115가 아님 (${after.stunnedLoss})`
+      return null
+    },
+  },
+  {
+    name: 'sigil-sets',
+    needs: 'dungeon',
+    what: '각인 세트 보너스(2026-10-09 승인) — 같은 계열 2개 보유 시 15계열 효과 배선, 1개일 땐 없음, 제거 시 원복, 보상 카드 "세트 완성" 표시',
+    async run(p) {
+      await dismissLevelUp(p)
+      const out = await p.evaluate(() => {
+        const g = window.__game
+        const pl = g.player
+        const reset = () => {
+          pl.sigilGrades.clear()
+          pl.recomputeSigilMods()
+        }
+        const pair = (a, b, read) => {
+          reset()
+          pl.applySigil(a[0], a[1])
+          const one = read()
+          pl.applySigil(b[0], b[1])
+          return { one, two: read() }
+        }
+        const m = () => pl.mods
+        const r = {
+          고위험: pair(['berserk_blade', 'epic'], ['reversal', 'normal'], () => m().damageTakenMult),
+          생존: pair(['hp', 'normal'], ['undaunted', 'epic'], () => m().maxHp),
+          처치: pair(['lg_detonator', 'normal'], ['execute_blade', 'epic'], () => m().killHeal),
+          장전: pair(['reload', 'normal'], ['rapid_reload', 'normal'], () => m().reloadTime),
+          치명: pair(['crit', 'normal'], ['crit_dmg', 'normal'], () => m().critChance),
+          태세: pair(['gun_focus', 'epic'], ['sword_focus', 'epic'], () => m().gunDamage),
+          출혈: pair(['bleed_blade', 'normal'], ['blood_trace', 'legendary'], () => m().bleedDurationMult),
+          과열: pair(['overheat', 'epic'], ['overheat_crit', 'normal'], () => m().overheatMaxStacks),
+          감전: pair(['shock_bullet', 'normal'], ['shock_slash', 'normal'], () => m().shockTakenMult),
+          정지: pair(['zero_shot', 'epic'], ['steady_stance', 'normal'], () => m().stillReloadSpeedFrac),
+          총검연계: pair(['cross_reload', 'normal'], ['hybrid_stance', 'normal'], () => m().swordReloadBurstShots),
+          연참: pair(['chain_slash', 'epic'], ['chain_fury', 'normal'], () => m().chainSlashMaxStacks),
+          기동: pair(['speed', 'normal'], ['gale', 'normal'], () => m().postDashDmgFrac),
+          골드: pair(['golden_weight', 'normal'], ['spoils', 'normal'], () => g.priceOf(100)),
+          기절: pair(['concussion', 'normal'], ['shock_dash', 'normal'], () => m().stunnedTakenMult),
+        }
+        // 기동 세트 실제 동작 — 대시 종료 직후 모든 피해 +10%
+        reset()
+        pl.applySigil('speed', 'normal')
+        pl.applySigil('gale', 'normal')
+        pl.updateDynamicStats()
+        const beforeDash = pl.stats.gunDamage
+        pl.onDashEnd()
+        pl.updateDynamicStats()
+        const dashRatio = pl.stats.gunDamage / beforeDash
+
+        // 보상 카드 — 출혈 칼날 보유 중이면 출혈 계열 후보에 "출혈 세트 완성"이 붙는다
+        reset()
+        pl.applySigil('bleed_blade', 'normal')
+        const offers = g.debugSigilOffers(60, 'legendary')
+        const bloodTrace = offers.find((u) => u.id === 'blood_trace')
+        const reloadCard = offers.find((u) => u.id === 'reload')
+        const cardSets = { bloodTrace: bloodTrace?.setCompletes ?? null, reload: reloadCard?.setCompletes ?? null }
+        if (bloodTrace) {
+          g.hud.showLevelUp('QC — 세트 완성 표시', '', [bloodTrace, ...(reloadCard ? [reloadCard] : [])], () => {})
+        }
+        const csetText = [...document.querySelectorAll('#cards .cset')].map((el) => el.textContent)
+
+        // 제거하면 세트 효과가 남지 않아야 한다(제련소 교체 경로)
+        reset()
+        const clean = {
+          damageTakenMult: m().damageTakenMult, killHeal: m().killHeal, bleedDurationMult: m().bleedDurationMult,
+          shockTakenMult: m().shockTakenMult, stillReloadSpeedFrac: m().stillReloadSpeedFrac,
+          swordReloadBurstShots: m().swordReloadBurstShots, postDashDmgFrac: m().postDashDmgFrac,
+          priceDiscount: m().priceDiscount, stunnedTakenMult: m().stunnedTakenMult,
+        }
+        return { r, dashRatio, cardSets, csetText, clean }
+      })
+      await p.screenshot({ path: 'qc-out/sigil-sets-card.png' })
+      await p.evaluate(() => {
+        document.querySelector('#levelOv')?.classList.remove('show')
+      })
+      await p.evaluate((v) => { window.__qcSets = v }, out)
+    },
+    check: async (p) => p.evaluate(() => {
+      const v = window.__qcSets
+      if (!v) return '결과 없음'
+      const near = (a, b, eps = 0.005) => Math.abs(a - b) <= eps
+      const { r } = v
+      const expect = [
+        // [계열, 1개일 때, 2개일 때]
+        ['고위험', 1.30, 1.225],
+        ['처치', 0, 1.5],
+        ['장전', 0.85, 0.85 * 0.9],
+        ['치명', 0.08, 0.13],
+        ['태세', 1.45, 1.45 * 0.85],
+        ['출혈', 1, 1.25],
+        ['과열', 10, 12],
+        ['감전', 1.3, 1.4],
+        ['정지', 0, 0.15],
+        ['총검연계', 3, 4],
+        ['연참', 10, 12],
+        ['기동', 0, 0.1],
+        ['골드', 100, 90],
+        ['기절', 1, 1.15],
+      ]
+      for (const [k, one, two] of expect) {
+        if (!near(r[k].one, one)) return `${k} — 1개 보유인데 세트 효과가 이미 켜졌거나 기준값이 다름 (${r[k].one} / 기대 ${one})`
+        if (!near(r[k].two, two)) return `${k} 세트 — 2개 보유 시 값이 다름 (${r[k].two} / 기대 ${two})`
+      }
+      if (!near(r.생존.two - r.생존.one, 15)) return `생존 세트 — 최대 체력 +15가 아님 (${r.생존.one} → ${r.생존.two})`
+      if (!near(v.dashRatio, 1.1, 0.01)) return `기동 세트 — 대시 직후 피해 배율이 1.1이 아님 (${v.dashRatio.toFixed(3)})`
+      if (!v.cardSets.bloodTrace) return '보상 후보에 혈흔이 없어 세트 완성 표시를 검증하지 못함'
+      if (!v.cardSets.bloodTrace.includes('출혈')) return `출혈 칼날 보유 중 혈흔 카드에 출혈 세트 완성이 붙지 않음 (${JSON.stringify(v.cardSets.bloodTrace)})`
+      if (v.cardSets.reload && v.cardSets.reload.length > 0) return `무관한 카드(신속 장전)에 세트 완성이 붙음 (${JSON.stringify(v.cardSets.reload)})`
+      if (!v.csetText.some((t) => t.includes('출혈 세트 완성'))) return `보상 카드에 "출혈 세트 완성" 문구가 렌더링되지 않음 (${JSON.stringify(v.csetText)})`
+      const c = v.clean
+      if (c.damageTakenMult !== 1 || c.killHeal !== 0 || c.bleedDurationMult !== 1 || !near(c.shockTakenMult, 1.3) || c.stillReloadSpeedFrac !== 0
+        || c.swordReloadBurstShots !== 3 || c.postDashDmgFrac !== 0 || c.priceDiscount !== 0 || c.stunnedTakenMult !== 1) {
+        return `각인을 모두 제거해도 세트 효과가 남음 (${JSON.stringify(c)})`
+      }
+      return null
+    }),
+  },
+  {
     name: 'conflict-triple',
     needs: 'dungeon',
-    what: '상충 각인 3종 실제 피해 배수(작업 지시 P10 커밋3-4) — 총구 집중×검날 집중(곱셈, 서로 거의 상쇄)· 총검일체 추가(별도 배율 계층, 덧셈 항) 조합 3가지',
+    what: '상충 각인 3종 실제 피해 배수(작업 지시 P10 커밋3-4) — 총구 집중×검날 집중(곱셈, 태세 세트로 페널티 절반)· 총검일체 추가(별도 배율 계층, 덧셈 항) 조합 3가지',
     async run(p) {
       await dismissLevelUp(p)
       const out = await p.evaluate(() => {
@@ -2690,14 +2912,16 @@ const STEPS = [
       if (Math.abs(gunOnlyRatio - 1.45) > 0.02) return `총구 집중 단독 배율이 다름 (${gunOnlyRatio.toFixed(3)} / 기대 1.45)`
       const gunSwordGunRatio = r.gunSword.gunDamage / r.base.gunDamage
       const gunSwordSwordRatio = r.gunSword.swordDamage / r.base.swordDamage
-      if (Math.abs(gunSwordGunRatio - 1.015) > 0.02) return `총구+검날 집중 동시 보유 시 총 피해 배율이 곱셈(1.45×0.70=1.015)과 다름 (${gunSwordGunRatio.toFixed(3)})`
-      if (Math.abs(gunSwordSwordRatio - 1.015) > 0.02) return `총구+검날 집중 동시 보유 시 검 피해 배율이 곱셈(1.45×0.70=1.015)과 다름 (${gunSwordSwordRatio.toFixed(3)})`
+      // 둘 다 '태세' 계열이라 태세 세트(2026-10-09)가 켜져 상충 페널티가
+      // 절반이 된다: 1.45 × (1 - 0.30×0.5) = 1.2325 (세트 이전엔 1.015).
+      if (Math.abs(gunSwordGunRatio - 1.2325) > 0.02) return `총구+검날 집중 동시 보유(태세 세트) 시 총 피해 배율이 1.45×0.85=1.2325와 다름 (${gunSwordGunRatio.toFixed(3)})`
+      if (Math.abs(gunSwordSwordRatio - 1.2325) > 0.02) return `총구+검날 집중 동시 보유(태세 세트) 시 검 피해 배율이 1.45×0.85=1.2325와 다름 (${gunSwordSwordRatio.toFixed(3)})`
       const tripleGunRatio = r.triple.gunDamage / r.base.gunDamage
       const tripleSwordRatio = r.triple.swordDamage / r.base.swordDamage
-      // 기대: 1.015 × (1+0.48) ≈ 1.502 — 곱셈(총구×검날)에 총검일체의
-      // 덧셈 배율 계층이 다시 곱해지는 형태(위 recomputeSigilMods() 주석 참고)
-      if (Math.abs(tripleGunRatio - 1.502) > 0.03) return `상충 3종(총구+검날+총검일체) 동시 보유 시 총 피해 배율이 기대(약 1.502)와 다름 (${tripleGunRatio.toFixed(3)})`
-      if (Math.abs(tripleSwordRatio - 1.502) > 0.03) return `상충 3종 동시 보유 시 검 피해 배율이 기대(약 1.502)와 다름 (${tripleSwordRatio.toFixed(3)})`
+      // 기대: 1.2325 × (1+0.48) ≈ 1.824 — 곱셈(총구×검날, 태세 세트로 페널티
+      // 절반)에 총검일체의 덧셈 배율 계층이 다시 곱해지는 형태
+      if (Math.abs(tripleGunRatio - 1.824) > 0.03) return `상충 3종(총구+검날+총검일체) 동시 보유 시 총 피해 배율이 기대(약 1.824)와 다름 (${tripleGunRatio.toFixed(3)})`
+      if (Math.abs(tripleSwordRatio - 1.824) > 0.03) return `상충 3종 동시 보유 시 검 피해 배율이 기대(약 1.824)와 다름 (${tripleSwordRatio.toFixed(3)})`
       return null
     }),
   },
@@ -2948,14 +3172,14 @@ const STEPS = [
   },
   {
     name: 'trait-panel-axis',
-    what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 33종을 전부 보유해도 패널이 화면을 넘지 않는가',
+    what: '보유 각인 패널 축별 재구성(작업 지시 P8c4 커밋2) — 총/검/캐릭터 3섹션(핵심 슬롯 1개 + 그 축 각인, 등급순), 항목별 축 라벨 제거, 빈 축은 "각인 없음", 각인 35종을 전부 보유해도 패널이 화면을 넘지 않는가, 켜진 세트 표시',
     async run(p) {
       const r = await p.evaluate(() => {
         const g = window.__game
         // POOL은 window에 노출돼 있지 않다 — trait-slot-badges 스텝과 같은
         // 관례로, 패널이 실제로 소비하는 필드(id/name/desc/icon/slot/grade)만
         // 갖춘 리터럴 객체를 직접 만든다. 핵심 슬롯은 축당 1개만 가질 수
-        // 있으므로 3개, 각인은 33종(P10c2 26종 + P11 짝 각인 7종) 전부.
+        // 있으므로 3개, 각인은 35종(P10c2 26종 + P11 짝 각인 7종 + 기절 2종) 전부.
         const core = [
           { id: 'close_range', name: '밀착사격', desc: '', icon: '🔫', slot: 'gun', apply: () => {} },
           { id: 'iaijutsu', name: '발도참', desc: '', icon: '🌸', slot: 'sword', apply: () => {} },
@@ -2963,8 +3187,8 @@ const STEPS = [
         ]
         const sigilIds = {
           'gun-sigil': ['reload', 'crit', 'blood_bullet', 'overheat', 'gun_focus', 'shock_bullet', 'rapid_reload', 'reserve_mag', 'zero_shot', 'overheat_crit', 'cross_reload'],
-          'sword-sigil': ['crit_dmg', 'lifesteal', 'berserk_blade', 'chain_slash', 'sword_focus', 'bleed_blade', 'blood_trace', 'execute_blade', 'shock_slash', 'chain_fury'],
-          'character-sigil': ['hp', 'speed', 'lg_detonator', 'berserker', 'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'undaunted', 'steady_stance', 'gale', 'spoils'],
+          'sword-sigil': ['crit_dmg', 'lifesteal', 'berserk_blade', 'chain_slash', 'sword_focus', 'bleed_blade', 'blood_trace', 'execute_blade', 'shock_slash', 'chain_fury', 'concussion'],
+          'character-sigil': ['hp', 'speed', 'lg_detonator', 'berserker', 'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'undaunted', 'steady_stance', 'gale', 'spoils', 'shock_dash'],
         }
         const grades = ['normal', 'rare', 'unique', 'legendary', 'epic']
         const sigils = []
@@ -2993,6 +3217,7 @@ const STEPS = [
           heads,
           sections,
           totalRows: box.querySelectorAll('.trait').length,
+          setChips: box.querySelectorAll('.trait-set').length,
           panelWithinViewport: panelRect.bottom <= window.innerHeight + 1 && panelRect.top >= -1,
           panelScrollable: panel.scrollHeight > panel.clientHeight,
         }
@@ -3007,7 +3232,7 @@ const STEPS = [
       if (r.heads.join(',') !== '총,검,캐릭터') return `축 섹션 순서/이름이 다름 (${r.heads.join(',')})`
       if (r.sections.length !== 3) return `섹션 수가 3이 아님 (${r.sections.length})`
       // 각 섹션 = 핵심 슬롯 1(있으면) + 그 축 각인 개수. 총=1+9=10, 검=1+8=9, 캐릭터=1+9=10.
-      const expectedRows = [12, 11, 13]
+      const expectedRows = [12, 12, 14]
       for (let i = 0; i < 3; i++) {
         if (r.sections[i].rows !== expectedRows[i]) {
           return `${r.sections[i].head} 섹션 항목 수가 다름 (${r.sections[i].rows} / 기대 ${expectedRows[i]})`
@@ -3015,8 +3240,9 @@ const STEPS = [
         if (r.sections[i].hasEmptyLabel) return `${r.sections[i].head} 섹션에 각인이 있는데 "각인 없음" 표시가 남아있음`
         if (r.sections[i].hasTslot > 0) return `${r.sections[i].head} 섹션 항목에 축 라벨(tslot)이 남아있음 — 섹션 헤더와 중복`
       }
-      if (r.totalRows !== 36) return `전체 항목 수가 다름 (${r.totalRows} / 기대 36 = 핵심 3 + 각인 33)`
-      if (!r.panelWithinViewport) return '33종을 전부 보유한 상태에서 패널이 화면(뷰포트) 밖으로 넘침'
+      if (r.totalRows !== 38) return `전체 항목 수가 다름 (${r.totalRows} / 기대 38 = 핵심 3 + 각인 35)`
+      if (r.setChips !== 15) return `각인 35종 전부 보유 시 세트 15종이 패널에 표시되지 않음 (${r.setChips})`
+      if (!r.panelWithinViewport) return '35종을 전부 보유한 상태에서 패널이 화면(뷰포트) 밖으로 넘침'
       if (!r.panelScrollable) return '내용이 뷰포트보다 긴데 패널이 스크롤 가능 상태가 아님(overflow 설정 확인)'
       return null
     }),

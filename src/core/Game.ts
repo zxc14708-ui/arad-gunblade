@@ -5,7 +5,7 @@ import { Input } from './Input'
 import { Room, RoomVisualKind, DEFAULT_ROOM_SIZES } from '../systems/Room'
 import { RunState, RoomPlan, RoomEnemy, ROOM_ICON, roomLabel, Direction } from '../systems/RunState'
 import { Player } from '../entities/Player'
-import { Enemy, EnemyAction, EnemyKind } from '../entities/Enemy'
+import { Enemy, EnemyAction, EnemyKind, ENEMY_VULN } from '../entities/Enemy'
 import { enemyDeathArt, ENEMY_SCALE } from '../entities/EnemySprite'
 import { Interactable } from '../entities/Interactable'
 import { Projectiles } from '../systems/Projectiles'
@@ -841,7 +841,8 @@ export class Game {
    * 누적값이 아니라 단일값이라 "1 내린다"는 개념 자체가 없다).
    */
   private useDungeonForge(forge: Interactable) {
-    const price = this.run.dungeonForgePrice
+    const basePrice = this.run.dungeonForgePrice
+    const price = this.priceOf(basePrice)
     const owned = [...this.acquired.values()]
       .map((a) => a.upgrade)
       .filter((u) => forgeSwapCandidates(u.id, this.player.sigilGrades, this.player.coreSlots).length > 0)
@@ -877,7 +878,7 @@ export class Game {
           if (cur.count <= 0) this.acquired.delete(from.id)
         }
         this.applyTrait(to)
-        this.run.dungeonForgePrice = Math.round(price * CONFIG.economy.dungeonForgePriceRatio)
+        this.run.dungeonForgePrice = Math.round(basePrice * CONFIG.economy.dungeonForgePriceRatio)
         forge.label = this.dungeonForgeLabel()
         this.state = 'play'
         this.hud.banner_(`${from.name} → ${to.name} 교체!`)
@@ -887,11 +888,11 @@ export class Game {
   }
 
   private dungeonForgeLabel() {
-    return `제련소 — 특성 교체 (${this.run.dungeonForgePrice}G)`
+    return `제련소 — 특성 교체 (${this.priceOf(this.run.dungeonForgePrice)}G)`
   }
 
   private fountainLabel() {
-    return this.run.fountainFreeUsed ? `분수에서 회복 (${this.run.fountainPrice}G)` : '분수에서 회복 (무료)'
+    return this.run.fountainFreeUsed ? `분수에서 회복 (${this.priceOf(this.run.fountainPrice)}G)` : '분수에서 회복 (무료)'
   }
 
   private openChest(chest: Interactable) {
@@ -932,13 +933,14 @@ export class Game {
     const isTown = this.mode === 'town'
     let priceCharged = 0
     if (!isTown && this.run.fountainFreeUsed) {
-      const price = this.run.fountainPrice
+      const basePrice = this.run.fountainPrice
+      const price = this.priceOf(basePrice)
       if (!this.run.spendGold(price)) {
         this.hud.banner_(`골드가 부족합니다 (분수 ${price}G)`)
         return
       }
       priceCharged = price
-      this.run.fountainPrice = Math.round(price * CONFIG.economy.fountainPriceRatio)
+      this.run.fountainPrice = Math.round(basePrice * CONFIG.economy.fountainPriceRatio)
     }
     const heal = Math.round(this.player.stats.maxHp * 0.45)
     this.player.heal(heal)
@@ -971,7 +973,13 @@ export class Game {
     const shop = this.activeShop()
     if (!shop) return
     const items = shop.items.map((it) => this.shopItemView(it))
-    this.hud.renderShop(items, this.run.gold, shop.rerollPrice)
+    this.hud.renderShop(items, this.run.gold, this.priceOf(shop.rerollPrice))
+  }
+
+  /** 골드 세트(2026-10-09) — 던전 상점·분수·제련소 가격 할인. 가격 사다리의
+   * 다음 단계는 할인 전 기준가로 계속 오른다(할인은 지불 시점에만 적용). */
+  private priceOf(base: number) {
+    return Math.round(base * (1 - this.player.mods.priceDiscount))
   }
 
   private shopItemView(it: ShopItem) {
@@ -981,7 +989,7 @@ export class Game {
         name: it.def.name,
         desc: it.def.desc,
         badgeClass: it.def.rarity as string,
-        price: it.price,
+        price: this.priceOf(it.price),
         sold: it.sold,
         tag: it.def.kind === 'gun' ? '총' : '검',
       }
@@ -993,7 +1001,7 @@ export class Game {
         name: it.def.name,
         desc: it.def.desc,
         badgeClass: `slot-${it.def.slot}`,
-        price: it.price,
+        price: this.priceOf(it.price),
         sold: it.sold,
         tag: '특성',
       }
@@ -1003,7 +1011,7 @@ export class Game {
       name: '치유 물약',
       desc: `체력 ${it.amount} 회복`,
       badgeClass: 'common',
-      price: it.price,
+      price: this.priceOf(it.price),
       sold: it.sold,
       tag: '회복',
     }
@@ -1018,7 +1026,7 @@ export class Game {
       this.hud.banner_(isSigilSlot(it.def.slot) ? '이 특성은 최대 스택에 도달했습니다' : '이미 보유한 특성입니다')
       return
     }
-    if (!this.run.spendGold(it.price)) return
+    if (!this.run.spendGold(this.priceOf(it.price))) return
     it.sold = true
     this.audio.pick()
 
@@ -1039,7 +1047,7 @@ export class Game {
   private rerollShop() {
     const shop = this.activeShop()
     if (!shop) return
-    if (!this.run.spendGold(shop.rerollPrice)) return
+    if (!this.run.spendGold(this.priceOf(shop.rerollPrice))) return
     shop.reroll([this.player.gun.id, this.player.sword.id], this.player.sigilGrades, this.player.coreSlots)
     this.audio.reload()
     this.renderShop()
@@ -1211,6 +1219,9 @@ export class Game {
     // '황금의 무게'(작업 지시 P8c4) — 현재 골드를 매 프레임 알려준다. Player.update()
     // 끝에서 recompute()가 이 값을 읽어 동적 피해 배수에 반영한다.
     this.player.setGold(this.run.gold)
+    // 세트 보너스(감전·기절) — 적이 받는 피해 배율은 플레이어 mods가 정한다.
+    ENEMY_VULN.shockTakenMult = this.player.mods.shockTakenMult
+    ENEMY_VULN.stunnedTakenMult = this.player.mods.stunnedTakenMult
     const { bullets, slash, startedReload, reloadTriggerAttempt } = this.player.update(playerDt, this.input, this.aimGround)
     this.room.clamp(this.player.pos, CONFIG.player.radius)
 
@@ -1284,7 +1295,7 @@ export class Game {
     }
     if (!this.player.isDashing && this.wasDashing) {
       this.player.onDashEnd() // '급전환' — 대시 종료 직후 검 쿨 절반 + 총 즉시 장전
-      if (this.player.coreSlots.get('character') === 'mark') this.resolveDashMark(this.player.dashStart, this.player.pos)
+      this.resolveDashPass(this.player.dashStart, this.player.pos)
     }
     this.wasDashing = this.player.isDashing
 
@@ -1901,15 +1912,20 @@ export class Game {
             this.effects.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xff3b3b, 8, 5)
           }
         }
-        e.applyBleed(CONFIG.enemy.bleed.duration)
+        e.applyBleed(CONFIG.enemy.bleed.duration * this.player.mods.bleedDurationMult)
       }
       // '출혈 칼날'(작업 지시 P8c4) — 베기 적중 시 등급별 중첩 부여.
       if (this.player.mods.bleedOnHitStacks > 0) {
         for (let s = 0; s < this.player.mods.bleedOnHitStacks; s++) {
-          e.applyBleed(CONFIG.enemy.bleed.duration * this.player.mods.bleedOnHitDurationMult)
+          e.applyBleed(CONFIG.enemy.bleed.duration * this.player.mods.bleedOnHitDurationMult * this.player.mods.bleedDurationMult)
         }
       }
       const reflected = e.takeDamage(finalDamage, 'melee', crit)
+      // '뇌진탕'(기절 계열) — 명중 시 확률로 기절. 엘리트 절반·보스 면역·
+      // 기절 직후 면역은 Enemy.applyStun()이 처리한다.
+      if (this.player.mods.stunOnSlashChance > 0 && e.alive && Math.random() < this.player.mods.stunOnSlashChance) {
+        if (e.applyStun(this.player.mods.stunOnSlashDuration)) this.effects.burst(new THREE.Vector3(e.pos.x, 2, e.pos.z), 0xffe066, 6, 3)
+      }
       // '뇌격'(P11) — 본타는 감전 받는 피해 증가를 그대로 받고, 그 뒤 감전을
       // 소모해 추가 번개 피해를 준다(추가 피해 자체에는 감전 배율이 안 붙는다).
       if (this.player.mods.shockSlashFrac > 0 && e.alive && e.consumeShock()) {
@@ -1948,10 +1964,13 @@ export class Game {
     return hits.length
   }
 
-  /** '표식'(dash) — 대시 시작~끝 선분으로 관통한 적을 표식한다(피해는 주지
-   * 않는다). 표식된 적은 markDuration초 동안 받는 피해가 늘어난다
-   * (Enemy.takeDamage에서 처리). */
-  private resolveDashMark(start: THREE.Vector3, end: THREE.Vector3) {
+  /** 대시 시작~끝 선분으로 관통한 적에게 대시 효과를 건다(피해는 주지
+   * 않는다). '표식'(핵심 슬롯) — markDuration초 동안 받는 피해 증가
+   * (Enemy.takeDamage에서 처리). '충격 대시'(기절 계열 각인) — 기절. */
+  private resolveDashPass(start: THREE.Vector3, end: THREE.Vector3) {
+    const mark = this.player.coreSlots.get('character') === 'mark'
+    const stun = this.player.mods.stunDashDuration
+    if (!mark && stun <= 0) return
     const abx = end.x - start.x
     const abz = end.z - start.z
     const lenSq = abx * abx + abz * abz
@@ -1964,7 +1983,8 @@ export class Game {
       const closestZ = start.z + abz * t
       const distance = Math.hypot(enemy.pos.x - closestX, enemy.pos.z - closestZ)
       if (distance > enemy.radius + CONFIG.player.radius) continue
-      enemy.mark(CONFIG.traits.markDuration)
+      if (mark) enemy.mark(CONFIG.traits.markDuration)
+      if (stun > 0 && enemy.applyStun(stun)) this.effects.burst(new THREE.Vector3(enemy.pos.x, 2, enemy.pos.z), 0xffe066, 6, 3)
     }
   }
 
@@ -2028,6 +2048,8 @@ export class Game {
     const roomGoldMul = this.curPlan?.kind === 'combat' ? CONFIG.economy.combatGoldMultiplier : 1
     const gold = Math.round(baseGold * roomGoldMul * (1 + this.player.mods.goldGainFrac))
     this.pickups.dropGold(e.pos.x, e.pos.z, gold)
+    // 처치 세트(2026-10-09) — 처치 시 소량 회복.
+    if (this.player.mods.killHeal > 0) this.player.heal(this.player.mods.killHeal)
 
     if (this.player.mods.explodeOnKill > 0 && (!fromExplosion || this.player.mods.detonatorChain)) {
       this.aoeDamage(e.pos.x, e.pos.z, 3.2, this.player.mods.explodeOnKill, 0xffa040, true)

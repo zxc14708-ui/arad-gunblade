@@ -101,6 +101,11 @@ export const CONFIG = {
       duration: 3,
       damageTakenMult: 1.3, // 감전 중 받는 모든 피해 배율(중첩 없음, 경직 아님)
     },
+    // 일반 적 기절(2026-10-09 승인 — 기절 계열 각인 '뇌진탕'·'충격 대시'가 건다).
+    stun: {
+      eliteDurationMult: 0.5, // 엘리트는 기절 시간 절반
+      immunityAfter: 2, // 기절이 끝난 뒤 이 시간 동안 다시 기절하지 않는다(영구 기절 방지)
+    },
   },
 
   spawn: {

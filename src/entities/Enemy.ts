@@ -74,6 +74,16 @@ type BossPattern = 'charge' | 'slam' | 'shoot'
 let NEXT_ID = 1
 
 /** 적 개체 */
+/**
+ * 플레이어 각인이 정하는 "적이 받는 피해" 배율 — 적에게 들어오는 피해는
+ * 전부 플레이어가 준 것이라, takeDamage() 호출 경로마다 인자를 넘기는 대신
+ * Game이 매 프레임 플레이어 mods 값을 여기 써 둔다(세트 보너스 감전·기절).
+ */
+export const ENEMY_VULN = {
+  shockTakenMult: CONFIG.enemy.shock.damageTakenMult,
+  stunnedTakenMult: 1,
+}
+
 export class Enemy {
   id = NEXT_ID++
   kind: EnemyKind
@@ -129,6 +139,8 @@ export class Enemy {
    * 갱신(덮어쓰기)이다 — 누적(+=)하면 반복 적용으로 무한 기절이 가능해진다.
    * 플레이어에게는 이 개념이 없다(히트스톱에서 이미 조작 불능이 문제였다). */
   private stunTimer = 0
+  /** 기절이 끝난 직후 남은 기절 면역 시간(CONFIG.enemy.stun.immunityAfter) */
+  private stunImmuneTimer = 0
   /** 출혈(작업 지시 P8 커밋2) — 스택마다 독립된 잔여 지속시간(초). 기절과
    * 달리 중첩이 쌓인다(applyBleed()마다 새 스택 추가) — 시간 경과로 스택
    * 하나씩 개별 만료된다. 스택 수만큼 틱 피해가 곱해진다(bleedTickTimer). */
@@ -247,7 +259,12 @@ export class Enemy {
     if (this.hitFlash > 0) this.hitFlash -= dt
     if (this.contactTimer > 0) this.contactTimer -= dt
     if (this.markTimer > 0) this.markTimer -= dt
-    if (this.stunTimer > 0) this.stunTimer -= dt
+    if (this.stunTimer > 0) {
+      this.stunTimer -= dt
+      if (this.stunTimer <= 0 && this.kind !== 'boss') this.stunImmuneTimer = CONFIG.enemy.stun.immunityAfter
+    } else if (this.stunImmuneTimer > 0) {
+      this.stunImmuneTimer -= dt
+    }
     if (this.shockTimer > 0) this.shockTimer -= dt
     if (this.movementSlowTimer > 0) {
       this.movementSlowTimer -= dt
@@ -686,14 +703,17 @@ export class Enemy {
   }
 
   /**
-   * 기절 적용(작업 지시 P7 커밋3) — 이 커밋에서는 기절을 거는 각인·패턴이
-   * 없다(시스템만 넣고 디버그 훅으로 검증하라는 지시). 보스는 면역이다 —
-   * 대신 체력 임계에서만 스스로 발동하는 '브레이크'가 있다(용어를 구분해
-   * 기존 '경직'(stagger, 패턴 후 짧은 경직)과 혼동을 피한다).
+   * 기절 적용(작업 지시 P7 커밋3 시스템, 2026-10-09 기절 계열 각인이 건다).
+   * 보스는 면역이다 — 대신 체력 임계에서만 스스로 발동하는 '브레이크'가
+   * 있다(용어를 구분해 기존 '경직'(stagger)과 혼동을 피한다). 엘리트는 기절
+   * 시간이 절반이다. 이미 기절 중이거나 기절 직후 면역 시간이면 무시한다 —
+   * 연장을 허용하면 대시 연타·고확률 베기로 영구 기절이 된다.
+   * 반환: 실제로 기절이 걸렸는가.
    */
-  applyStun(duration: number) {
-    if (this.kind === 'boss') return
-    this.stunTimer = duration
+  applyStun(duration: number): boolean {
+    if (this.kind === 'boss' || this.stunTimer > 0 || this.stunImmuneTimer > 0) return false
+    this.stunTimer = this.elite ? duration * CONFIG.enemy.stun.eliteDurationMult : duration
+    return true
   }
 
   get stunned() {
@@ -764,7 +784,8 @@ export class Enemy {
       ? amount * BOSS_PATTERN.staggerDamageMultiplier
       : amount
     if (this.markTimer > 0) effective *= CONFIG.traits.markedDamageMult
-    if (this.shockTimer > 0) effective *= CONFIG.enemy.shock.damageTakenMult
+    if (this.shockTimer > 0) effective *= ENEMY_VULN.shockTakenMult
+    if (this.stunTimer > 0) effective *= ENEMY_VULN.stunnedTakenMult
     if (this.affix === 'ward') {
       this.shieldHitTimer = 0
       const absorbed = Math.min(this.shield, effective)

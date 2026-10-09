@@ -53,7 +53,7 @@ export const gradeIndex = (g: Grade) => GRADES.indexOf(g)
 export const gradeAbove = (g1: Grade, g2: Grade) => gradeIndex(g1) > gradeIndex(g2)
 
 /** P11 각인 계열 메타데이터 — 표시와 향후 선택 알고리즘용이며 효과 계산에는 쓰지 않는다. */
-export type SigilTag = '감전' | '출혈' | '과열' | '연참' | '총검연계' | '골드' | '하이리스크' | '태세' | '장전' | '치명' | '생존' | '처치' | '기동' | '정지'
+export type SigilTag = '감전' | '출혈' | '과열' | '연참' | '총검연계' | '골드' | '하이리스크' | '태세' | '장전' | '치명' | '생존' | '처치' | '기동' | '정지' | '기절'
 export type SigilRole = '부여' | '증폭' | '소비'
 
 export interface SigilMetadata {
@@ -81,6 +81,8 @@ export interface Upgrade {
   conflict?: readonly string[]
   /** 이 제안 카드와 시너지가 있는 "이미 보유한" 각인 이름(카드 표시용, P11). */
   synergyWith?: readonly string[]
+  /** 이 카드를 고르면 새로 완성되는 세트 계열(카드 표시용, 세트 보너스). */
+  setCompletes?: readonly SigilTag[]
 }
 
 /**
@@ -364,6 +366,62 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     },
     desc: (v) => `처치 시 골드 획득 +${pct(v.frac)}`,
   },
+  // ══════ 기절 계열 2종(2026-10-09 사용자 승인) — 일반 적 기절 발생 경로 ══════
+  // 공통 규칙은 Enemy.applyStun(): 엘리트는 기절 시간 절반, 보스 면역,
+  // 기절이 끝난 적은 잠시 면역(대시 연타·고확률 베기로 영구 기절 방지).
+  concussion: {
+    tags: ['기절'], role: '부여', synergy: ['shock_dash'], conflict: [],
+    values: {
+      normal: { chance: 0.08, duration: 0.6 }, rare: { chance: 0.12, duration: 0.6 }, unique: { chance: 0.16, duration: 0.6 },
+      legendary: { chance: 0.22, duration: 0.6 }, epic: { chance: 0.30, duration: 0.6 },
+    },
+    desc: (v) => `베기 명중 시 ${pct(v.chance)} 확률로 ${v.duration}초 기절`,
+  },
+  shock_dash: {
+    tags: ['기절', '기동'], role: '부여', synergy: ['concussion'], conflict: [],
+    values: {
+      normal: { duration: 0.4 }, rare: { duration: 0.5 }, unique: { duration: 0.6 }, legendary: { duration: 0.75 }, epic: { duration: 0.9 },
+    },
+    desc: (v) => `대시로 관통한 적을 ${v.duration}초 기절`,
+  },
+}
+
+/**
+ * 세트 보너스(2026-10-09 사용자 승인) — 같은 계열 각인을 SET_THRESHOLD개
+ * 이상 보유하면 그 계열 효과 1개가 켜진다. 계열이 둘인 각인은 양쪽에 1개씩
+ * 센다. 3개 이상이어도 추가 효과는 없다. 실제 적용은
+ * Player.recomputeSigilMods()가 activeSigilSets()로 판정해 mods에 반영한다.
+ */
+export const SET_THRESHOLD = 2
+export const SET_BONUS: Record<SigilTag, string> = {
+  하이리스크: '하이리스크 페널티(받는 피해 증가·발사 체력 소모·최대 체력 감소) -25%',
+  생존: '최대 체력 +15',
+  처치: '처치 시 체력 1.5 회복',
+  장전: '재장전 시간 -10%',
+  치명: '치명타 확률 +5%p',
+  태세: '태세 각인끼리의 상충 페널티 절반',
+  출혈: '출혈 지속 +25%',
+  과열: '과열 최대 스택 +2',
+  감전: '감전 받는 피해 배율 ×1.3 → ×1.4',
+  정지: '이동하지 않는 동안 재장전 속도 +15%',
+  총검연계: '발도장전 탄수 3 → 4발',
+  연참: '연참 가속 최대 스택 +2',
+  기동: '대시 직후 1초간 모든 피해 +10%',
+  골드: '던전 상점·분수·제련소 가격 -10%',
+  기절: '기절한 적에게 주는 피해 +15%',
+}
+
+/** 보유 각인 id 목록으로 계열별 보유 수를 센다. */
+export function sigilTagCounts(ids: Iterable<string>): Map<SigilTag, number> {
+  const counts = new Map<SigilTag, number>()
+  for (const id of ids) for (const t of SIGIL_DEFS[id]?.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1)
+  return counts
+}
+
+/** 켜진 세트 계열 — SET_BONUS 표 순서대로. */
+export function activeSigilSets(ids: Iterable<string>): SigilTag[] {
+  const counts = sigilTagCounts(ids)
+  return (Object.keys(SET_BONUS) as SigilTag[]).filter((t) => (counts.get(t) ?? 0) >= SET_THRESHOLD)
 }
 
 export const isUniqueSigil = (id: string) => SIGIL_DEFS[id]?.unique !== undefined
@@ -450,6 +508,7 @@ const RAW_POOL: Upgrade[] = [
   { id: 'execute_blade', name: '일도양단', desc: describeSigil('execute_blade', 'epic'), icon: '⚔️', slot: 'sword-sigil', apply: () => {} },
   { id: 'shock_slash', name: '뇌격', desc: describeSigil('shock_slash', 'normal'), icon: '🌩️', slot: 'sword-sigil', apply: () => {} },
   { id: 'chain_fury', name: '연격', desc: describeSigil('chain_fury', 'normal'), icon: '🌪️', slot: 'sword-sigil', apply: () => {} },
+  { id: 'concussion', name: '뇌진탕', desc: describeSigil('concussion', 'normal'), icon: '😵', slot: 'sword-sigil', apply: () => {} },
 
   // ── 캐릭터 각인(character-sigil) 7종 ──
   // '전투의 깨달음'(xp_gain, 경험치 획득량 +10%)은 작업 지시 P7 커밋1에서
@@ -466,6 +525,7 @@ const RAW_POOL: Upgrade[] = [
   { id: 'steady_stance', name: '저격 자세', desc: describeSigil('steady_stance', 'normal'), icon: '🧍', slot: 'character-sigil', apply: () => {} },
   { id: 'gale', name: '질풍', desc: describeSigil('gale', 'normal'), icon: '🌬️', slot: 'character-sigil', apply: () => {} },
   { id: 'spoils', name: '전리품', desc: describeSigil('spoils', 'normal'), icon: '🪙', slot: 'character-sigil', apply: () => {} },
+  { id: 'shock_dash', name: '충격 대시', desc: describeSigil('shock_dash', 'normal'), icon: '🥊', slot: 'character-sigil', apply: () => {} },
 
   // ── 핵심 슬롯: sword(4종, 구 slash — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
   { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'sword',
@@ -558,7 +618,15 @@ function offerSigil(u: Upgrade, grade: Grade, owned: ReadonlyMap<string, Grade> 
     synergy: metadata.synergy,
     conflict: metadata.conflict,
     synergyWith: synergyPartners(u.id, owned).map((id) => upgradeById(id)?.name ?? id),
+    setCompletes: setsCompletedBy(u.id, owned),
   }
+}
+
+/** 미보유 각인 id를 새로 얻으면 처음 켜지는 세트 계열(이미 보유 중이면 승급이라 없음). */
+function setsCompletedBy(id: string, owned: ReadonlyMap<string, Grade>): SigilTag[] {
+  if (owned.has(id)) return []
+  const before = new Set(activeSigilSets(owned.keys()))
+  return activeSigilSets([...owned.keys(), id]).filter((t) => !before.has(t))
 }
 
 /**

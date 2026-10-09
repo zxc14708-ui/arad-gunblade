@@ -1,4 +1,4 @@
-import { Upgrade, CoreSlot, Grade, SLOT_LABEL, CORE_SLOTS, isSigilSlot, GRADE_LABEL, GRADE_COLOR, GRADES } from '../systems/Upgrades'
+import { Upgrade, CoreSlot, Grade, SLOT_LABEL, CORE_SLOTS, isSigilSlot, GRADE_LABEL, GRADE_COLOR, GRADES, SET_BONUS, activeSigilSets } from '../systems/Upgrades'
 import { GunDef, SwordDef, WeaponDef } from '../systems/Weapons'
 import { CrystalKind, MetaUpgradeView, MetaWeaponView } from '../systems/MetaProgression'
 import { KeyAction, KeyBindings, KEY_ACTION_LABELS, keyLabel } from '../core/Input'
@@ -421,6 +421,15 @@ export class HUD {
     }
     const gradeRank = (t: { upgrade: Upgrade }) => (t.upgrade.grade ? GRADES.indexOf(t.upgrade.grade) : -1)
 
+    // 세트 보너스(2026-10-09) — 켜진 계열 세트를 패널 맨 위에 한 덩어리로.
+    const sets = activeSigilSets(traits.filter((t) => isSigilSlot(t.upgrade.slot)).map((t) => t.upgrade.id))
+    if (sets.length > 0) {
+      const setBox = document.createElement('div')
+      setBox.className = 'trait-sets'
+      setBox.innerHTML = sets.map((t) => `<span class="trait-set" title="${SET_BONUS[t]}">◇ ${t} 세트 <em>${SET_BONUS[t]}</em></span>`).join('')
+      box.appendChild(setBox)
+    }
+
     for (const axis of CORE_SLOTS) {
       const section = document.createElement('div')
       section.className = 'trait-section'
@@ -731,6 +740,8 @@ export class HUD {
         // P11 — 각인 계열 태그와, 이미 보유한 각인과의 시너지(있을 때만)
         traits: u.tags,
         synergy: u.synergyWith?.length ? `보유 중인 ${u.synergyWith.join('·')}와 시너지` : undefined,
+        // 세트 보너스 — 이 카드를 고르면 새로 켜지는 계열 세트
+        sets: u.setCompletes?.map((t) => `${t} 세트 완성 — ${SET_BONUS[t]}`),
       })),
       (i) => onPick(choices[i]),
     )
@@ -778,7 +789,7 @@ export class HUD {
    * 같은 색(epic)으로 뜨는 표기 오류가 있었다(작업 지시 skill_slot_and_rarity).
    */
   private renderCards(
-    items: { icon: string; name: string; desc: string; badgeClass: string; badgeLabel: string; tag?: string; traits?: readonly string[]; synergy?: string }[],
+    items: { icon: string; name: string; desc: string; badgeClass: string; badgeLabel: string; tag?: string; traits?: readonly string[]; synergy?: string; sets?: readonly string[] }[],
     onPick: (index: number) => void,
   ) {
     const cards = this.q('#cards')
@@ -793,6 +804,7 @@ export class HUD {
         <div class="cdesc">${it.desc}</div>
         ${it.traits?.length ? `<div class="ctraits">${it.traits.map((t) => `<span>#${t}</span>`).join('')}</div>` : ''}
         ${it.synergy ? `<div class="csyn">◆ ${it.synergy}</div>` : ''}
+        ${it.sets?.length ? it.sets.map((s) => `<div class="cset">◇ ${s}</div>`).join('') : ''}
         <div class="crar">${it.badgeLabel}</div>`
       card.onclick = () => {
         this.levelOv.classList.remove('show')

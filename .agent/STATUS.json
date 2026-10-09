@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-09T23:50:00+09:00",
+  "updated_at": "2026-10-10T00:00:00+09:00",
   "roles": {
     "orchestrator": {
       "agent": "Claude",
@@ -20,26 +20,7 @@
       "note": "Runs today as an internal Orchestrator step. Can move to a dedicated agent later by changing only this entry - see .agent/ROUTING.md."
     }
   },
-  "active_tasks": [
-    {
-      "task_id": "T-0008",
-      "title": "기절 계열 각인 2종(뇌진탕·충격 대시) 수치 승인",
-      "state": "approved",
-      "owner_role": "orchestrator",
-      "design_log_ref": "DESIGN_LOG.md#보류-3건-재개--기절-수단p9-커밋1세트-보너스-2026-10-09",
-      "created_at": "2026-10-09T18:00:00+09:00",
-      "updated_at": "2026-10-09T23:50:00+09:00"
-    },
-    {
-      "task_id": "T-0010",
-      "title": "각인 계열 2개 세트 보너스 15종 수치 승인",
-      "state": "approved",
-      "owner_role": "orchestrator",
-      "design_log_ref": "DESIGN_LOG.md#보류-3건-재개--기절-수단p9-커밋1세트-보너스-2026-10-09",
-      "created_at": "2026-10-09T18:00:00+09:00",
-      "updated_at": "2026-10-09T23:50:00+09:00"
-    }
-  ],
+  "active_tasks": [],
   "last_qc_run": {
     "task_id": "T-0004",
     "result": "passed",

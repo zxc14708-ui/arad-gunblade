@@ -31,7 +31,7 @@ const checkOnly = process.argv.includes('--check')
 const ENTRY = `
 export { CONFIG } from './src/config'
 export { GUNS, SWORDS } from './src/systems/Weapons'
-export { POOL, SIGIL_DEFS, GRADES, GRADE_LABEL, describeSigil } from './src/systems/Upgrades'
+export { POOL, SIGIL_DEFS, GRADES, GRADE_LABEL, describeSigil, SET_BONUS, SET_THRESHOLD } from './src/systems/Upgrades'
 export { DEFS } from './src/entities/Enemy'
 export { STAGES } from './src/systems/RunState'
 export { ELITE_AFFIXES, ELITE_AFFIX } from './src/systems/EliteAffixes'
@@ -124,6 +124,7 @@ function writeSnapshot(m) {
     'lg_detonator', 'overheat', 'shock_bullet', 'rapid_reload', 'reserve_mag', 'zero_shot',
     'chain_slash', 'bleed_blade', 'blood_trace', 'execute_blade',
     'reversal', 'hybrid_stance', 'golden_weight', 'remnant', 'undaunted',
+    'concussion', 'shock_dash',
   ]
   const isSigil = (u) => SIGIL_SLOTS.includes(u.slot)
   const conditional = POOL.filter((u) => !isSigil(u) || TRIGGER_SIGIL_IDS.includes(u.id))
@@ -137,7 +138,7 @@ function writeSnapshot(m) {
   L.push(`나머지 ${POOL.length - conditional.length}종은 상시 배수·가산이다.`)
   // 상태이상을 거는 각인 — Game.ts의 applyBleed/applyShock 호출 경로와 일치해야 한다.
   const sigilNames = (ids) => ids.map((id) => POOL.find((u) => u.id === id)?.name ?? id).join('·')
-  L.push(`상태이상(작업 지시 P8 커밋2): 기절(거는 각인 없음 — 보스 브레이크 등 시스템 전용) · 출혈(중첩형, 스택당 ${CONFIG.enemy.bleed.tickDamage} 피해/${CONFIG.enemy.bleed.tickInterval}s, 지속 ${CONFIG.enemy.bleed.duration}s — ${sigilNames(['bleed_blade', 'blood_trace'])}) · 감전(갱신형, 받는 피해 ×${CONFIG.enemy.shock.damageTakenMult}, 지속 ${CONFIG.enemy.shock.duration}s — ${sigilNames(['shock_bullet'])})`)
+  L.push(`상태이상(작업 지시 P8 커밋2): 기절(${sigilNames(['concussion', 'shock_dash'])} — 엘리트 ×${CONFIG.enemy.stun.eliteDurationMult}, 보스 면역(브레이크 전용), 기절 후 ${CONFIG.enemy.stun.immunityAfter}s 면역) · 출혈(중첩형, 스택당 ${CONFIG.enemy.bleed.tickDamage} 피해/${CONFIG.enemy.bleed.tickInterval}s, 지속 ${CONFIG.enemy.bleed.duration}s — ${sigilNames(['bleed_blade', 'blood_trace'])}) · 감전(갱신형, 받는 피해 ×${CONFIG.enemy.shock.damageTakenMult}, 지속 ${CONFIG.enemy.shock.duration}s — ${sigilNames(['shock_bullet'])})`)
   L.push('')
   L.push(`### 각인 등급별 수치 (작업 지시 P8 커밋3 초안 7종 + P8c4 승인 18종 + P10 커밋2 교체 3종, ${sigils.length}종 전체)`)
   L.push('')
@@ -159,6 +160,18 @@ function writeSnapshot(m) {
   L.push('| 계열 | 수 | 각인 |')
   L.push('|---|---:|---|')
   for (const [t, names] of [...byTag].sort((a, b) => b[1].length - a[1].length)) L.push(`| ${t} | ${names.length} | ${names.join(', ')} |`)
+  L.push('')
+
+  // 세트 보너스(2026-10-09) — 같은 계열 SET_THRESHOLD개 이상 보유 시. 적용은 Player.recomputeSigilMods.
+  L.push(`### 세트 보너스 (같은 계열 ${m.SET_THRESHOLD}개 이상 보유 시, 3개 이상도 효과 1개)`)
+  L.push('')
+  L.push('| 계열 | 효과 |')
+  L.push('|---|---|')
+  for (const [t, desc] of Object.entries(m.SET_BONUS)) {
+    if (!byTag.has(t)) throw new Error(`세트 보너스 계열 '${t}'에 속한 각인이 없음`)
+    L.push(`| ${t} | ${desc} |`)
+  }
+  for (const t of byTag.keys()) if (!(t in m.SET_BONUS)) throw new Error(`각인 계열 '${t}'의 세트 보너스가 없음`)
   L.push('')
 
   // ── 적 ──

@@ -32,20 +32,25 @@ Last updated: 2026-10-09
   condition gauges (발도참/조준사격) are unrelated mechanics and untouched.
 - **Trait system: 3 slot axes × sigils, 5 grades.** Core slots are
   gun/sword/character (1 trait each, no grade, no stacking). Sigils
-  (33 total — gun 11 / sword 10 / character 12) use a 5-tier grade ladder
+  (35 total — gun 11 / sword 11 / character 13) use a 5-tier grade ladder
   (일반→희귀→영웅→전설→신화); re-acquiring a held sigil promotes it
   (never stacks, downgrade attempts are ignored). Grades exist only for
   sigils, not core-slot traits — see `DESIGN_LOG.md` "각인 등급 부활 근거"
   for why the concept was scoped this narrowly.
 - **Sigil families + synergy-weighted rewards (P11, 2026-10-09).** Every
-  sigil carries 1-2 family tags (14 families, each with ≥2 sigils) plus
+  sigil carries 1-2 family tags (15 families, each with ≥2 sigils) plus
   explicit synergy links. Reward cards show the tags and "보유 중인 ○○와
   시너지"; offer draws weight explicit-synergy candidates ×3 and same-family
   ×2, with no bonus for a family already drawn in the same roll. Conflicting
   sigils are not penalized (they cancel numerically). 7 partner sigils were
-  added (뇌격·임계점·연격·저격 자세·질풍·교차 장전·전리품). Set bonuses are
-  deferred. Weights are initial values pending playtest feedback.
-- **Status effects (3)**: stun (system-only, no sigil grants it yet),
+  added (뇌격·임계점·연격·저격 자세·질풍·교차 장전·전리품). Weights are
+  initial values pending playtest feedback.
+- **Set bonuses (2026-10-09).** Owning 2+ sigils of one family turns on that
+  family's single bonus (table in `docs/STATE_SNAPSHOT.md`, applied in
+  `Player.recomputeSigilMods`). The trait panel lists active sets; reward
+  cards show "○○ 세트 완성" when a pick would complete one.
+- **Status effects (3)**: stun (sigils 뇌진탕/충격 대시 — elites take half
+  duration, bosses immune, 2s re-stun immunity after a stun ends),
   bleed (stacking, per-stack tick damage), shock (refreshing, damage-taken
   multiplier, no stagger). See `docs/STATE_SNAPSHOT.md` for exact numbers.
 - Boss state machine (idle → telegraph → charge/slam → stagger → phase 2)
@@ -131,11 +136,11 @@ Last updated: 2026-10-09
    and name/illustrate each boss. Escalating boss reward contents remain open.
 3. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
-4. 2026-10-09 orchestrator review: user decisions (P10 numbers confirmed,
-   damage-cap sigil renamed '불굴'→'철벽', 26 sigils kept (now 33 after P11), stun source and
-   P9 commit 1 deferred) and the open items (issue-6 sword grade reorder
-   proposal awaiting a choice, P11 sigil rework scope) are in `DESIGN_LOG.md`
-   ("오케스트레이터 점검 결과") and `.agent/STATUS.json`.
+4. All 2026-10-09 orchestrator-review items are decided and implemented
+   (P10 numbers, '철벽' rename, issue-6 한손검 starter, P11 families/partner
+   sigils, stun sigils, P9 commit 1, set bonuses) — history in `DESIGN_LOG.md`
+   ("오케스트레이터 점검 결과"). Synergy weights and set values await playtest
+   feedback.
 5. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
    항목"): 4-way job advancement (전직), locking a run to one weapon family
    at start, and character/monster palette recolor variants.

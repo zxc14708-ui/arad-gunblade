@@ -5,7 +5,7 @@ import { CharacterSprite } from './CharacterSprite'
 import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
 import { MetaBonuses } from '../systems/MetaProgression'
 import type { CoreSlot, UpgradeSlot, Grade } from '../systems/Upgrades'
-import { isSigilSlot, isUniqueSigil, gradeAbove, SIGIL_DEFS } from '../systems/Upgrades'
+import { isSigilSlot, isUniqueSigil, gradeAbove, SIGIL_DEFS, activeSigilSets } from '../systems/Upgrades'
 
 /** 무기 정의 × 특성 배수로 산출되는 실효 스탯 */
 export interface PlayerStats {
@@ -106,6 +106,22 @@ export interface Mods {
   chainFuryFrac: number // '연격' — 연참 가속 스택당 검 피해 가산
   steadyStanceFrac: number // '저격 자세' — 정지 중 받는 피해 감소
   goldGainFrac: number // '전리품' — 처치 골드 가산(Game.killEnemy)
+
+  // ══════ 기절 계열 2종(2026-10-09) ══════
+  stunOnSlashChance: number // '뇌진탕' — 베기 명중 시 기절 확률(Game.resolveSlash)
+  stunOnSlashDuration: number
+  stunDashDuration: number // '충격 대시' — 대시로 관통한 적 기절 시간(Game.resolveDashPass)
+
+  // ══════ 세트 보너스(2026-10-09) — 같은 계열 2개 보유 시. 기본값은 "효과 없음" ══════
+  killHeal: number // 처치 — 처치 시 체력 회복량(Game.killEnemy)
+  bleedDurationMult: number // 출혈 — 모든 출혈 부여 지속시간 배수(Game.resolveSlash)
+  shockTakenMult: number // 감전 — 감전된 적이 받는 피해 배율(Enemy.takeDamage, ENEMY_VULN 경유)
+  stillReloadSpeedFrac: number // 정지 — 이동하지 않는 동안 장전 진행 속도 가산
+  swordReloadBurstShots: number // 총검연계 — 발도장전 보너스가 붙는 탄수(기본 3)
+  postDashDmgFrac: number // 기동 — 대시 직후 모든 피해 가산(postDashDuration초)
+  postDashDuration: number
+  priceDiscount: number // 골드 — 던전 상점·분수·제련소 가격 할인 비율(Game.priceOf)
+  stunnedTakenMult: number // 기절 — 기절한 적이 받는 피해 배율(Enemy.takeDamage, ENEMY_VULN 경유)
 }
 
 function freshMods(): Mods {
@@ -130,6 +146,10 @@ function freshMods(): Mods {
     rapidReloadDuration: 0, rapidReloadCutFrac: 0,
     undauntedOwned: false, undauntedCapFrac: 0,
     shockSlashFrac: 0, overheatCritFrac: 0, chainFuryFrac: 0, steadyStanceFrac: 0, goldGainFrac: 0,
+    stunOnSlashChance: 0, stunOnSlashDuration: 0, stunDashDuration: 0,
+    killHeal: 0, bleedDurationMult: 1, shockTakenMult: CONFIG.enemy.shock.damageTakenMult,
+    stillReloadSpeedFrac: 0, swordReloadBurstShots: 3, postDashDmgFrac: 0, postDashDuration: 0,
+    priceDiscount: 0, stunnedTakenMult: 1,
   }
 }
 
@@ -235,6 +255,8 @@ export class Player {
   private reserveMagCharges = 0
   /** '속사 전환' — 재장전 완료 직후 남은 버프 지속시간. */
   private rapidReloadTimer = 0
+  /** 기동 세트 — 대시 종료 직후 남은 버프 지속시간. */
+  private postDashTimer = 0
 
   constructor(meta: MetaBonuses = { gunDamageMultiplier: 1, swordDamageMultiplier: 1, maxHpFlat: 0, revives: 0, wardReady: false }) {
     this.meta = meta
@@ -323,6 +345,7 @@ export class Player {
     const reversalSpeedFrac = m.reversalMaxSpeedFrac * reversalT
     const goldWeightFrac = m.goldWeightRate > 0 ? Math.min(m.goldWeightCap, (this.currentGold / 200) * m.goldWeightRate) : 0
     const hybridFrac = this.hybridStanceTimer > 0 ? m.hybridStanceDmgFrac : 0
+    const postDashFrac = this.postDashTimer > 0 ? m.postDashDmgFrac : 0
     const zeroShotFrac = m.zeroShotPerSecond > 0 ? Math.min(m.zeroShotCap, this.zeroShotTimer * m.zeroShotPerSecond) : 0
     // "모든 피해"류 동적 가산은 총/검 양쪽에 함께 곱한다 — 영점 사격만 총 축
     // 전용이라 별도로 gunDamage에만 더한다.
@@ -331,7 +354,7 @@ export class Player {
     // 들어간다 — 셋을 동시에 들면 (gun_focus×sword_focus로 정해진 base) ×
     // (1+hybridFrac+...) 형태가 된다. 완화·상쇄 로직이 아니라 서로 다른
     // 배율 계층(정적 mods 곱셈 vs 동적 상황 가산)이 겹치는 것뿐이다.
-    const dynamicAllMult = 1 + reversalDmgFrac + goldWeightFrac + hybridFrac
+    const dynamicAllMult = 1 + reversalDmgFrac + goldWeightFrac + hybridFrac + postDashFrac
     this.stats.gunDamage = this.baseGunDamage * dynamicAllMult * (1 + zeroShotFrac)
     this.stats.swordDamage = this.baseSwordDamage * dynamicAllMult
     this.stats.moveSpeed = this.baseMoveSpeed * (1 + reversalSpeedFrac)
@@ -455,6 +478,23 @@ export class Player {
     m.steadyStanceFrac = 0
     m.goldGainFrac = 0
     m.undauntedCapFrac = 0
+    m.stunOnSlashChance = 0
+    m.stunOnSlashDuration = 0
+    m.stunDashDuration = 0
+    m.killHeal = base.killHeal
+    m.bleedDurationMult = base.bleedDurationMult
+    m.shockTakenMult = base.shockTakenMult
+    m.stillReloadSpeedFrac = base.stillReloadSpeedFrac
+    m.swordReloadBurstShots = base.swordReloadBurstShots
+    m.postDashDmgFrac = base.postDashDmgFrac
+    m.postDashDuration = base.postDashDuration
+    m.priceDiscount = base.priceDiscount
+    m.stunnedTakenMult = base.stunnedTakenMult
+
+    // 세트 보너스 — 태세 세트는 아래 각인 루프 안의 상충 페널티 계산에 쓰이므로
+    // 루프 전에 판정한다. 나머지 세트 효과는 루프 뒤에 한꺼번에 얹는다.
+    const sets = new Set(activeSigilSets(this.sigilGrades.keys()))
+    const stancePenaltyMult = sets.has('태세') ? 0.5 : 1
 
     for (const [id, grade] of this.sigilGrades) {
       const def = SIGIL_DEFS[id]
@@ -495,7 +535,7 @@ export class Player {
         // 되는 게 의도한 결과다(QC 'conflict-triple' 스텝에서 실측 검증).
         case 'gun_focus':
           m.gunDamage *= 1 + v.gunFrac
-          m.swordDamage *= 1 - v.swordPenalty
+          m.swordDamage *= 1 - v.swordPenalty * stancePenaltyMult
           break
         case 'shock_bullet':
           m.shockOnHitChance = v.chance
@@ -524,7 +564,7 @@ export class Player {
           break
         case 'sword_focus':
           m.swordDamage *= 1 + v.swordFrac
-          m.gunDamage *= 1 - v.gunPenalty
+          m.gunDamage *= 1 - v.gunPenalty * stancePenaltyMult
           break
         case 'bleed_blade':
           m.bleedOnHitStacks = v.stacks
@@ -571,8 +611,38 @@ export class Player {
         case 'gale': m.dashCooldown *= 1 - v.frac; break
         case 'cross_reload': m.swordReloadBurstBonus += v.frac; break
         case 'spoils': m.goldGainFrac = v.frac; break
+        // ── 기절 계열 ──
+        case 'concussion':
+          m.stunOnSlashChance = v.chance
+          m.stunOnSlashDuration = v.duration
+          break
+        case 'shock_dash': m.stunDashDuration = v.duration; break
       }
     }
+
+    // ── 세트 보너스(같은 계열 2개 보유, 수치는 Upgrades.ts SET_BONUS 표와 같다) ──
+    if (sets.has('하이리스크')) {
+      // 페널티의 "초과분"만 25% 줄인다(배율 자체가 아니라 1에서 벗어난 만큼).
+      m.damageTakenMult = 1 + (m.damageTakenMult - 1) * 0.75
+      m.maxHpMult = 1 - (1 - m.maxHpMult) * 0.75
+      m.hpCostPerShot *= 0.75
+    }
+    if (sets.has('생존')) m.maxHp += 15
+    if (sets.has('처치')) m.killHeal = 1.5
+    if (sets.has('장전')) m.reloadTime *= 0.9
+    if (sets.has('치명')) m.critChance += 0.05
+    if (sets.has('출혈')) m.bleedDurationMult = 1.25
+    if (sets.has('과열')) m.overheatMaxStacks += 2
+    if (sets.has('감전')) m.shockTakenMult = 1.4
+    if (sets.has('정지')) m.stillReloadSpeedFrac = 0.15
+    if (sets.has('총검연계')) m.swordReloadBurstShots = 4
+    if (sets.has('연참')) m.chainSlashMaxStacks += 2
+    if (sets.has('기동')) {
+      m.postDashDmgFrac = 0.10
+      m.postDashDuration = 1
+    }
+    if (sets.has('골드')) m.priceDiscount = 0.10
+    if (sets.has('기절')) m.stunnedTakenMult = 1.15
     this.recompute()
   }
 
@@ -583,6 +653,8 @@ export class Player {
 
   /** 대시가 끝난 프레임에 Game이 호출한다 — '급전환'(dash)이면 버프를 건다. */
   onDashEnd() {
+    // 기동 세트 — 급전환과 무관하게 모든 대시 종료에 건다.
+    if (this.mods.postDashDuration > 0) this.postDashTimer = this.mods.postDashDuration
     if (this.coreSlots.get('character') !== 'quick_switch') return
     this.quickSwitchTimer = CONFIG.traits.quickSwitchDuration
     this.ammo = this.magSize
@@ -718,7 +790,7 @@ export class Player {
   reloadFromSwordHit() {
     if (this.ammo >= this.magSize) return
     this.ammo = Math.min(this.magSize, this.ammo + this.mods.swordReloadAmount)
-    if (this.mods.swordReloadBurstBonus > 0) this.swordReloadBurstShotsLeft = 3
+    if (this.mods.swordReloadBurstBonus > 0) this.swordReloadBurstShotsLeft = this.mods.swordReloadBurstShots
   }
 
   private rollCrit(bonus = 0): boolean {
@@ -821,10 +893,13 @@ export class Player {
     // '총검일체'/'속사 전환' 버프 지속시간
     if (this.hybridStanceTimer > 0) this.hybridStanceTimer -= dt
     if (this.rapidReloadTimer > 0) this.rapidReloadTimer -= dt
+    if (this.postDashTimer > 0) this.postDashTimer -= dt
 
     // M1911 장전 처리(리듬 판정은 P10 커밋1에서 폐지 — R 수동 재장전, 소진 시 자동 재장전만 남는다)
     if (this.reloading) {
-      this.reloadTimer -= dt
+      // 정지 세트 — 이동·대시 중이 아니면 장전이 더 빨리 진행된다.
+      const stillReload = !this.moving && this.dashTimer <= 0 ? 1 + this.mods.stillReloadSpeedFrac : 1
+      this.reloadTimer -= dt * stillReload
       if (this.reloadTimer <= 0) {
         this.reloading = false
         this.ammo = this.magSize
