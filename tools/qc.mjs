@@ -2369,7 +2369,7 @@ const STEPS = [
         return { baseCooldown, reducedCooldown: g.player.stats.gunCooldown }
       })
 
-      // ── 불굴 — 받는 피해 증가 적용 후 최대 체력 20%로 상한, 무적은 아님 ──
+      // ── 철벽 — 받는 피해 증가 적용 후 최대 체력 20%로 상한, 무적은 아님 ──
       await reset()
       out.undaunted = await p.evaluate(() => {
         const g = window.__game
@@ -2408,7 +2408,7 @@ const STEPS = [
       if (Math.abs(w.hybrid_stance.hybridStanceDuration - 3.0) > 0.01 || Math.abs(w.hybrid_stance.hybridStanceDmgFrac - 0.48) > 0.01) return `총검일체 에픽 파라미터가 다름`
       if (Math.abs(w.golden_weight.goldWeightRate - 0.03) > 0.001 || Math.abs(w.golden_weight.goldWeightCap - 0.50) > 0.001) return `황금의 무게 에픽 파라미터가 다름`
       if (!w.remnant.remnantOwned || Math.abs(w.remnant.remnantDmgFrac - 0.5) > 0.01) return `잔재 파라미터가 다름`
-      if (!w.undaunted.undauntedOwned || Math.abs(w.undaunted.undauntedCapFrac - 0.20) > 0.01) return `불굴 파라미터가 다름`
+      if (!w.undaunted.undauntedOwned || Math.abs(w.undaunted.undauntedCapFrac - 0.20) > 0.01) return `철벽 파라미터가 다름`
 
       // 상충 각인
       if (!(r.conflict.gunRatio > 0.95 && r.conflict.gunRatio < 1.1)) return `총구 집중+검날 집중 동시 보유 시 총 피해 배율이 거의 상쇄되지 않음 (${r.conflict.gunRatio.toFixed(3)} / 기대 약 1.015, 참고: 절반씩 보정 같은 완화 로직이 있으면 안 됨)`
@@ -2459,10 +2459,10 @@ const STEPS = [
       const rrRatio = rr.reducedCooldown / rr.baseCooldown
       if (Math.abs(rrRatio - 0.55) > 0.02) return `속사 전환 에픽 — 사격 쿨타임 감소가 기대(-45%)와 다름 (배율 ${rrRatio.toFixed(3)})`
 
-      // 불굴 — 받는 피해가 최대 체력의 20%로 상한되지만 무적은 아님(즉사하지 않되 hp가 깎임)
+      // 철벽 — 받는 피해가 최대 체력의 20%로 상한되지만 무적은 아님(즉사하지 않되 hp가 깎임)
       const ud = r.undaunted
-      if (Math.abs(ud.hpAfter - ud.maxHp * 0.8) > 0.5) return `불굴 — 받는 피해 상한이 적용되지 않음 (100000 피해 후 hp ${ud.hpAfter} / 기대 ${(ud.maxHp * 0.8).toFixed(1)})`
-      if (!ud.alive) return '불굴 — 상한이 적용됐어야 하는데 사망함(무적이 아니라 상한이므로 큰 피해라도 20%로 깎여 죽지 않아야 한다)'
+      if (Math.abs(ud.hpAfter - ud.maxHp * 0.8) > 0.5) return `철벽 — 받는 피해 상한이 적용되지 않음 (100000 피해 후 hp ${ud.hpAfter} / 기대 ${(ud.maxHp * 0.8).toFixed(1)})`
+      if (!ud.alive) return '철벽 — 상한이 적용됐어야 하는데 사망함(무적이 아니라 상한이므로 큰 피해라도 20%로 깎여 죽지 않아야 한다)'
 
       return null
     }),

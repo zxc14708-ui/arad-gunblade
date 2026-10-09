@@ -305,7 +305,7 @@ export const SIGIL_DEFS: Record<string, SigilDef> = {
     desc: (v) => `처치 시 ${v.duration}초간 잔상이 남아 현재 총 피해의 ${pct(v.dmgFrac)}로 대신 공격 (고유·레전더리)`,
   },
   // '최후의 저항'(last_stand)은 효과가 약하고 런당 1회라 존재감이 없어
-  // 폐지했다(작업 지시 P10 커밋2) — '불굴'(undaunted)로 대체.
+  // 폐지했다(작업 지시 P10 커밋2) — '철벽'(undaunted, P10 당시 표시명 '불굴')로 대체.
   undaunted: {
     tags: [], synergy: [], conflict: [],
     unique: 'epic',
@@ -364,11 +364,11 @@ export function describeSigil(id: string, grade: Grade): string {
  *
  * 각인 3종 교체(작업 지시 P10 커밋2) — 리듬 재장전 폐지로 전제가 사라진
  * '연쇄 장전'(gun 고유·레전더리)과 존재감이 약했던 '최후의 저항'(character
- * 고유·에픽)을 폐지하고 '예비 탄창'(gun 고유·레전더리)·'불굴'(character
+ * 고유·에픽)을 폐지하고 '예비 탄창'(gun 고유·레전더리)·'철벽'(character
  * 고유·에픽)로 각각 대체, '속사 전환'(gun 일반 각인)을 신규 추가했다.
  * 작업 지시 표제는 "각인 25종 유지(총 8/검 8/캐릭터 9)"라고 적었지만,
  * 실제 이 커밋의 항목별 폐지 2종(연쇄 장전·최후의 저항) + 신규 3종(예비
- * 탄창·불굴·속사 전환)을 그대로 반영하면 순증 +1이라 총 26종(gun 9/sword
+ * 탄창·철벽·속사 전환)을 그대로 반영하면 순증 +1이라 총 26종(gun 9/sword
  * 8/character 9)이 된다 — 지시문 자체의 산술 불일치이며, 표제 숫자를
  * 맞추려 신규 각인 중 하나를 임의로 빼지 않고 항목별 지시를 그대로
  * 따랐다(작업 지시: "예상과 다르면 임의 해석하지 말고 보고하라").
@@ -406,7 +406,7 @@ const RAW_POOL: Upgrade[] = [
   { id: 'hybrid_stance', name: '총검일체', desc: describeSigil('hybrid_stance', 'normal'), icon: '🎭', slot: 'character-sigil', apply: () => {} },
   { id: 'golden_weight', name: '황금의 무게', desc: describeSigil('golden_weight', 'normal'), icon: '💰', slot: 'character-sigil', apply: () => {} },
   { id: 'remnant', name: '잔재', desc: describeSigil('remnant', 'legendary'), icon: '👻', slot: 'character-sigil', apply: () => {} },
-  { id: 'undaunted', name: '불굴', desc: describeSigil('undaunted', 'epic'), icon: '🛡️', slot: 'character-sigil', apply: () => {} },
+  { id: 'undaunted', name: '철벽', desc: describeSigil('undaunted', 'epic'), icon: '🛡️', slot: 'character-sigil', apply: () => {} },
 
   // ── 핵심 슬롯: sword(4종, 구 slash — 작업 지시 slot_traits_midcost_v2로 3종 추가) ──
   { id: 'iaijutsu', name: '발도참(拔刀斬)', desc: '0.5초 이상 정지 후 첫 베기 250% 피해, 넉백 2배', icon: '🌸', slot: 'sword',

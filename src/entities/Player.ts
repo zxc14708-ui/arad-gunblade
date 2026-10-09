@@ -97,7 +97,7 @@ export interface Mods {
   reserveMagMaxCharges: number
   rapidReloadDuration: number // '속사 전환' — 재장전 완료 직후 지속시간/사격 쿨타임 감산(동적)
   rapidReloadCutFrac: number
-  undauntedOwned: boolean // '불굴'(고유) — Player.takeDamage()에서 받는 피해를 최대 체력 비율로 상한
+  undauntedOwned: boolean // '철벽'(고유) — Player.takeDamage()에서 받는 피해를 최대 체력 비율로 상한
   undauntedCapFrac: number
 }
 
@@ -972,7 +972,7 @@ export class Player {
     // 적용되는지가 QC 요구사항이다. 여기 한 곳에서만 곱해 모든 피해원
     // (총알/근접/광역/장판)에 공통 적용된다.
     let effective = amount * this.mods.damageTakenMult
-    // '불굴'(고유·에픽, 작업 지시 P10) — 받는 피해 증가를 적용한 뒤에
+    // '철벽'(고유·에픽, 작업 지시 P10 — 메타 업그레이드 '불굴'과 이름이 겹쳐 2026-10-09 개명) — 받는 피해 증가를 적용한 뒤에
     // 상한을 건다(work order 명시 순서). 무적이 아니라 한 방의 크기만
     // 제한할 뿐, 누적 피해(여러 번 맞으면 그만큼 깎임)는 그대로다.
     if (this.mods.undauntedOwned) effective = Math.min(effective, this.stats.maxHp * this.mods.undauntedCapFrac)

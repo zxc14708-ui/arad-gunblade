@@ -124,10 +124,11 @@ Last updated: 2026-10-09
    and name/illustrate each boss. Escalating boss reward contents remain open.
 4. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
-5. Open design questions found in the 2026-10-09 orchestrator review are
-   listed in `DESIGN_LOG.md` ("오케스트레이터 점검 미결 항목") and tracked as
-   `design_needed` tasks in `.agent/STATUS.json` — nothing proceeds on them
-   without user approval.
+5. 2026-10-09 orchestrator review: user decisions (P10 numbers confirmed,
+   damage-cap sigil renamed '불굴'→'철벽', 26 sigils kept, stun source and
+   P9 commit 1 deferred) and the open items (issue-6 sword grade reorder
+   proposal awaiting a choice, P11 sigil rework scope) are in `DESIGN_LOG.md`
+   ("오케스트레이터 점검 결과") and `.agent/STATUS.json`.
 6. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
    항목"): 4-way job advancement (전직), locking a run to one weapon family
    at start, and character/monster palette recolor variants.
