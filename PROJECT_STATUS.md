@@ -140,22 +140,26 @@ Last updated: 2026-10-09
 
 ## Next approved implementation work
 
-1. Playtest the belt-room pilot, then decide the `DESIGN_LOG.md` "횡스크롤
+1. View change ④ (camera ~30°, backdrop behind the north wall, south wall
+   removed) was chosen 2026-10-10; implementation numbers await approval in
+   `DESIGN_LOG.md` "화면 시점 전환 — ④". The village reference illustration is
+   usable as the town backdrop under ④ (re-delivered as PNG).
+2. Playtest the belt-room pilot, then decide the `DESIGN_LOG.md` "횡스크롤
    전환" follow-ups (wave size, extending to other room kinds, route-card
    timing, issue-6 re-measurement) and request per-stage belt background art
    (template in `docs/systems/belt-rooms.md`).
-2. Integrate per-weapon visuals only after matching final motion sheets are
+3. Integrate per-weapon visuals only after matching final motion sheets are
    delivered, then visually QC each loadout.
-3. Replace the Stage 2-7 palette placeholders with final theme-specific art
+4. Replace the Stage 2-7 palette placeholders with final theme-specific art
    and name/illustrate each boss. Escalating boss reward contents remain open.
-4. Add final weapon/projectile/melee-effect art once the matching sheets are
+5. Add final weapon/projectile/melee-effect art once the matching sheets are
    delivered.
-5. All 2026-10-09 orchestrator-review items are decided and implemented
+6. All 2026-10-09 orchestrator-review items are decided and implemented
    (P10 numbers, '철벽' rename, issue-6 한손검 starter, P11 families/partner
    sigils, stun sigils, P9 commit 1, set bonuses) — history in `DESIGN_LOG.md`
    ("오케스트레이터 점검 결과"). Synergy weights and set values await playtest
    feedback.
-6. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
+7. Three items with no decided direction yet (see `DESIGN_LOG.md` "보류
    항목"): 4-way job advancement (전직), locking a run to one weapon family
    at start, and character/monster palette recolor variants.
 

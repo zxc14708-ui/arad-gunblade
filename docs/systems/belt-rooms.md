@@ -61,6 +61,14 @@ Belt rooms currently reuse the Stage-1 forest floor, wall texture and
 foreground props. Final per-stage art follows `ART_GUIDE.md` §7 and is
 requested as **separate layers**, never as one finished painting.
 
+> **Pending view change (2026-10-10):** the user chose option ④ — camera ~30°,
+> south wall removed, a side-view backdrop standing behind the north wall
+> (`DESIGN_LOG.md` "화면 시점 전환 — ④"). When it lands, layer A grows from a
+> band to the whole upper part of the screen (side view, the part of a
+> reference above its ground line), and props become standing (billboard)
+> art instead of flat ground decals. Layer sizes below will be re-issued with
+> the implementation; the layer split, PNG/pixel-density/palette rules stay.
+
 ### Why layers — reference review (2026-10-09)
 
 The user supplied two reference illustrations (a half-timbered village with a
