@@ -22,7 +22,7 @@ import {
  * 로드되지 않았거나 로드에 실패했을 때만 보이는 폴백이다. 무기별 외형 변화는
  * 최종 파츠 아트가 준비된 뒤 다시 연결한다.
  */
-type AnimState = 'idle' | 'walk' | 'run' | 'dash' | 'attack' | 'shoot'
+type AnimState = 'idle' | 'walk' | 'run' | 'dash' | 'attack' | 'shoot' | 'reload'
 
 interface SheetSpec {
   n: number // 한 줄의 셀 수
@@ -30,6 +30,8 @@ interface SheetSpec {
   aspect: number // 셀 가로/세로
   anim: Record<AnimState, number[]>
   fps: { idle: number; walk: number; run: number; dash: number; attack: number; shoot: number }
+  /** 사격 시트를 구간으로 나눈 것 — 한 발마다 fire를 재생하고 aim을 유지, 사격이 끝나면 lower 후 대기. */
+  shootParts: { fire: number[]; aim: number; lower: number[] }
 }
 
 const FW = 48
@@ -38,24 +40,43 @@ const PROC_SPEC: SheetSpec = {
   n: 9,
   rows: 1,
   aspect: FW / FH,
-  anim: { idle: [0], walk: [1, 2, 3, 4], run: [1, 2, 3, 4], dash: [1, 2, 3, 4], attack: [5, 6], shoot: [7, 8] },
+  anim: { idle: [0], walk: [1, 2, 3, 4], run: [1, 2, 3, 4], dash: [1, 2, 3, 4], attack: [5, 6], shoot: [7, 8], reload: [0] },
   fps: { idle: 2, walk: 9, run: 11, dash: 15, attack: 10, shoot: 12 },
+  shootParts: { fire: [7, 8], aim: 8, lower: [] },
 }
 
 /** 새 SD 시트 아틀라스(2026-10-10) — 1줄: compat27(대기·걷기·단일 베기·사격),
- * 2줄: 달리기 6프레임(27~32) + X자 2연속 베기 12프레임(33~44) + 대시 4프레임(45~48).
- * 두 줄로 합치는 건 한 줄 53칸(5936px)이 모바일 GPU 텍스처 한도(4096)를 넘기 때문이다. */
+ * 2줄: 달리기 6프레임(27~32) + X자 2연속 베기 12프레임(33~44) + 대시 4프레임(45~48),
+ * 3줄: 재장전 10프레임(54~63).
+ * 여러 줄로 나누는 건 한 줄 53칸(5936px)이 모바일 GPU 텍스처 한도(4096)를 넘기 때문이다. */
 const ART_COLS = 27
 const RUN_FRAMES = 6
 const ATTACK_X_FRAMES = 12
 const DASH_FRAMES = 4
+const RELOAD_FRAMES = 10
+/**
+ * 사격 시트(compat 19~26) 구간 — 0 꺼냄, 1 들어 올림, 2 발사, 3 반동, 4 큰 반동(총구가 거의 수직),
+ * 5 조준 복귀, 6 내림, 7 내린 자세. 예전엔 8프레임 전체를 루프로 돌려 연사 중에도 총을 올렸다
+ * 내렸다 했다. 이제 한 발마다 발사→반동→조준(2·3·5)만 재생하고 조준 자세를 유지하다가,
+ * 마지막 발 뒤 SHOOT_AIM_HOLD초가 지나면 내림(6·7) 후 대기로 돌아간다. 큰 반동(4)은 권총 연사에
+ * 과해 쓰지 않는다.
+ */
+const SHOOT_PARTS = { fire: [21, 22, 24], aim: 24, lower: [25, 26] }
+/** 마지막 발 이후 조준 자세를 유지하는 시간(초) — 연사 간격(대부분 0.5초 미만)보다 길게. */
+const SHOOT_AIM_HOLD = 0.45
+/**
+ * 발사·조준 프레임(사격 2·5)의 총구 끝 — 셀 112×64 기준 실측(오른쪽을 볼 때).
+ * 프레임 2: 가장 오른쪽 불투명 픽셀 x=82, y=22~24 / 프레임 5: x=83, y=22~24.
+ * 셀 가로 중앙(56)에서 +27.5px, 셀 바닥(64)에서 위로 40.5px.
+ */
+const MUZZLE_PX = { x: 27.5, up: 40.5 }
 /** X자 검기(windX) — 공격 0기준 2~9번째 프레임에 검기 0~7번째를 겹친다(manifest combo). */
 const WIND_FRAMES = 8
 const WIND_START = 2
 const range = (start: number, count: number) => Array.from({ length: count }, (_, i) => start + i)
 const ART_SPEC: SheetSpec = {
   n: ART_COLS,
-  rows: 2,
+  rows: 3,
   aspect: 112 / 64,
   anim: {
     idle: [0, 1, 2, 3],
@@ -66,8 +87,11 @@ const ART_SPEC: SheetSpec = {
     // 대시 4프레임을 대시 지속시간(0.16초)에 한 번 재생하고 마지막 프레임을 유지한다.
     dash: range(ART_COLS + RUN_FRAMES + ATTACK_X_FRAMES, DASH_FRAMES),
     shoot: [19, 20, 21, 22, 23, 24, 25, 26],
+    // 재장전은 시간이 아니라 실제 장전 진행도(0~1)로 프레임을 고른다 — 총마다 장전 시간이 달라도 맞는다.
+    reload: range(ART_COLS * 2, RELOAD_FRAMES),
   },
   fps: { idle: 5, walk: 14, run: 16, dash: 25, attack: 26, shoot: 26 },
+  shootParts: SHOOT_PARTS,
 }
 /** X자 베기 애니메이션 길이(초) — Player.swingAnim이 이 값을 쓴다. */
 export const ATTACK_X_DURATION = ATTACK_X_FRAMES / ART_SPEC.fps.attack
@@ -83,6 +107,7 @@ export class CharacterSprite {
     run: 'assets/characters/gunblader-sd/run.png',
     attackX: 'assets/characters/gunblader-sd/attackX.png',
     dash: 'assets/characters/gunblader-sd/dash.png',
+    reload: 'assets/characters/gunblader-sd/reload.png',
   }
   /** X자 검기 레이어(캐릭터 없이 검기만, 셀 112×64 × 8프레임). */
   static WIND_SHEET = 'assets/characters/gunblader-sd/windX.png'
@@ -105,6 +130,34 @@ export class CharacterSprite {
   private windMat: THREE.SpriteMaterial | null = null
   /** 이동 동작 — 던전은 달리기, 마을은 걷기(Player.setRunAnim으로 Game이 정한다). */
   runAnim = false
+  private lastShotId = -1
+  /** 마지막 발사 이후 경과(초) — 조준 유지·내림 구간 판정. */
+  private sinceShot = Infinity
+  /** 조준 자세가 끊기지 않고 이어졌는지 — 내림(lower)은 조준 자세에서 바로 넘어갈 때만 재생한다. */
+  private aimPose = false
+  /** QC용 — 마지막으로 그린 아틀라스 프레임 번호와 동작. */
+  lastFrame = -1
+  lastAnim = ''
+  /**
+   * 카메라 위쪽 벡터의 월드 y 성분(= 수평거리/카메라 거리). 총구 위치를 화면 기준으로 맞출 때
+   * 쓴다 — Game이 카메라 오프셋에서 계산해 넣는다. 기본값은 오프셋 (0, 24, 17) 기준.
+   */
+  static viewUpY = 17 / Math.hypot(24, 17)
+
+  /** 현재 바라보는 방향 — 오른쪽 1, 왼쪽 -1. */
+  get facing() {
+    return this.flip
+  }
+
+  /**
+   * 총구 끝의 월드 좌표(발 위치 기준 오프셋). 스프라이트는 카메라를 향한 판이라, 총구 픽셀을
+   * 화면에서 같은 자리에 보이면서 발 위치와 같은 z에 있는 점으로 옮긴다 — x는 좌우 오프셋,
+   * y는 화면 높이 ÷ viewUpY. 그래서 총알·총구 화염의 바닥 판정(x·z)은 그대로이고 보이는 위치만 맞는다.
+   */
+  muzzleOffset() {
+    const px = this.baseH / ART_CELL_H
+    return { x: this.flip * MUZZLE_PX.x * px, y: (MUZZLE_PX.up * px) / CharacterSprite.viewUpY }
+  }
 
   constructor(gunId = 'm1911', swordId = 'katana') {
 
@@ -126,18 +179,19 @@ export class CharacterSprite {
 
     // 아트 시트 3장(base+sword+gun) 비동기 로드 → 캔버스에 합성 후 교체
     if (CharacterSprite.SHEET_URL) {
-      const { run, attackX, dash } = CharacterSprite.EXTRA_SHEETS
-      Promise.all([loadImage(CharacterSprite.SHEET_URL), loadImage(run), loadImage(attackX), loadImage(dash)])
-        .then(([baseImg, runImg, attackXImg, dashImg]) => {
+      const { run, attackX, dash, reload } = CharacterSprite.EXTRA_SHEETS
+      Promise.all([loadImage(CharacterSprite.SHEET_URL), loadImage(run), loadImage(attackX), loadImage(dash), loadImage(reload)])
+        .then(([baseImg, runImg, attackXImg, dashImg, reloadImg]) => {
           const cv = document.createElement('canvas')
           cv.width = ART_COLS * ART_CELL
-          cv.height = ART_CELL_H * 2
+          cv.height = ART_CELL_H * ART_SPEC.rows
           const ctx = cv.getContext('2d')!
           ctx.imageSmoothingEnabled = false
           ctx.drawImage(baseImg, 0, 0)
           ctx.drawImage(runImg, 0, ART_CELL_H)
           ctx.drawImage(attackXImg, RUN_FRAMES * ART_CELL, ART_CELL_H)
           ctx.drawImage(dashImg, (RUN_FRAMES + ATTACK_X_FRAMES) * ART_CELL, ART_CELL_H)
+          ctx.drawImage(reloadImg, 0, ART_CELL_H * 2)
           const loaded = makeTexture(cv)
           this.artTexture = loaded
           this.setTexture(loaded, ART_SPEC)
@@ -265,9 +319,26 @@ export class CharacterSprite {
     dt: number,
     pos: THREE.Vector3,
     aimAngle: number,
-    st: { moving: boolean; dashing: boolean; swinging: boolean; swingId: number; shooting: boolean; invulnerable: boolean },
+    st: {
+      moving: boolean
+      dashing: boolean
+      swinging: boolean
+      swingId: number
+      shooting: boolean
+      /** 발사마다 1씩 증가 — 새 발마다 발사·반동 구간을 처음부터 재생한다. */
+      shotId: number
+      /** 장전 중이면 진행도 0~1, 아니면 null. */
+      reload: number | null
+      invulnerable: boolean
+    },
     hitFlash: number,
   ) {
+    if (st.shotId !== this.lastShotId) {
+      this.lastShotId = st.shotId
+      this.sinceShot = 0
+    } else {
+      this.sinceShot += dt
+    }
     // 조준 x성분으로 좌우 전환 (데드존 좁게 → 방향 전환이 굼뜨지 않게).
     // 사격 모션 중(st.shooting)엔 갱신하지 않는다 — 조준선이 캐릭터 정면축(각도 0/π)
     // 가까이 있으면 sin(aimAngle)이 데드존 경계를 프레임마다 넘나들어 총 쏠 때마다
@@ -278,23 +349,59 @@ export class CharacterSprite {
     }
     const faceLeft = this.flip < 0
 
-    // 우선순위: 베기 > 사격 > 걷기 > 대기
-    const state: AnimState = st.swinging ? 'attack' : st.shooting ? 'shoot' : st.dashing ? 'dash' : st.moving ? (this.runAnim ? 'run' : 'walk') : 'idle'
+    const fpsT = this.spec.fps
+    const parts = this.spec.shootParts
+    // 발사·반동 구간이 아직 재생 중인가(장전이 바로 시작돼도 발사 모션은 끝까지 보여 준다)
+    const firing = this.sinceShot * fpsT.shoot < parts.fire.length
+    const aimHold = this.sinceShot < SHOOT_AIM_HOLD
+    const lowerDur = parts.lower.length / fpsT.shoot
+    const lowering = this.aimPose && !st.moving && st.reload === null && this.sinceShot < SHOOT_AIM_HOLD + lowerDur
+    const reloading = st.reload !== null && !st.moving && !firing
+
+    // 우선순위: 베기 > 사격(발사·조준 유지·내림) > 대시 > 장전(제자리) > 이동 > 대기
+    // 장전이 시작되면(마지막 발 뒤 자동 장전 포함) 발사 모션만 마치고 바로 장전 모션으로 넘긴다.
+    const shootPose = firing || (st.reload === null && (st.shooting || (aimHold && !st.moving)))
+    const state: AnimState = st.swinging
+      ? 'attack'
+      : shootPose || lowering
+        ? 'shoot'
+        : st.dashing
+          ? 'dash'
+          : reloading
+            ? 'reload'
+            : st.moving
+              ? this.runAnim ? 'run' : 'walk'
+              : 'idle'
     // 베기를 이어서 하면(검 쿨타임 < 애니메이션 길이) 같은 'attack' 상태라도 새 베기마다 처음부터.
     if (state !== this.lastState || (state === 'attack' && st.swingId !== this.lastSwingId)) {
       this.animTime = 0 // 동작 시작 프레임부터 재생
       this.lastState = state
       this.lastSwingId = st.swingId
     }
-    const fpsT = this.spec.fps
     const moveFps = state === 'run' ? fpsT.run : fpsT.walk
-    const fps = state === 'attack' ? fpsT.attack : state === 'shoot' ? fpsT.shoot : state === 'dash' ? fpsT.dash : state === 'walk' || state === 'run' ? moveFps : fpsT.idle
+    const fps = state === 'attack' ? fpsT.attack : state === 'dash' ? fpsT.dash : state === 'walk' || state === 'run' ? moveFps : fpsT.idle
     this.animTime += dt
     const frames = this.spec.anim[state]
     const raw = Math.floor(this.animTime * fps)
-    // 베기·대시는 원샷(마지막 프레임 유지), 나머지는 루프
-    const oneShot = state === 'attack' || state === 'dash'
-    const idx = oneShot ? frames[Math.min(raw, frames.length - 1)] : frames[raw % frames.length]
+    let idx: number
+    if (state === 'shoot') {
+      if (shootPose) {
+        const f = Math.floor(this.sinceShot * fpsT.shoot)
+        idx = f < parts.fire.length ? parts.fire[f] : parts.aim
+      } else {
+        const f = Math.floor((this.sinceShot - SHOOT_AIM_HOLD) * fpsT.shoot)
+        idx = parts.lower[Math.min(Math.max(f, 0), parts.lower.length - 1)]
+      }
+    } else if (state === 'reload') {
+      idx = frames[Math.min(frames.length - 1, Math.floor((st.reload ?? 0) * frames.length))]
+    } else {
+      // 베기·대시는 원샷(마지막 프레임 유지), 나머지는 루프
+      const oneShot = state === 'attack' || state === 'dash'
+      idx = oneShot ? frames[Math.min(raw, frames.length - 1)] : frames[raw % frames.length]
+    }
+    this.aimPose = state === 'shoot'
+    this.lastFrame = idx
+    this.lastAnim = state
     this.setFrame(idx, faceLeft)
     this.updateWind(state === 'attack' && this.spec === ART_SPEC ? raw : -1, faceLeft)
 

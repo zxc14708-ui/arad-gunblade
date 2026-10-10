@@ -4,12 +4,15 @@ import { puffTex } from '../rendering/pixelfx'
 import { ASSET, frameTextures } from '../rendering/assets'
 import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
 import { DISPLAY } from '../rendering/viewport'
+import { CharacterSprite } from '../entities/CharacterSprite'
 
 export type FxKind = 'slash' | 'slashWind' | 'death' | 'muzzle' | 'hit' | 'ultimateCross' | 'iaido'
 export type GroundFxKind = 'warning' | 'shockwave' | 'tealMagic'
 
 /** 이펙트별 재생 속도(fps) */
 // Four temporary ultimate frames need to remain readable through the final impact beat.
+/** 총구 화염 시트의 불꽃 뿌리 — 셀 중앙 기준 오른쪽 23px, 위 -4.5px(밝은 심이 x 79~80, y 36~37). */
+const MUZZLE_FX_ROOT = { x: 23, up: -4.5 }
 const FX_FPS: Record<FxKind, number> = { slash: 26, slashWind: 26, death: 16, muzzle: 26, hit: 22, ultimateCross: 8, iaido: 7 }
 
 type Particle = {
@@ -202,11 +205,25 @@ export class Effects {
     this.playFx('slash', x, 1.1, z, range * 1.5, angle)
   }
 
-  /** 총구 화염 (총구 앞쪽에 배치) — 높이는 gunblader_gun_m1911.png 발사 프레임의
-   * 실제 총구 픽셀 위치를 월드 단위로 환산한 값(CharacterSprite.ts GUN_SHOOT_FIX 참고) */
-  muzzleFlash(pos: THREE.Vector3, angle: number) {
-    const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
-    this.playFx('muzzle', pos.x + fwd.x * 1.35, 2.6, pos.z + fwd.z * 1.35, 1.5, angle)
+  /**
+   * 총구 화염 — muzzle은 총구 끝의 월드 좌표(Player.muzzlePoint, 캐릭터 스프라이트의 총구 픽셀).
+   * 화염 시트는 112×64 셀 안에서 불꽃 뿌리가 중앙보다 오른쪽 23px·아래 4px(실측 x≈79, y≈36)에
+   * 그려져 있고 조준각으로 회전하므로, 회전된 그 오프셋만큼 스프라이트 중심을 되돌려 놓아
+   * 불꽃 뿌리가 정확히 총구 끝에 오게 한다.
+   */
+  muzzleFlash(muzzle: THREE.Vector3, angle: number) {
+    const scale = 1.5
+    const def = ASSET.fx.muzzle
+    const u = scale / def.cell.w
+    const bx = MUZZLE_FX_ROOT.x * u
+    const by = MUZZLE_FX_ROOT.up * u
+    const r = -angle + Math.PI / 2 // playFx의 화면 회전과 같은 값
+    const sx = bx * Math.cos(r) - by * Math.sin(r)
+    const sy = bx * Math.sin(r) + by * Math.cos(r)
+    // 화면 위쪽 = 카메라 up 벡터(0, upY, -√(1-upY²)) — 화면 오른쪽은 월드 +x 그대로다.
+    const upY = CharacterSprite.viewUpY
+    const upZ = -Math.sqrt(1 - upY * upY)
+    this.playFx('muzzle', muzzle.x - sx, muzzle.y - sy * upY, muzzle.z - sy * upZ, scale, angle)
   }
 
   /** 피격 임팩트 */

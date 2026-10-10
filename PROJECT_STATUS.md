@@ -90,6 +90,13 @@ Last updated: 2026-10-09
   Dash plays its own 4-frame sheet (atlas row 2) and the `windX` X-slash
   layer is drawn in front of the character on attack frames 2–9; the world
   slash shows only the thin aim-direction arc (`docs/art/gunblader-sd.md`).
+  Shooting (2026-10-10 fix): each shot plays fire → recoil → aim (compat 21·22·24)
+  and holds the aim pose; the gun is lowered (25·26) only 0.45 s after the last
+  shot — the old 8-frame loop raised and lowered the gun during sustained fire.
+  The muzzle flash root and the bullet height are placed on the sprite's measured
+  gun tip (`CharacterSprite.muzzleOffset`); bullet hit origins (x·z) are unchanged.
+  Reload plays the Codex `reload.png` sheet (atlas row 3) by reload progress while
+  standing still (QC `shoot-anim`).
   Per-weapon visual
   changes are deferred until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.

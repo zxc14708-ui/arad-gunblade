@@ -21,7 +21,9 @@ task-specific document listed in `docs/INDEX.md`.
   `docs/systems/belt-rooms.md`. Other room kinds are unchanged.
 - Every loadout uses the new SD character sheet (`compat27.png` + run/X-slash
   atlas row, 2026-10-10). Basic attack is the X-shaped double slash (2 × 50%);
-  '이도류' is gone. Dash sheet and `windX` slash layer are wired. Per-weapon
+  '이도류' is gone. Dash sheet and `windX` slash layer are wired. Shooting holds
+  the aim pose during sustained fire, the muzzle flash sits on the sprite's gun
+  tip, and reload plays its own sheet (atlas row 3). Per-weapon
   visuals are paused until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.
 

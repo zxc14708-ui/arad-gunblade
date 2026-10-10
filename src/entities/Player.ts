@@ -944,6 +944,10 @@ export class Player {
         // 조준 방향이 바뀌어 있으면 좌우로 튀어 보였다 — 최소한 쿨타임만큼은
         // 유지해 연사 중 내내 얼어붙게 한다.
         this.shootAnim = Math.max(0.16, this.stats.gunCooldown)
+        this.shotId++
+        // 총구 끝(스프라이트 실측) — 높이만 총구에 맞춘다. 바닥 판정(x·z)의 출발점은 예전 그대로
+        // 몸 앞 0.9(조준 방향)라 근접 명중·거리 보너스 계산이 바뀌지 않는다.
+        const muzzleY = this.char.muzzleOffset().y
         const shots = this.stats.multishot
         const baseDir = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
         for (let i = 0; i < shots; i++) {
@@ -962,9 +966,7 @@ export class Player {
           const lastBulletActive = this.coreSlots.get('gun') === 'last_bullet' && isLastBullet
           if (lastBulletActive) dmg *= CONFIG.traits.lastBulletMult
           bullets.push({
-            // 총구 높이/전방 거리는 gunblader_gun_m1911.png 발사 프레임의 실제 총구
-            // 픽셀 위치를 월드 단위로 환산한 값이다(CharacterSprite.ts GUN_SHOOT_FIX 주석 참고).
-            pos: new THREE.Vector3(this.pos.x, 2.6, this.pos.z).addScaledVector(dir, 0.9),
+            pos: new THREE.Vector3(this.pos.x, muzzleY, this.pos.z).addScaledVector(dir, 0.9),
             dir,
             damage: dmg,
             crit,
@@ -1044,6 +1046,14 @@ export class Player {
   private swingAnim = 0
   /** 베기마다 1씩 증가 — 연속 베기에서 애니메이션을 처음부터 다시 틀기 위한 표식. */
   private swingId = 0
+  /** 발사마다 1씩 증가 — 연사 중 새 발마다 발사·반동 모션을 다시 틀기 위한 표식. */
+  private shotId = 0
+
+  /** 총구 끝의 월드 좌표 — 총구 화염을 스프라이트의 총구 픽셀에 맞춰 띄운다(CharacterSprite.muzzleOffset). */
+  muzzlePoint() {
+    const m = this.char.muzzleOffset()
+    return new THREE.Vector3(this.pos.x + m.x, m.y, this.pos.z)
+  }
 
   /** 이동 애니메이션: 던전은 달리기, 마을은 걷기(Game이 방을 열 때 정한다). */
   setRunAnim(run: boolean) {
@@ -1062,6 +1072,8 @@ export class Player {
         swinging: this.swingAnim > 0,
         swingId: this.swingId,
         shooting: this.shootAnim > 0,
+        shotId: this.shotId,
+        reload: this.reloading ? this.reloadRatio : null,
         invulnerable: this.invulnerable,
       },
       this.hitFlash,

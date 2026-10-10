@@ -174,6 +174,80 @@ const STEPS = [
     },
   },
   {
+    name: 'shoot-anim',
+    what: '사격 모션(2026-10-10) — 연사 중엔 발사·반동·조준(21·22·24)만 반복하고 총을 내리지 않는가, 총구 화염이 스프라이트 총구 끝에 뜨는가, 탄창 소진 시 재장전 시트(54~63), 사격을 멈추면 내림(25·26) 후 대기',
+    async run(p) {
+      await aim(p, 400)
+      await p.waitForTimeout(300)
+      await p.evaluate(() => {
+        const g = window.__game
+        g.player.ammo = g.player.magSize
+        window.__qcShootAnim = { samples: [], muzzle: null }
+        const loop = () => {
+          const s = window.__qcShootAnim
+          if (!s || s.done) return
+          const c = g.player.char
+          s.samples.push({ a: c.lastAnim, f: c.lastFrame, ammo: g.player.ammo, rl: g.player.reloading })
+          // 첫 발 직후 — 총구 화염 기준점(muzzlePoint)과 스프라이트 총구 끝(발 위치 + 셀 실측 픽셀)의 화면 거리
+          if (!s.muzzle && g.player.ammo < g.player.magSize) {
+            const rect = document.querySelector('canvas').getBoundingClientRect()
+            const V = g.player.pos.constructor
+            const proj = (v) => {
+              const q = v.clone().project(g.camera)
+              return [rect.left + ((q.x + 1) / 2) * rect.width, rect.top + ((-q.y + 1) / 2) * rect.height]
+            }
+            const up = new V(0, 1, 0).applyQuaternion(g.camera.quaternion)
+            const foot = new V(g.player.pos.x, 0, g.player.pos.z)
+            const b = proj(foot)
+            const top = proj(foot.clone().addScaledVector(up, 3.7))
+            const pxPerArt = (b[1] - top[1]) / 64
+            const m = proj(g.player.muzzlePoint())
+            const tip = [b[0] + 27.5 * pxPerArt * c.facing, b[1] - 40.5 * pxPerArt]
+            s.muzzle = { err: Math.hypot(m[0] - tip[0], m[1] - tip[1]), m, tip }
+          }
+          requestAnimationFrame(loop)
+        }
+        loop()
+      })
+      // 1) 탄창을 다 쏠 때까지 누르고 있기 → 자동 장전 시작
+      await p.mouse.down()
+      await p.waitForFunction(() => window.__game.player.reloading, null, { timeout: 30000, polling: 'raf' })
+      await p.mouse.up()
+      await p.waitForFunction(() => !window.__game.player.reloading, null, { timeout: 30000, polling: 'raf' })
+      // 2) 두 발만 쏘고 손 떼기 → 조준 유지 후 내림
+      await p.mouse.down()
+      await p.waitForFunction(() => window.__game.player.ammo <= window.__game.player.magSize - 2, null, { timeout: 30000, polling: 'raf' })
+      await p.mouse.up()
+      await waitGame(p, 0.9)
+      await p.evaluate(() => {
+        window.__qcShootAnim.done = true
+        window.__game.player.ammo = window.__game.player.magSize // 다음 스텝은 가득 찬 탄창 기준
+      })
+    },
+    check: async (p) => {
+      const s = await p.evaluate(() => window.__qcShootAnim)
+      if (!s?.samples?.length) return '사격 모션 표본 없음'
+      if (!s.muzzle) return '첫 발 총구 위치를 재지 못함'
+      if (s.muzzle.err > 4) return `총구 화염 기준점이 스프라이트 총구 끝과 ${s.muzzle.err.toFixed(1)}px 어긋남 (화염 ${s.muzzle.m.map(Math.round)} / 총구 ${s.muzzle.tip.map(Math.round)})`
+      const firstShot = s.samples.findIndex((x) => x.ammo < 7)
+      const empty = s.samples.findIndex((x) => x.rl)
+      if (firstShot < 0 || empty < 0) return `연사 구간을 찾지 못함 (첫 발 ${firstShot}, 장전 ${empty})`
+      const burst = s.samples.slice(firstShot, empty)
+      const bad = burst.filter((x) => x.a !== 'shoot' || ![21, 22, 24].includes(x.f))
+      if (bad.length) return `연사 중 발사·반동·조준 외 프레임 ${bad.length}건 (예: ${bad[0].a}:${bad[0].f}) — 총을 내렸다 올림`
+      if (!burst.some((x) => x.f === 24)) return '연사 중 조준 유지 프레임(24)이 없음'
+      const reloadFrames = new Set(s.samples.filter((x) => x.a === 'reload').map((x) => x.f))
+      if (reloadFrames.size < 5 || [...reloadFrames].some((f) => f < 54 || f > 63)) return `장전 모션 프레임 ${[...reloadFrames].join(',')} (기대 54~63 중 5종 이상)`
+      const done = s.samples.findIndex((x, i) => i > empty && !x.rl)
+      const tail = s.samples.slice(s.samples.findIndex((x, i) => i > done && x.ammo < 7))
+      const lowerAt = tail.findIndex((x) => x.f === 25 || x.f === 26)
+      if (lowerAt < 0) return '사격을 멈춘 뒤 내림 프레임(25·26)이 없음'
+      if (!tail.slice(0, lowerAt).some((x) => x.f === 24)) return '내림 전에 조준 유지(24)가 없음'
+      if (tail[tail.length - 1].a !== 'idle') return `사격 종료 후 대기로 돌아가지 않음 (${tail[tail.length - 1].a})`
+      return null
+    },
+  },
+  {
     name: 'slash',
     what: '베기 — 검이 손에 붙어 있고 궤적이 전방에 뜨는가',
     async run(p) {

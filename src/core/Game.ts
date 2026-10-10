@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { CharacterSprite } from '../entities/CharacterSprite'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { CONFIG, COLORS } from '../config'
 import { Input } from './Input'
@@ -152,6 +153,8 @@ export class Game {
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200)
     this.camera.position.copy(this.camOffset)
     this.camera.lookAt(0, 0, 0)
+    // 캐릭터 총구 위치(화면 기준) 계산에 쓰는 카메라 up 벡터의 y 성분
+    CharacterSprite.viewUpY = Math.hypot(this.camOffset.x, this.camOffset.z) / this.camOffset.length()
     this.setRenderSize()
 
     // 조명
@@ -1304,7 +1307,10 @@ export class Game {
     }
     if (bullets.length > 0) {
       this.audio.gunshot(this.player.gun.id)
-      for (const bullet of bullets) this.effects.muzzleFlash(this.player.pos, Math.atan2(bullet.dir.x, bullet.dir.z))
+      {
+        const muzzle = this.player.muzzlePoint()
+        for (const bullet of bullets) this.effects.muzzleFlash(muzzle, Math.atan2(bullet.dir.x, bullet.dir.z))
+      }
     }
     if (startedReload) this.audio.reload(this.player.gun.id)
     if (reloadTriggerAttempt) this.audio.reloadTriggerAttempt()
