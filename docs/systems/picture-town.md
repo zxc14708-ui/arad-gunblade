@@ -7,12 +7,13 @@ illustration that fills the screen; the old floor/wall/tree geometry is gone.
 
 | Item | Implementation |
 |---|---|
-| Background | `ASSET.town.village` (`public/assets/town/arad_village_bg.png`) set as `scene.background` in `Game.enterTown()`; restored to the dark colour in `clearWorld()` |
+| Background | `ASSET.town.village` (`public/assets/town/arad_village_v3.png`, 960×540 art ×2, 64 colours) set as `scene.background` in `Game.enterTown()`; restored to the dark colour in `clearWorld()` |
 | Room | `new Room(scene, size, 'picture')` — bounds only, no meshes |
 | Camera | Fixed while `townPicture` is true (`camTarget()` returns the origin) |
 | Walkable area | Screen fractions `TOWN_PICTURE.walk` (x 3–97 %, y 64–92 %) projected onto the ground plane with `groundAtScreen()`; the south bound adds back the 2.4 foreground inset `Room.clamp` subtracts |
 | Facility spots | `TOWN_PICTURE.spots` (screen fractions → ground) |
-| Name tags | `Interactable.setNameTag(text)` — canvas sprite above the placeholder |
+| NPCs | `Interactable.useNpcSheet(path, 4, 4fps, 3.7)` — 64×64 idle sheets at the player's world height (same pixel density); NPCs right of centre face left |
+| Name tags | `Interactable.setNameTag(text)` — canvas sprite above the NPC |
 | Hidden facility | `Interactable.hideVisual()` — the dungeon gate is the road through the arch, not a portal sprite |
 
 Because spots are screen fractions, replacing the illustration only needs new
@@ -20,23 +21,18 @@ fractions, and a camera-angle change keeps everything aligned.
 
 ## Spots (current illustration)
 
-| Spot | Screen (x, y) | Facility | Placeholder |
+| Spot | Screen (x, y) | Facility | NPC |
 |---|---|---|---|
-| Smithy front (anvil, forge) | 0.18, 0.66 | Weapon blueprints (meta currency) — "대장장이 · 무기" | merchant stall sprite |
-| Tavern door | 0.58, 0.66 | Starting trait (once per run) — "선술집 · 시작 특성" | trait altar stone |
-| Canvas stall | 0.73, 0.66 | Power altar (permanent upgrades) — "노점 · 힘의 제단" | meta altar stone |
-| Right stone arch road | 0.93, 0.66 | Enter dungeon — "▶ 던전으로" | hidden portal |
+| Smithy front (anvil, forge) | 0.16, 0.67 | Weapon blueprints (meta currency) — "대장장이 · 무기" | `npcs/blacksmith-idle.png` |
+| Tavern door | 0.55, 0.67 | Starting trait (once per run) — "선술집 · 시작 특성" | `npcs/tavern-idle.png` (faces left) |
+| Canvas stall | 0.72, 0.67 | Power altar (permanent upgrades) — "노점 · 힘의 제단" | `npcs/merchant-idle.png` (faces left) |
+| Right stone arch road | 0.885, 0.66 | Enter dungeon — "▶ 던전으로" | hidden portal |
 | Player entry | 0.40, 0.80 | — | — |
 
 ## Known issues
 
-- The illustration is the user's 1671×941 reference converted to PNG; it is
-  upscaled ~1.15× with nearest filtering, so its pixels are finer than the
-  character's (~2 screen px per art pixel). Re-deliver at 960×540 art
-  pixels exported ×2.
-- The character is small next to the buildings (tavern door ≈ 1.2× the
-  character). Decide whether the town illustration is redrawn at a larger
-  building scale or the town camera zooms in.
+- Resolved by the v3 delivery (2026-10-10): pixel density now 2 screen px per
+  art pixel, buildings rescaled to the characters (`docs/art/town-art-delivery.md`).
 - HUD top stats sit on the bright sky; contrast is lower than in dungeons.
 
 ## Picture spec (for replacements)
@@ -47,7 +43,7 @@ fractions, and a camera-angle change keeps everything aligned.
 - Leave a clear standing spot in front of every building that hosts an NPC.
 - Daylight is fine for the town.
 
-## NPC sprite request (Gemini)
+## NPC sprite request (Gemini) — delivered 2026-10-10, kept for future NPCs
 
 ```
 [마을 NPC 스프라이트 요청]

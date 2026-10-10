@@ -947,7 +947,7 @@ const STEPS = [
   {
     name: 'midcost-slash',
     needs: 'dungeon',
-    what: '일섬/이도류(작업 지시 slot_traits_midcost_v2 커밋1) — 단일 명중 배수, 2연타 각 60%+지연+온힛 2회',
+    what: '일섬(단일 명중 배수, X자 2타 합산) / 기본 평타 X자 2연속 베기(2026-10-10) — 각 50%+0.15초 지연+온힛 2회',
     async run(p) {
       await dismissLevelUp(p)
       await aim(p, 0)
@@ -977,6 +977,8 @@ const STEPS = [
       await p.mouse.down({ button: 'right' })
       await waitGame(p, 0.05)
       await p.mouse.up({ button: 'right' })
+      // 기본 평타가 X자 2타라 두 번째 타격(0.15초 뒤)까지 끝난 합산을 본다.
+      await waitGame(p, 0.3)
       const ilseomSolo = await p.evaluate(() => {
         const g = window.__game
         const e = g.enemies.find((it) => it.id === window.__qcMidSlash.id)
@@ -998,6 +1000,8 @@ const STEPS = [
       await p.mouse.down({ button: 'right' })
       await waitGame(p, 0.05)
       await p.mouse.up({ button: 'right' })
+      // 기본 평타가 X자 2타라 두 번째 타격(0.15초 뒤)까지 끝난 합산을 본다.
+      await waitGame(p, 0.3)
       const ilseomDuo = await p.evaluate(() => {
         const g = window.__game
         const e1 = g.enemies.find((it) => it.id === window.__qcMidSlash.id1)
@@ -1008,10 +1012,10 @@ const STEPS = [
         }
       })
 
-      // ── 이도류 — 2연타 각 60%, 두 번째는 0.12초 뒤, 온힛(장전) 2회 ──
+      // ── 기본 평타 X자 2연속 베기 — 각 50%, 두 번째는 0.15초 뒤, 온힛(장전) 2회 ──
       await p.evaluate(() => {
         const g = window.__game
-        g.debugSetCoreSlot('sword', 'dualblade')
+        g.player.coreSlots.delete('sword') // 일섬 배수 없이 기본 평타만
         g.debugClearEnemies()
         g.player.swordTimer = 0
         g.player.ammo = 0
@@ -1022,14 +1026,14 @@ const STEPS = [
       })
       await aimAtPoint(p, 0, -3)
       await p.mouse.down({ button: 'right' })
-      // dt가 프레임당 최대 0.05초까지 뭉치는 이 샌드박스에서는 이도류의 0.12초
+      // dt가 프레임당 최대 0.05초까지 뭉치는 이 샌드박스에서는 X자 베기의 0.15초
       // 지연이 단 2~3프레임 만에 끝나버려, waitGame()의 벽시계 왕복 지연만으로도
       // 두 번째 타격까지 끝나버릴 수 있다(실측: 외부 폴링 경유 시 100% 재현).
       // 그래서 벽시계 폴링 대신 페이지 내부 rAF로 직접 대기열(pendingSlashes)이
       // 채워진 첫 프레임(=첫 타만 적용되고 두 번째는 아직 큐에 대기 중인 시점)을
-      // 잡는다 — Game.step()이 같은 프레임 안에서 push와 처리(dt<0.12라 미소진)를
+      // 잡는다 — Game.step()이 같은 프레임 안에서 push와 처리(dt<0.15라 미소진)를
       // 순서대로 하므로, 이 프레임에서 관측하면 정확히 "1타만 적용됨"이 보장된다.
-      const dualbladeFirst = await p.evaluate(() => {
+      const xFirst = await p.evaluate(() => {
         const g = window.__game
         return new Promise((resolve) => {
           let framesLeft = 180 // 안전장치 — 못 잡아도 무한 대기하지 않음
@@ -1045,8 +1049,8 @@ const STEPS = [
         })
       })
       await p.mouse.up({ button: 'right' })
-      await waitGame(p, 0.25) // 0.12초 지연 + 처리 여유
-      const dualbladeSecond = await p.evaluate(() => {
+      await waitGame(p, 0.3) // 0.15초 지연 + 처리 여유
+      const xSecond = await p.evaluate(() => {
         const g = window.__game
         const e = g.enemies.find((it) => it.id === window.__qcMidSlash.id)
         return { dealtTotal: e ? window.__qcMidSlash.hpBefore - e.hp : null, ammoAfterSecond: g.player.ammo }
@@ -1054,7 +1058,7 @@ const STEPS = [
 
       await p.evaluate((result) => {
         window.__qcMidSlashResult = result
-      }, { swordDamage: setup.swordDamage, ilseomSolo, ilseomDuo, dualbladeFirst, dualbladeSecond })
+      }, { swordDamage: setup.swordDamage, ilseomSolo, ilseomDuo, xFirst, xSecond })
     },
     check: async (p) => p.evaluate(() => {
       const r = window.__qcMidSlashResult
@@ -1067,16 +1071,16 @@ const STEPS = [
       if (Math.abs(r.ilseomDuo.dealt1 - r.swordDamage) > r.swordDamage * 0.05 || Math.abs(r.ilseomDuo.dealt2 - r.swordDamage) > r.swordDamage * 0.05) {
         return `일섬 2명 이상 명중 시에도 배수가 적용됨 (${r.ilseomDuo.dealt1}, ${r.ilseomDuo.dealt2} / 기대 각 ${r.swordDamage.toFixed(1)})`
       }
-      const dualExpected = r.swordDamage * 0.6
-      if (r.dualbladeFirst.dealt == null || Math.abs(r.dualbladeFirst.dealt - dualExpected) > dualExpected * 0.05) {
-        return `이도류 첫 타격이 60%가 아님 (${r.dualbladeFirst.dealt} / 기대 ${dualExpected.toFixed(1)})`
+      const xHalf = r.swordDamage * 0.5
+      if (r.xFirst.dealt == null || Math.abs(r.xFirst.dealt - xHalf) > xHalf * 0.05) {
+        return `X자 베기 첫 타격이 50%가 아님 (${r.xFirst.dealt} / 기대 ${xHalf.toFixed(1)})`
       }
-      if (r.dualbladeFirst.ammoAfterFirst !== 1) return `이도류 첫 타격 온힛(장전)이 발동하지 않음 (ammo=${r.dualbladeFirst.ammoAfterFirst})`
-      const dualTotalExpected = r.swordDamage * 1.2
-      if (r.dualbladeSecond.dealtTotal == null || Math.abs(r.dualbladeSecond.dealtTotal - dualTotalExpected) > dualTotalExpected * 0.05) {
-        return `이도류 2타 합산이 120%가 아님 (${r.dualbladeSecond.dealtTotal} / 기대 ${dualTotalExpected.toFixed(1)})`
+      if (r.xFirst.ammoAfterFirst !== 1) return `X자 베기 첫 타격 온힛(장전)이 발동하지 않음 (ammo=${r.xFirst.ammoAfterFirst})`
+      const xTotal = r.swordDamage
+      if (r.xSecond.dealtTotal == null || Math.abs(r.xSecond.dealtTotal - xTotal) > xTotal * 0.05) {
+        return `X자 베기 2타 합산이 100%가 아님 (${r.xSecond.dealtTotal} / 기대 ${xTotal.toFixed(1)})`
       }
-      if (r.dualbladeSecond.ammoAfterSecond !== 2) return `이도류 두 번째 타격 온힛(장전)이 발동하지 않음 (ammo=${r.dualbladeSecond.ammoAfterSecond})`
+      if (r.xSecond.ammoAfterSecond !== 2) return `X자 베기 두 번째 타격 온힛(장전)이 발동하지 않음 (ammo=${r.xSecond.ammoAfterSecond})`
       return null
     }),
     async after(p) {
@@ -3788,7 +3792,7 @@ async function waitGame(p, gameSeconds) {
  * 페이지 내부 requestAnimationFrame으로 predicate가 참이 될 때까지 기다린다.
  * waitGame()의 벽시계 왕복(Node↔브라우저 evaluate 호출)이 이 샌드박스에서는
  * 프레임 하나만큼도 몇 배씩 느려질 수 있어(dt가 프레임당 최대 0.05초로 뭉치는
- * 환경), 이도류·잔영 같은 좁은 시간 창(0.1~0.2초대) 검증에서 실측으로 여러 번
+ * 환경), X자 베기 2타·잔영 같은 좁은 시간 창(0.1~0.2초대) 검증에서 실측으로 여러 번
  * 오탐이 났다 — 그때마다 페이지 내부 rAF 폴링으로 바꿔 해결했다. 그 패턴을
  * 재사용 가능한 형태로 뽑았다. predicate는 (g) => boolean 형태의 함수이며,
  * 브라우저 컨텍스트에서 문자열로 직렬화돼 다시 컴파일된다(Node 클로저를

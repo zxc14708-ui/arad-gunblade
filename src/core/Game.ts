@@ -107,7 +107,7 @@ export class Game {
    */
   private simClock = 0
   private wasDashing = false
-  /** '이도류'(slash) 두 번째 타격 대기열 — playerDt 누적으로 소진(step()에서 처리,
+  /** X자 2연속 베기(기본 평타) 두 번째 타격 대기열 — playerDt 누적으로 소진(step()에서 처리,
    * 히트스톱 영향 없음 — 작업 지시 P6 커밋1-1) */
   private pendingSlashes: { timer: number; arc: number; range: number; damage: number; crit: boolean; knockback: number }[] = []
   private ghostTimer = 0
@@ -333,6 +333,7 @@ export class Game {
     this.run.reset()
     this.startRun()
     this.player.group.visible = true
+    this.player.setRunAnim(false) // 마을은 걷기, 던전은 달리기
 
     // 카메라를 고정한 뒤 화면 비율 좌표 → 지면 좌표로 걷는 영역과 시설 위치를 정한다.
     // 그림이 바뀌어도 TOWN_PICTURE 비율만 고치면 된다(카메라 각도가 바뀌어도 그대로 맞는다).
@@ -345,15 +346,18 @@ export class Game {
     this.room.bounds = { minX: tl.x, maxX: br.x, minZ: tl.z, maxZ: br.z + 2.4 }
 
     const at = (spot: { x: number; y: number }) => this.groundAtScreen(spot.x, spot.y)
-    // 대장간 앞 대장장이 = 무기 설계도 해금(영구 재화) · 선술집 앞 = 시작 특성 ·
-    // 노점 = 힘의 제단 · 오른쪽 아치 길 끝 = 던전 출발. NPC 그림이 오기 전까지는
-    // 기존 시설 그림에 이름표를 붙인 임시 표시다.
+    // 대장간 앞 대장장이 = 무기 설계도 해금(영구 재화) · 선술집 앞 주인 = 시작 특성 ·
+    // 노점 상인 = 힘의 제단 · 오른쪽 아치 길 끝 = 던전 출발. NPC는 4프레임 대기 시트
+    // (셀 64px — 플레이어와 같은 3.7 월드 높이라 픽셀 밀도가 같다). 화면 오른쪽의 NPC는
+    // 마을 가운데를 보도록 좌우 반전한다.
+    const npcH = 3.7
+    const npc = ASSET.town.npcs
     const smith = at(tp.spots.smith)
-    this.interactables.push(new Interactable('merchant', smith.x, smith.z, '대장간 — 무기 설계도').setNameTag('대장장이 · 무기').addTo(this.scene))
+    this.interactables.push(new Interactable('merchant', smith.x, smith.z, '대장장이 — 무기 설계도').useNpcSheet(npc.blacksmith, 4, 4, npcH).setNameTag('대장장이 · 무기').addTo(this.scene))
     const tavern = at(tp.spots.tavern)
-    this.interactables.push(new Interactable('traitAltar', tavern.x, tavern.z, '선술집 — 시작 특성 선택').setNameTag('선술집 · 시작 특성').addTo(this.scene))
+    this.interactables.push(new Interactable('traitAltar', tavern.x, tavern.z, '선술집 주인 — 시작 특성 선택').useNpcSheet(npc.tavern, 4, 4, npcH, true).setNameTag('선술집 · 시작 특성').addTo(this.scene))
     const stall = at(tp.spots.stall)
-    this.interactables.push(new Interactable('metaAltar', stall.x, stall.z, '노점 — 힘의 제단(영구 강화)').setNameTag('노점 · 힘의 제단').addTo(this.scene))
+    this.interactables.push(new Interactable('metaAltar', stall.x, stall.z, '노점 상인 — 힘의 제단(영구 강화)').useNpcSheet(npc.merchant, 4, 4, npcH, true).setNameTag('노점 · 힘의 제단').addTo(this.scene))
     const gate = at(tp.spots.gate)
     this.interactables.push(
       new Interactable('portal', gate.x, gate.z, `던전 입장 — ${this.run.cfg.name}`).hideVisual().setNameTag('▶ 던전으로', '#9fd8ff').addTo(this.scene),
@@ -523,6 +527,7 @@ export class Game {
     this.curPlan = plan
     this.state = 'play'
     this.player.group.visible = true
+    this.player.setRunAnim(true)
 
     // 적 스폰 대기열 — 횡스크롤 전투방은 구간별로 나눠 두고, 플레이어가 각
     // 구간에 들어설 때 그 구간 몫만 대기열에 넣는다(updateBelt).
@@ -1302,28 +1307,25 @@ export class Game {
     if (slash) {
       this.audio.slash(this.player.sword.id)
       this.effects.slash(slash.pos, slash.angle, slash.arc, slash.range)
-      if (this.player.coreSlots.get('sword') === 'dualblade') {
-        // '이도류' — 2연타, 각 타 60%(합계 120%). 첫 타는 즉시, 두 번째 타는
-        // 0.12초 뒤 그 시점의 플레이어 위치/각도로 다시 판정한다(대기열 방식,
-        // Game.step()에서 playerDt 누적으로 소진 — 히트스톱 영향 없음).
-        const hitDmg = slash.damage * CONFIG.traits.dualbladeHitMult
-        this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, hitDmg, slash.crit, slash.knockback)
-        this.pendingSlashes.push({
-          timer: CONFIG.traits.dualbladeDelaySec,
-          arc: slash.arc,
-          range: slash.range,
-          damage: hitDmg,
-          crit: slash.crit,
-          knockback: slash.knockback,
-        })
-      } else {
-        this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, slash.damage, slash.crit, slash.knockback)
-        if (this.player.coreSlots.get('sword') === 'parry') {
-          this.resolveDeflect(slash.pos, slash.angle, slash.arc, slash.range, slash.damage)
-        }
+      // 기본 평타 = X자 2연속 베기(2026-10-10 사용자 결정 — '이도류' 삭제와 함께 승격).
+      // 각 타 50%(합계 100% — 검 DPS 유지), 적중 효과는 타마다 발동. 첫 타는 즉시,
+      // 두 번째 타는 그림에서 X가 교차하는 시점(xSlashSecondDelay) 뒤 그 시점의
+      // 플레이어 위치/각도로 다시 판정한다(대기열, playerDt로 소진 — 히트스톱 무관).
+      const hitDmg = slash.damage * CONFIG.combat.xSlashHitMult
+      this.resolveSlash(slash.pos, slash.angle, slash.arc, slash.range, hitDmg, slash.crit, slash.knockback)
+      if (this.player.coreSlots.get('sword') === 'parry') {
+        this.resolveDeflect(slash.pos, slash.angle, slash.arc, slash.range, slash.damage)
       }
+      this.pendingSlashes.push({
+        timer: CONFIG.combat.xSlashSecondDelay,
+        arc: slash.arc,
+        range: slash.range,
+        damage: hitDmg,
+        crit: slash.crit,
+        knockback: slash.knockback,
+      })
     }
-    // '이도류' 두 번째 타격 대기열 — 플레이어 자신의 공격 후속 타이밍이라
+    // X자 베기 두 번째 타격 대기열 — 플레이어 자신의 공격 후속 타이밍이라
     // playerDt로 소진한다(히트스톱에 영향받지 않음 — 작업 지시 P6 커밋1-1).
     for (let i = this.pendingSlashes.length - 1; i >= 0; i--) {
       const q = this.pendingSlashes[i]
@@ -2010,7 +2012,7 @@ export class Game {
    * 전원 풀 데미지, 스윙당 검 장전 1회)은 그대로다 — 명중 수와 무관하게
    * 전원이 맞고, 일섬 조건이 아니면 배수는 항상 1.0이다.
    *
-   * opts.halfFx: 이도류 두 번째 타격 — 히트스톱/화면 흔들림을 절반으로 줄인다.
+   * opts.halfFx: X자 베기 두 번째 타격 — 히트스톱/화면 흔들림을 절반으로 줄인다.
    */
   private resolveSlash(
     pos: THREE.Vector3,
@@ -2029,7 +2031,7 @@ export class Game {
     // 완충 없이 1.0배(작업 지시: "교환이 흐려진다" — 의도된 전부-아니면-없음).
     const ilseomActive = this.player.coreSlots.get('sword') === 'ilseom' && hits.length === 1
     const finalDamage = ilseomActive ? damage * CONFIG.traits.ilseomMult : damage
-    const fxScale = opts.halfFx ? CONFIG.traits.dualbladeSecondHitFxScale : 1
+    const fxScale = opts.halfFx ? CONFIG.combat.xSlashSecondHitFxScale : 1
 
     // 2패스 — 확정된 배수로 피해/넉백/이펙트 적용
     let hitAny = false
@@ -2271,15 +2273,15 @@ function isBeltPlan(plan: RoomPlan) {
 
 /**
  * 그림 한 장 마을의 화면 비율 좌표(0~1, 왼쪽 위 기준) — 걷는 영역(그림 속 흙길)과
- * 시설 자리. 현재 그림(assets/town/arad_village_bg.png)은 높이 약 60%가 땅선이다.
+ * 시설 자리. 현재 그림(assets/town/arad_village_v3.png, 1920×1080)은 높이 약 63%가 땅선이다.
  */
 const TOWN_PICTURE = {
   walk: { left: 0.03, right: 0.97, top: 0.64, bottom: 0.92 },
   spots: {
-    smith: { x: 0.18, y: 0.66 }, // 대장간(모루·화로) 앞
-    tavern: { x: 0.58, y: 0.66 }, // 선술집 문 앞
-    stall: { x: 0.73, y: 0.66 }, // 천막 노점 앞
-    gate: { x: 0.93, y: 0.66 }, // 오른쪽 돌 아치 길 끝
+    smith: { x: 0.16, y: 0.67 }, // 대장간(모루·화로) 앞
+    tavern: { x: 0.55, y: 0.67 }, // 선술집 문 앞
+    stall: { x: 0.72, y: 0.67 }, // 천막 노점 앞
+    gate: { x: 0.885, y: 0.66 }, // 오른쪽 돌 아치 길 입구
     entry: { x: 0.4, y: 0.8 },
   },
 } as const

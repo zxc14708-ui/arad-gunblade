@@ -19,8 +19,9 @@ task-specific document listed in `docs/INDEX.md`.
 - Normal combat rooms are a side-scrolling pilot (126×16, three locked
   sections, `GO ▶`, route cards after the last section) — see
   `docs/systems/belt-rooms.md`. Other room kinds are unchanged.
-- Every loadout uses the new SD character sheet (`compat27.png`, 2026-10-10;
-  stage 2 — run/dash states and the X-slash — is not wired). Per-weapon
+- Every loadout uses the new SD character sheet (`compat27.png` + run/X-slash
+  atlas row, 2026-10-10). Basic attack is the X-shaped double slash (2 × 50%);
+  '이도류' is gone. Dash sheet / `windX` layer not wired. Per-weapon
   visuals are paused until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.
 
@@ -33,9 +34,8 @@ task-specific document listed in `docs/INDEX.md`.
 
 ## Current open work
 
-The town is now a single illustration ("picture town", `TOWN_PICTURE` in
-`Game.ts`); its NPCs are placeholders awaiting NPC sprites (request in
-`docs/systems/picture-town.md`).
+The town is a single illustration ("picture town", `TOWN_PICTURE` in
+`Game.ts`) with the v3 background and three animated NPCs.
 
 Belt-room pilot (2026-10-09) awaits playtest; its open follow-ups are listed in
 `DESIGN_LOG.md` "횡스크롤 전환" and per-stage belt background art has a request

@@ -101,6 +101,9 @@ function writeSnapshot(m) {
     L.push(`| ${s.name} | ${s.rarity} | ${(s.damage / s.cooldown).toFixed(1)} | ${s.range} | ${Math.round((s.arc * 180) / Math.PI)}° | ${s.knockback} | ${s.lunge} |`)
   }
   L.push('')
+  const c = CONFIG.combat
+  L.push(`기본 평타 = X자 2연속 베기(2026-10-10): 베기 1회가 2타 — 각 검 피해 ×${c.xSlashHitMult}(합계 ×${c.xSlashHitMult * 2}), 두 번째 타격은 ${c.xSlashSecondDelay}s 뒤, 적중 효과는 타마다 발동. 위 DPS는 두 타 합산 기준.`)
+  L.push('')
   L.push(rarityOrderNotes(GUNS, SWORDS))
   L.push('')
 

@@ -178,6 +178,13 @@ export const CONFIG = {
     // 검 스윙 커밋: 스윙 중 이동/방향전환/대시를 막는 시간. 검 쿨타임에 비례하되
     // 이 값을 넘지 않는다(전투 망치처럼 느린 검에서 조작감이 나빠지는 걸 방지).
     swordSwingCommitMax: 0.25,
+    // 기본 평타 X자 2연속 베기(2026-10-10 사용자 결정 — '이도류' 삭제·승격). 각 타 피해
+    // 배율(합계 100%, 검 DPS 유지), 두 번째 타격까지 지연(그림의 X 교차 시점 —
+    // 12프레임 26fps 중 첫 검기 2번째 프레임 → 교차 6번째 프레임 ≈ 0.15초),
+    // 두 번째 타격의 히트스톱/흔들림 배율(같은 강도로 두 번 걸리면 끊겨 보인다).
+    xSlashHitMult: 0.5,
+    xSlashSecondDelay: 0.15,
+    xSlashSecondHitFxScale: 0.5,
   },
 
   // 핵심 슬롯 특성(slash/shot/dash) 튜닝값 — 작업 지시 slot_system_phase1 커밋 3.
@@ -208,11 +215,6 @@ export const CONFIG = {
     // ── 중비용 슬롯 특성(slot_traits_midcost_v2) ──
     // 일섬(slash): 정확히 1명 명중 시 배율. 2명 이상은 1.0배(보정 없음 — 의도된 교환).
     ilseomMult: 2.0,
-    // 이도류(slash): 2연타, 각 타 피해 배율(합계 120%) + 두 번째 타격까지의 지연(초).
-    dualbladeHitMult: 0.6,
-    dualbladeDelaySec: 0.12,
-    // 이도류 두 번째 타격의 히트스톱/화면 흔들림 배율 — 같은 강도로 두 번 걸리면 끊겨 보인다.
-    dualbladeSecondHitFxScale: 0.5,
     // 흘리기(slash): 부채꼴 판정 안 적 탄환 반사 — 반사탄 피해는 현재 검 피해의 배율.
     deflectDamageMult: 0.6,
     // 도탄(shot): 탄환 소멸 시 튕길 반경, 배율은 없음(원 데미지 그대로 재사용).

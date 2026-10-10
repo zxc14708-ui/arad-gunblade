@@ -67,8 +67,9 @@ Last updated: 2026-10-09
   camera). Only the dirt road (screen 3–97% × 64–92%) is walkable; facility
   spots are screen-fraction coordinates projected to the ground
   (`TOWN_PICTURE` in `Game.ts`): smith → weapon blueprints, tavern → starting
-  trait, stall → power altar, right stone arch → dungeon. NPCs are temporary
-  (existing facility sprites + name tags) until NPC sprites arrive.
+  trait, stall → power altar, right stone arch → dungeon. Since the v3 art
+  delivery the background is `arad_village_v3.png` (960×540 ×2, 64 colours)
+  and the three facilities are animated NPCs (`Interactable.useNpcSheet`).
 - Town fully heals on entry; the town fountain was removed as a redundant
   duplicate of that (P7 커밋2). In-dungeon recovery is the fountain in the
   depth-4 shop room and the depth-8 boss-prep room (first use per run free,
@@ -79,9 +80,12 @@ Last updated: 2026-10-09
   texture/filter, sprite anchoring, and prop aspect rules are centralized
   in `src/rendering/pixelArt.ts`.
 - All loadouts use one character sheet — since 2026-10-10 the new SD sheet
-  `assets/characters/gunblader-sd/compat27.png` (same 27-frame layout as the
-  old `public/gunblader.png`; run/dash/X-slash sheets delivered but not wired,
-  `docs/art/gunblader-sd.md`). Per-weapon visual
+  `assets/characters/gunblader-sd/compat27.png` plus a second atlas row with
+  the run (6) and X-slash (12) sheets. Dungeon movement plays run, the town
+  plays walk. **Basic attack = X-shaped double slash** (two hits × 50%, second
+  0.15 s later, on-hit effects per hit); the '이도류' core trait was removed.
+  Dash sheet and the `windX` slash layer are not wired yet
+  (`docs/art/gunblader-sd.md`). Per-weapon visual
   changes are deferred until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.
 - Run-scope state (traits, gold, equipped loadout, "once per run" facility

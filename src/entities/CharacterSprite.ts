@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import {
-  configurePixelTexture,
   makeBottomAnchoredSprite,
   makePixelCanvasTexture,
   setSpriteWorldHeight,
@@ -23,32 +22,49 @@ import {
  * 로드되지 않았거나 로드에 실패했을 때만 보이는 폴백이다. 무기별 외형 변화는
  * 최종 파츠 아트가 준비된 뒤 다시 연결한다.
  */
+type AnimState = 'idle' | 'walk' | 'run' | 'attack' | 'shoot'
+
 interface SheetSpec {
-  n: number
+  n: number // 한 줄의 셀 수
+  rows: number // 줄 수 — 프레임 번호 idx는 (idx % n)열, floor(idx / n)줄
   aspect: number // 셀 가로/세로
-  anim: Record<'idle' | 'walk' | 'attack' | 'shoot', number[]>
-  fps: { idle: number; walk: number; dash: number; attack: number; shoot: number }
+  anim: Record<AnimState, number[]>
+  fps: { idle: number; walk: number; run: number; dash: number; attack: number; shoot: number }
 }
 
 const FW = 48
 const FH = 56
 const PROC_SPEC: SheetSpec = {
   n: 9,
+  rows: 1,
   aspect: FW / FH,
-  anim: { idle: [0], walk: [1, 2, 3, 4], attack: [5, 6], shoot: [7, 8] },
-  fps: { idle: 2, walk: 9, dash: 15, attack: 10, shoot: 12 },
+  anim: { idle: [0], walk: [1, 2, 3, 4], run: [1, 2, 3, 4], attack: [5, 6], shoot: [7, 8] },
+  fps: { idle: 2, walk: 9, run: 11, dash: 15, attack: 10, shoot: 12 },
 }
+
+/** 새 SD 시트 아틀라스(2026-10-10) — 1줄: compat27(대기·걷기·단일 베기·사격),
+ * 2줄: 달리기 6프레임(27~32) + X자 2연속 베기 12프레임(33~44). 두 줄로 합치는 건
+ * 한 줄 49칸(5488px)이 모바일 GPU 텍스처 한도(4096)를 넘기 때문이다. */
+const ART_COLS = 27
+const RUN_FRAMES = 6
+const ATTACK_X_FRAMES = 12
+const range = (start: number, count: number) => Array.from({ length: count }, (_, i) => start + i)
 const ART_SPEC: SheetSpec = {
-  n: 27,
+  n: ART_COLS,
+  rows: 2,
   aspect: 112 / 64,
   anim: {
     idle: [0, 1, 2, 3],
     walk: [4, 5, 6, 7, 8, 9, 10],
-    attack: [11, 12, 13, 14, 15, 16, 17, 18],
+    run: range(ART_COLS, RUN_FRAMES),
+    // 기본 평타 = X자 2연속 베기(이도류 삭제와 함께 승격, 2026-10-10)
+    attack: range(ART_COLS + RUN_FRAMES, ATTACK_X_FRAMES),
     shoot: [19, 20, 21, 22, 23, 24, 25, 26],
   },
-  fps: { idle: 5, walk: 14, dash: 20, attack: 26, shoot: 26 },
+  fps: { idle: 5, walk: 14, run: 16, dash: 20, attack: 26, shoot: 26 },
 }
+/** X자 베기 애니메이션 길이(초) — Player.swingAnim이 이 값을 쓴다. */
+export const ATTACK_X_DURATION = ATTACK_X_FRAMES / ART_SPEC.fps.attack
 
 export class CharacterSprite {
   /** 확정된 기존 캐릭터 시트. null이면 절차 생성만 사용하며 장착 무기는 외형을 바꾸지 않는다. */
@@ -56,6 +72,11 @@ export class CharacterSprite {
   // 이전 시트는 public/gunblader.png로 남아 있다. 달리기·대시·X자 베기 등 별도 상태
   // 시트는 같은 폴더에 있지만 아직 연결하지 않았다(docs/art/gunblader-sd.md).
   static SHEET_URL: string | null = 'assets/characters/gunblader-sd/compat27.png'
+  /** 아틀라스 2줄에 붙이는 상태별 시트(셀 112×64). */
+  static EXTRA_SHEETS = {
+    run: 'assets/characters/gunblader-sd/run.png',
+    attackX: 'assets/characters/gunblader-sd/attackX.png',
+  }
   /** 분리 파츠 아트는 모션·피벗 기준 확정 전까지 비활성화한다. */
   static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = null
 
@@ -69,6 +90,9 @@ export class CharacterSprite {
   private animTime = 0
   private flip = 1
   private lastState = ''
+  private lastSwingId = -1
+  /** 이동 동작 — 던전은 달리기, 마을은 걷기(Player.setRunAnim으로 Game이 정한다). */
+  runAnim = false
 
   constructor(gunId = 'm1911', swordId = 'katana') {
 
@@ -90,18 +114,24 @@ export class CharacterSprite {
 
     // 아트 시트 3장(base+sword+gun) 비동기 로드 → 캔버스에 합성 후 교체
     if (CharacterSprite.SHEET_URL) {
-      new THREE.TextureLoader().load(
-        CharacterSprite.SHEET_URL,
-        (loaded) => {
-          configurePixelTexture(loaded)
+      const { run, attackX } = CharacterSprite.EXTRA_SHEETS
+      Promise.all([loadImage(CharacterSprite.SHEET_URL), loadImage(run), loadImage(attackX)])
+        .then(([baseImg, runImg, attackXImg]) => {
+          const cv = document.createElement('canvas')
+          cv.width = ART_COLS * ART_CELL
+          cv.height = ART_CELL_H * 2
+          const ctx = cv.getContext('2d')!
+          ctx.imageSmoothingEnabled = false
+          ctx.drawImage(baseImg, 0, 0)
+          ctx.drawImage(runImg, 0, ART_CELL_H)
+          ctx.drawImage(attackXImg, RUN_FRAMES * ART_CELL, ART_CELL_H)
+          const loaded = makeTexture(cv)
           this.artTexture = loaded
           this.setTexture(loaded, ART_SPEC)
-        },
-        undefined,
-        () => {
+        })
+        .catch(() => {
           /* 로드 실패 시 절차 시트 유지 */
-        },
-      )
+        })
     }
 
     if (CharacterSprite.SHEET_LAYERS) {
@@ -140,7 +170,7 @@ export class CharacterSprite {
   private setTexture(tex: THREE.Texture, spec: SheetSpec) {
     const old = this.mat.map
     this.spec = spec
-    tex.repeat.set(1 / spec.n, 1)
+    tex.repeat.set(1 / spec.n, 1 / spec.rows)
     this.mat.map = tex
     this.mat.needsUpdate = true
     this.applyScale()
@@ -171,9 +201,13 @@ export class CharacterSprite {
     }
   }
 
-  private setFrame(idx: number, faceLeft: boolean) {
+  private setFrame(frame: number, faceLeft: boolean) {
     const fw = 1 / this.spec.n
+    const idx = frame % this.spec.n
+    const row = Math.floor(frame / this.spec.n)
     const map = this.mat.map!
+    // 텍스처 v는 아래가 0 — 이미지 맨 윗줄(row 0)이 가장 큰 offset.y다.
+    map.offset.y = 1 - (row + 1) / this.spec.rows
     if (faceLeft) {
       map.offset.x = (idx + 1) * fw
       map.repeat.x = -fw
@@ -187,7 +221,7 @@ export class CharacterSprite {
     dt: number,
     pos: THREE.Vector3,
     aimAngle: number,
-    st: { moving: boolean; dashing: boolean; swinging: boolean; shooting: boolean; invulnerable: boolean },
+    st: { moving: boolean; dashing: boolean; swinging: boolean; swingId: number; shooting: boolean; invulnerable: boolean },
     hitFlash: number,
   ) {
     // 조준 x성분으로 좌우 전환 (데드존 좁게 → 방향 전환이 굼뜨지 않게).
@@ -201,13 +235,16 @@ export class CharacterSprite {
     const faceLeft = this.flip < 0
 
     // 우선순위: 베기 > 사격 > 걷기 > 대기
-    const state = st.swinging ? 'attack' : st.shooting ? 'shoot' : st.moving ? 'walk' : 'idle'
-    if (state !== this.lastState) {
+    const state: AnimState = st.swinging ? 'attack' : st.shooting ? 'shoot' : st.moving ? (this.runAnim ? 'run' : 'walk') : 'idle'
+    // 베기를 이어서 하면(검 쿨타임 < 애니메이션 길이) 같은 'attack' 상태라도 새 베기마다 처음부터.
+    if (state !== this.lastState || (state === 'attack' && st.swingId !== this.lastSwingId)) {
       this.animTime = 0 // 동작 시작 프레임부터 재생
       this.lastState = state
+      this.lastSwingId = st.swingId
     }
     const fpsT = this.spec.fps
-    const fps = state === 'attack' ? fpsT.attack : state === 'shoot' ? fpsT.shoot : state === 'walk' ? (st.dashing ? fpsT.dash : fpsT.walk) : fpsT.idle
+    const moveFps = state === 'run' ? fpsT.run : fpsT.walk
+    const fps = state === 'attack' ? fpsT.attack : state === 'shoot' ? fpsT.shoot : state === 'walk' || state === 'run' ? (st.dashing ? fpsT.dash : moveFps) : fpsT.idle
     this.animTime += dt
     const frames = this.spec.anim[state]
     const raw = Math.floor(this.animTime * fps)

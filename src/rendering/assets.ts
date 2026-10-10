@@ -67,6 +67,7 @@ export function preloadAssets(): Promise<void> {
     ...Object.values(ASSET.monsters).flatMap((m) => Object.values(m)),
     ASSET.stage1.floor,
     ASSET.town.village,
+    ...Object.values(ASSET.town.npcs),
     ...Object.values(ASSET.stage1.foreground),
     ...Object.values(ASSET.stage1.effects),
   ]
@@ -98,7 +99,14 @@ export const ASSET = {
   // 걸을 수 있다(Game.enterTown, TOWN_PICTURE). 사용자 제공 임시 일러스트
   // (1671×941, 원본 WebP를 무손실 PNG로 변환) — 최종 픽셀 밀도 버전으로 교체 예정.
   town: {
-    village: 'assets/town/arad_village_bg.png',
+    // v3(2026-10-10 납품): 960×540 원본을 정확히 최근접 2배 확대, 64색, 건물 축척을
+    // 캐릭터에 맞춰 v2 대비 78%로 줄인 판. 납품 기록 docs/art/town-art-delivery.md.
+    village: 'assets/town/arad_village_v3.png',
+    npcs: {
+      blacksmith: 'assets/town/npcs/blacksmith-idle.png',
+      tavern: 'assets/town/npcs/tavern-idle.png',
+      merchant: 'assets/town/npcs/merchant-idle.png',
+    },
   },
   tiles: {
     dungeonFloor: 'assets/tiles/dungeon_floor_01.png',

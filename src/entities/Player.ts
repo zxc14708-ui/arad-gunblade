@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { CONFIG } from '../config'
 import { Input } from '../core/Input'
-import { CharacterSprite } from './CharacterSprite'
+import { ATTACK_X_DURATION, CharacterSprite } from './CharacterSprite'
 import { GunDef, SwordDef, START_GUN, START_SWORD } from '../systems/Weapons'
 import { MetaBonuses } from '../systems/MetaProgression'
 import type { CoreSlot, UpgradeSlot, Grade } from '../systems/Upgrades'
@@ -1015,7 +1015,8 @@ export class Player {
       // 전방 짧은 대시
       const fwd = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle))
       this.pos.addScaledVector(fwd, this.stats.lunge * dt * 6)
-      this.swingAnim = 0.3 // 아트 시트 8프레임 재생 시간
+      this.swingAnim = ATTACK_X_DURATION // X자 2연속 베기 12프레임 재생 시간
+      this.swingId++
       // 스윙 커밋: 검 쿨타임에 비례하되 상한을 넘지 않는다
       this.swingCommitTimer = Math.min(this.stats.swordCooldown, CONFIG.combat.swordSwingCommitMax)
       // 레전더리: 발도 시 총 즉시 장전
@@ -1041,6 +1042,14 @@ export class Player {
   }
 
   private swingAnim = 0
+  /** 베기마다 1씩 증가 — 연속 베기에서 애니메이션을 처음부터 다시 틀기 위한 표식. */
+  private swingId = 0
+
+  /** 이동 애니메이션: 던전은 달리기, 마을은 걷기(Game이 방을 열 때 정한다). */
+  setRunAnim(run: boolean) {
+    this.char.runAnim = run
+  }
+
   private syncMesh(dt: number) {
     // 2D 스프라이트(빌보드) 갱신
     this.char.update(
@@ -1051,6 +1060,7 @@ export class Player {
         moving: this.moving,
         dashing: this.isDashing,
         swinging: this.swingAnim > 0,
+        swingId: this.swingId,
         shooting: this.shootAnim > 0,
         invulnerable: this.invulnerable,
       },

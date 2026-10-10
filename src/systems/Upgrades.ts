@@ -532,8 +532,7 @@ const RAW_POOL: Upgrade[] = [
     apply: () => { /* 발동 로직은 Player.update()의 sword 판정에서 stillTimer로 처리 — 상시 배수가 아니라 조건부라 apply는 상태만 등록한다(coreSlots에 이미 기록됨) */ } },
   { id: 'ilseom', name: '일섬(一閃)', desc: '베기가 정확히 1명만 맞혔을 때 피해 +100% (2명 이상은 배수 없음)', icon: '💫', slot: 'sword',
     apply: () => { /* Game.resolveSlash()에서 명중 수 1일 때만 판정 */ } },
-  { id: 'dualblade', name: '이도류(二刀流)', desc: '베기가 2연타(각 60%, 합계 120%), 온힛 효과 각 타마다 발동', icon: '⚔️', slot: 'sword',
-    apply: () => { /* Game.ts pendingSlashes 대기열에서 0.12초 뒤 두 번째 타격 처리 */ } },
+  // '이도류'(dualblade)는 2026-10-10 삭제 — 2연타가 기본 평타(X자 2연속 베기)로 승격됐다.
   { id: 'parry', name: '흘리기', desc: '베기 부채꼴 안 적 탄환을 반사(검 피해의 60%, 역방향) — 근접 적에겐 무효', icon: '🛡️', slot: 'sword',
     apply: () => { /* Game.resolveDeflect()에서 판정 — 근접 적은 접촉 피해라 대상이 없다(의도) */ } },
 

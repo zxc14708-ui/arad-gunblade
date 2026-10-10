@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
-import { ASSET, loadTex } from '../rendering/assets'
+import { ASSET, cloneTex, loadTex } from '../rendering/assets'
 import { makeBottomAnchoredSprite, makePixelCanvasTexture, setSpriteWorldHeight } from '../rendering/pixelArt'
 
 export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'traitAltar' | 'traitForge' | 'dungeonForge' | 'metaAltar'
@@ -76,6 +76,8 @@ export class Interactable {
   private bob = Math.random() * 6
   /** 스프라이트 월드 높이 — 이름표를 그 위에 띄울 때 쓴다. */
   private height: number
+  /** NPC 대기 애니메이션(useNpcSheet) — 가로 시트 프레임 수와 재생 속도. */
+  private npcAnim: { frames: number; fps: number; time: number; faceLeft: boolean } | null = null
 
   constructor(kind: InteractKind, x: number, z: number, label: string) {
     this.kind = kind
@@ -145,6 +147,21 @@ export class Interactable {
   }
 
   update(dt: number) {
+    if (this.npcAnim) {
+      const a = this.npcAnim
+      a.time += dt
+      const map = this.mat.map!
+      const f = Math.floor(a.time * a.fps) % a.frames
+      const fw = 1 / a.frames
+      if (a.faceLeft) {
+        map.offset.x = (f + 1) * fw
+        map.repeat.x = -fw
+      } else {
+        map.offset.x = f * fw
+        map.repeat.x = fw
+      }
+      return
+    }
     this.bob += dt * 2.5
     // 포탈만 떠오르게 해 물이 고인 분수와 실루엣까지 구분한다.
     if (this.kind === 'portal') {
@@ -187,6 +204,26 @@ export class Interactable {
     tag.position.y = this.height + 0.35
     tag.renderOrder = 20
     this.group.add(tag)
+    return this
+  }
+
+  /**
+   * 시설 그림 대신 NPC 대기 시트(정사각 셀 가로 스트립)로 그린다(그림 마을, 2026-10-10).
+   * 빛·바닥 고리는 숨긴다 — 그림 속에 서 있는 사람처럼 보이게. worldHeight는 셀
+   * 높이에 대한 월드 크기로, 플레이어(셀 64px = 3.7)와 같은 값을 주면 픽셀 밀도가 같다.
+   */
+  useNpcSheet(path: string, frames: number, fps: number, worldHeight: number, faceLeft = false) {
+    for (const child of this.group.children) if (child !== this.sprite) child.visible = false
+    const tex = cloneTex(path)
+    tex.repeat.set(1 / frames, 1)
+    this.mat.map = tex
+    this.mat.color.setRGB(1, 1, 1)
+    this.mat.depthTest = true
+    this.mat.needsUpdate = true
+    this.height = worldHeight * 0.85 // 셀 위쪽 여백을 빼고 머리 위에 이름표가 오게
+    setSpriteWorldHeight(this.sprite, worldHeight, 1)
+    this.sprite.position.y = 0
+    this.npcAnim = { frames, fps, time: Math.random(), faceLeft }
     return this
   }
 
