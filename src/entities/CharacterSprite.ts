@@ -22,7 +22,7 @@ import {
  * 로드되지 않았거나 로드에 실패했을 때만 보이는 폴백이다. 무기별 외형 변화는
  * 최종 파츠 아트가 준비된 뒤 다시 연결한다.
  */
-type AnimState = 'idle' | 'walk' | 'run' | 'attack' | 'shoot'
+type AnimState = 'idle' | 'walk' | 'run' | 'dash' | 'attack' | 'shoot'
 
 interface SheetSpec {
   n: number // 한 줄의 셀 수
@@ -38,16 +38,20 @@ const PROC_SPEC: SheetSpec = {
   n: 9,
   rows: 1,
   aspect: FW / FH,
-  anim: { idle: [0], walk: [1, 2, 3, 4], run: [1, 2, 3, 4], attack: [5, 6], shoot: [7, 8] },
+  anim: { idle: [0], walk: [1, 2, 3, 4], run: [1, 2, 3, 4], dash: [1, 2, 3, 4], attack: [5, 6], shoot: [7, 8] },
   fps: { idle: 2, walk: 9, run: 11, dash: 15, attack: 10, shoot: 12 },
 }
 
 /** 새 SD 시트 아틀라스(2026-10-10) — 1줄: compat27(대기·걷기·단일 베기·사격),
- * 2줄: 달리기 6프레임(27~32) + X자 2연속 베기 12프레임(33~44). 두 줄로 합치는 건
- * 한 줄 49칸(5488px)이 모바일 GPU 텍스처 한도(4096)를 넘기 때문이다. */
+ * 2줄: 달리기 6프레임(27~32) + X자 2연속 베기 12프레임(33~44) + 대시 4프레임(45~48).
+ * 두 줄로 합치는 건 한 줄 53칸(5936px)이 모바일 GPU 텍스처 한도(4096)를 넘기 때문이다. */
 const ART_COLS = 27
 const RUN_FRAMES = 6
 const ATTACK_X_FRAMES = 12
+const DASH_FRAMES = 4
+/** X자 검기(windX) — 공격 0기준 2~9번째 프레임에 검기 0~7번째를 겹친다(manifest combo). */
+const WIND_FRAMES = 8
+const WIND_START = 2
 const range = (start: number, count: number) => Array.from({ length: count }, (_, i) => start + i)
 const ART_SPEC: SheetSpec = {
   n: ART_COLS,
@@ -59,9 +63,11 @@ const ART_SPEC: SheetSpec = {
     run: range(ART_COLS, RUN_FRAMES),
     // 기본 평타 = X자 2연속 베기(이도류 삭제와 함께 승격, 2026-10-10)
     attack: range(ART_COLS + RUN_FRAMES, ATTACK_X_FRAMES),
+    // 대시 4프레임을 대시 지속시간(0.16초)에 한 번 재생하고 마지막 프레임을 유지한다.
+    dash: range(ART_COLS + RUN_FRAMES + ATTACK_X_FRAMES, DASH_FRAMES),
     shoot: [19, 20, 21, 22, 23, 24, 25, 26],
   },
-  fps: { idle: 5, walk: 14, run: 16, dash: 20, attack: 26, shoot: 26 },
+  fps: { idle: 5, walk: 14, run: 16, dash: 25, attack: 26, shoot: 26 },
 }
 /** X자 베기 애니메이션 길이(초) — Player.swingAnim이 이 값을 쓴다. */
 export const ATTACK_X_DURATION = ATTACK_X_FRAMES / ART_SPEC.fps.attack
@@ -76,7 +82,10 @@ export class CharacterSprite {
   static EXTRA_SHEETS = {
     run: 'assets/characters/gunblader-sd/run.png',
     attackX: 'assets/characters/gunblader-sd/attackX.png',
+    dash: 'assets/characters/gunblader-sd/dash.png',
   }
+  /** X자 검기 레이어(캐릭터 없이 검기만, 셀 112×64 × 8프레임). */
+  static WIND_SHEET = 'assets/characters/gunblader-sd/windX.png'
   /** 분리 파츠 아트는 모션·피벗 기준 확정 전까지 비활성화한다. */
   static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = null
 
@@ -91,6 +100,9 @@ export class CharacterSprite {
   private flip = 1
   private lastState = ''
   private lastSwingId = -1
+  /** 캐릭터 앞에 겹치는 X자 검기 — 공격 중 해당 프레임에만 보인다. */
+  private wind: THREE.Sprite | null = null
+  private windMat: THREE.SpriteMaterial | null = null
   /** 이동 동작 — 던전은 달리기, 마을은 걷기(Player.setRunAnim으로 Game이 정한다). */
   runAnim = false
 
@@ -114,9 +126,9 @@ export class CharacterSprite {
 
     // 아트 시트 3장(base+sword+gun) 비동기 로드 → 캔버스에 합성 후 교체
     if (CharacterSprite.SHEET_URL) {
-      const { run, attackX } = CharacterSprite.EXTRA_SHEETS
-      Promise.all([loadImage(CharacterSprite.SHEET_URL), loadImage(run), loadImage(attackX)])
-        .then(([baseImg, runImg, attackXImg]) => {
+      const { run, attackX, dash } = CharacterSprite.EXTRA_SHEETS
+      Promise.all([loadImage(CharacterSprite.SHEET_URL), loadImage(run), loadImage(attackX), loadImage(dash)])
+        .then(([baseImg, runImg, attackXImg, dashImg]) => {
           const cv = document.createElement('canvas')
           cv.width = ART_COLS * ART_CELL
           cv.height = ART_CELL_H * 2
@@ -125,12 +137,28 @@ export class CharacterSprite {
           ctx.drawImage(baseImg, 0, 0)
           ctx.drawImage(runImg, 0, ART_CELL_H)
           ctx.drawImage(attackXImg, RUN_FRAMES * ART_CELL, ART_CELL_H)
+          ctx.drawImage(dashImg, (RUN_FRAMES + ATTACK_X_FRAMES) * ART_CELL, ART_CELL_H)
           const loaded = makeTexture(cv)
           this.artTexture = loaded
           this.setTexture(loaded, ART_SPEC)
         })
         .catch(() => {
           /* 로드 실패 시 절차 시트 유지 */
+        })
+      loadImage(CharacterSprite.WIND_SHEET)
+        .then((img) => {
+          const tex = makeTexture(imageCanvas(img))
+          tex.repeat.set(1 / WIND_FRAMES, 1)
+          // 몸 위에 항상 그린다(같은 위치의 반투명 스프라이트끼리 정렬이 흔들리지 않게).
+          this.windMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false })
+          this.wind = makeBottomAnchoredSprite(this.windMat)
+          setSpriteWorldHeight(this.wind, this.baseH, ART_SPEC.aspect)
+          this.wind.renderOrder = 6
+          this.wind.visible = false
+          this.object.add(this.wind)
+        })
+        .catch(() => {
+          /* 검기 레이어 없이 진행 */
         })
     }
 
@@ -217,6 +245,22 @@ export class CharacterSprite {
     }
   }
 
+  /** X자 검기 — 공격 프레임 raw(0기준)가 WIND_START~WIND_START+7이면 그 검기 프레임을 보인다. */
+  private updateWind(attackFrame: number, faceLeft: boolean) {
+    if (!this.wind || !this.windMat?.map) return
+    const w = attackFrame - WIND_START
+    if (w < 0 || w >= WIND_FRAMES) {
+      this.wind.visible = false
+      return
+    }
+    this.wind.visible = true
+    const map = this.windMat.map
+    const fw = 1 / WIND_FRAMES
+    map.offset.x = faceLeft ? (w + 1) * fw : w * fw
+    map.repeat.x = faceLeft ? -fw : fw
+    this.wind.position.copy(this.sprite.position)
+  }
+
   update(
     dt: number,
     pos: THREE.Vector3,
@@ -235,7 +279,7 @@ export class CharacterSprite {
     const faceLeft = this.flip < 0
 
     // 우선순위: 베기 > 사격 > 걷기 > 대기
-    const state: AnimState = st.swinging ? 'attack' : st.shooting ? 'shoot' : st.moving ? (this.runAnim ? 'run' : 'walk') : 'idle'
+    const state: AnimState = st.swinging ? 'attack' : st.shooting ? 'shoot' : st.dashing ? 'dash' : st.moving ? (this.runAnim ? 'run' : 'walk') : 'idle'
     // 베기를 이어서 하면(검 쿨타임 < 애니메이션 길이) 같은 'attack' 상태라도 새 베기마다 처음부터.
     if (state !== this.lastState || (state === 'attack' && st.swingId !== this.lastSwingId)) {
       this.animTime = 0 // 동작 시작 프레임부터 재생
@@ -244,13 +288,15 @@ export class CharacterSprite {
     }
     const fpsT = this.spec.fps
     const moveFps = state === 'run' ? fpsT.run : fpsT.walk
-    const fps = state === 'attack' ? fpsT.attack : state === 'shoot' ? fpsT.shoot : state === 'walk' || state === 'run' ? (st.dashing ? fpsT.dash : moveFps) : fpsT.idle
+    const fps = state === 'attack' ? fpsT.attack : state === 'shoot' ? fpsT.shoot : state === 'dash' ? fpsT.dash : state === 'walk' || state === 'run' ? moveFps : fpsT.idle
     this.animTime += dt
     const frames = this.spec.anim[state]
     const raw = Math.floor(this.animTime * fps)
-    // 베기는 원샷(마지막 프레임 유지), 나머지는 루프
-    const idx = state === 'attack' ? frames[Math.min(raw, frames.length - 1)] : frames[raw % frames.length]
+    // 베기·대시는 원샷(마지막 프레임 유지), 나머지는 루프
+    const oneShot = state === 'attack' || state === 'dash'
+    const idx = oneShot ? frames[Math.min(raw, frames.length - 1)] : frames[raw % frames.length]
     this.setFrame(idx, faceLeft)
+    this.updateWind(state === 'attack' && this.spec === ART_SPEC ? raw : -1, faceLeft)
 
     const bob = st.moving ? Math.abs(Math.sin(this.animTime * (st.dashing ? 18 : 11))) * (st.dashing ? 0.14 : 0.08) : 0
     this.sprite.position.set(0, bob, 0)
@@ -711,4 +757,15 @@ function drawGun(x: CanvasRenderingContext2D, anchor: HandAnchor, id: string, fl
     R(tip + 1, 1, 1, 2, '#ffd020')
   }
   x.restore()
+}
+
+/** 이미지를 같은 크기 캔버스로 옮긴다 — 픽셀 텍스처 헬퍼(makePixelCanvasTexture)를 그대로 쓰기 위해. */
+function imageCanvas(img: HTMLImageElement): HTMLCanvasElement {
+  const cv = document.createElement('canvas')
+  cv.width = img.width
+  cv.height = img.height
+  const ctx = cv.getContext('2d')!
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(img, 0, 0)
+  return cv
 }

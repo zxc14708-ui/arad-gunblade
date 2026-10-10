@@ -189,11 +189,16 @@ export class Effects {
   }
 
   /** 베기 크레센트 (조준 방향, 사거리에 맞춰 전방 배치) — 바람 잔상을 겹쳐 타격감 보강 */
-  slash(pos: THREE.Vector3, angle: number, _arc: number, range: number) {
+  /**
+   * 베기 궤적 — 실제 판정 방향(조준각)·사거리를 보여 주는 얇은 궤적. 큰 검풍(slashWind)은
+   * 2026-10-10부터 캐릭터 앞에 겹치는 X자 검기 레이어(CharacterSprite windX)가 대신해
+   * 기본으로 끈다(둘 다 그리면 겹쳐 지저분했다). wind=true면 예전처럼 같이 그린다.
+   */
+  slash(pos: THREE.Vector3, angle: number, _arc: number, range: number, wind = false) {
     const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle))
     const x = pos.x + fwd.x * range * 0.45
     const z = pos.z + fwd.z * range * 0.45
-    this.playFx('slashWind', x, 1.1, z, range * 1.5, angle)
+    if (wind) this.playFx('slashWind', x, 1.1, z, range * 1.5, angle)
     this.playFx('slash', x, 1.1, z, range * 1.5, angle)
   }
 

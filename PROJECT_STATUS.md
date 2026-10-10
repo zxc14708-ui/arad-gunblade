@@ -84,8 +84,10 @@ Last updated: 2026-10-09
   the run (6) and X-slash (12) sheets. Dungeon movement plays run, the town
   plays walk. **Basic attack = X-shaped double slash** (two hits × 50%, second
   0.15 s later, on-hit effects per hit); the '이도류' core trait was removed.
-  Dash sheet and the `windX` slash layer are not wired yet
-  (`docs/art/gunblader-sd.md`). Per-weapon visual
+  Dash plays its own 4-frame sheet (atlas row 2) and the `windX` X-slash
+  layer is drawn in front of the character on attack frames 2–9; the world
+  slash shows only the thin aim-direction arc (`docs/art/gunblader-sd.md`).
+  Per-weapon visual
   changes are deferred until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.
 - Run-scope state (traits, gold, equipped loadout, "once per run" facility

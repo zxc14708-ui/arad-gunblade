@@ -32,8 +32,9 @@
 
 현재 확정 시트는 `public/assets/characters/gunblader-sd/compat27.png`다(2026-10-10 새 SD 시트,
 `docs/art/gunblader-sd.md`). 이전 시트 `public/gunblader.png`는 보관용으로 남아 있다.
-게임은 이 시트에 달리기(`run.png`)·X자 베기(`attackX.png`)를 아래 줄로 붙인 2줄 아틀라스를
-쓴다(`CharacterSprite.ts`, 한 줄 49칸은 4096px 텍스처 한도를 넘는다). 대시·검기(`windX`)는 미연결.
+게임은 이 시트에 달리기(`run.png`)·X자 베기(`attackX.png`)·대시(`dash.png`)를 아래 줄로 붙인
+2줄 아틀라스를 쓴다(`CharacterSprite.ts`, 한 줄 53칸은 4096px 텍스처 한도를 넘는다). X자 검기
+(`windX.png`)는 캐릭터 앞에 겹치는 별도 스프라이트로, 공격 0기준 2~9번째 프레임에 검기 0~7을 낸다.
 
 - 프레임 셀: **112×64px**
 - 총 프레임: **27**
