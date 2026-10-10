@@ -3,8 +3,9 @@
 ## Current status
 
 The temporary per-weapon runtime visual system is deliberately disabled. Every
-loadout currently uses the finished original character sheet at
-`public/gunblader.png`, so switching weapons cannot replace the player with the
+loadout currently uses one character sheet — the new SD sheet
+`public/assets/characters/gunblader-sd/compat27.png` since 2026-10-10 (the old
+`public/gunblader.png` is kept for reference), so switching weapons cannot replace the player with the
 retired white-haired character.
 
 Weapon mechanics, including the scoped rifle's separate tuning, are independent

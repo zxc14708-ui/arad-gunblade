@@ -52,7 +52,10 @@ const ART_SPEC: SheetSpec = {
 
 export class CharacterSprite {
   /** 확정된 기존 캐릭터 시트. null이면 절차 생성만 사용하며 장착 무기는 외형을 바꾸지 않는다. */
-  static SHEET_URL: string | null = 'gunblader.png'
+  // 2026-10-10 새 SD 시트로 교체(1단계 — 27프레임 호환본만, 기존 프레임 배열 그대로).
+  // 이전 시트는 public/gunblader.png로 남아 있다. 달리기·대시·X자 베기 등 별도 상태
+  // 시트는 같은 폴더에 있지만 아직 연결하지 않았다(docs/art/gunblader-sd.md).
+  static SHEET_URL: string | null = 'assets/characters/gunblader-sd/compat27.png'
   /** 분리 파츠 아트는 모션·피벗 기준 확정 전까지 비활성화한다. */
   static SHEET_LAYERS: { base: string; sword: string; gun: string } | null = null
 

@@ -383,6 +383,15 @@ common은 "처음부터 지급하는 기본 무기"를 뜻하므로(해금 상�
 같은 픽셀 밀도), 캐릭터 대비 그림 크기 확인(현재 선술집 문 ≈ 캐릭터 1.2배).
 ④ 시점 전환은 던전 쪽 결정으로 계속 유효하다(마을은 그림 맵이라 영향 없음).
 
+## 새 SD 캐릭터 시트 (2026-10-10)
+
+사용자가 새 총검사 SD 시트(10장 + manifest)를 전달 → 오케스트레이터 실측(전 시트
+112×64 셀, 이진 알파, 모서리 투명, 발 y=62 고정, 96색, 빈/중복 프레임 없음) 후 게임
+내 비교 스크린샷(마을·대기·베기·사격) 확인. **결정(사용자): 1단계 — 27프레임
+호환본(`compat27.png`)으로 시트만 교체.** 이전 `public/gunblader.png`는 보관.
+**2단계(미결):** 달리기·대시 상태 연결, X자 2연속 베기(`attackX`/`windX`)를 실제 2타
+판정으로 할지('이도류' 핵심 특성과 관계 포함). 납품 기록 `docs/art/gunblader-sd.md`.
+
 ## Final weapon motion art
 
 - Current non-default weapons use temporary equipment, projectile, and melee

@@ -78,7 +78,10 @@ Last updated: 2026-10-09
 - Fixed 1920 x 1080 presentation with aspect-safe browser scaling. Pixel
   texture/filter, sprite anchoring, and prop aspect rules are centralized
   in `src/rendering/pixelArt.ts`.
-- All loadouts use the finished original character sheet. Per-weapon visual
+- All loadouts use one character sheet — since 2026-10-10 the new SD sheet
+  `assets/characters/gunblader-sd/compat27.png` (same 27-frame layout as the
+  old `public/gunblader.png`; run/dash/X-slash sheets delivered but not wired,
+  `docs/art/gunblader-sd.md`). Per-weapon visual
   changes are deferred until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.
 - Run-scope state (traits, gold, equipped loadout, "once per run" facility

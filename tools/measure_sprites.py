@@ -43,7 +43,13 @@ SRC = os.path.join(ROOT, 'src')
 ENEMY_SPRITE_TS = os.path.join(SRC, 'entities', 'EnemySprite.ts')
 ASSETS_TS = os.path.join(SRC, 'rendering', 'assets.ts')
 INTERACTABLE_TS = os.path.join(SRC, 'entities', 'Interactable.ts')
-PLAYER_SHEET = os.path.join(PUBLIC, 'gunblader.png')
+# 검사 대상은 게임이 실제로 쓰는 시트다 — CharacterSprite.SHEET_URL을 읽는다(2026-10-10
+# 새 SD 시트 교체 때 하드코딩된 gunblader.png만 검사하던 것을 고쳤다).
+def _active_player_sheet():
+    src = open(os.path.join(ROOT, 'src', 'entities', 'CharacterSprite.ts'), encoding='utf-8').read()
+    m = re.search(r"static SHEET_URL: string \| null = '([^']+)'", src)
+    return os.path.join(PUBLIC, m.group(1) if m else 'gunblader.png')
+PLAYER_SHEET = _active_player_sheet()
 
 FEET_TOL = 2  # 발 위치 허용오차(px) — 1~2px 차이는 눈에 보이지 않는다
 ALPHA_TOL = 10  # 모서리 알파 허용치 — 완전 0이 아니어도 이 이하면 통과
@@ -192,14 +198,14 @@ def check_player_sheet():
     """현재 확정된 27프레임 캐릭터 시트의 규격과 발 기준선을 검사한다."""
     frame_w, frame_h, frame_count = 112, 64, 27
     if not os.path.exists(PLAYER_SHEET):
-        errors.append('gunblader.png: 파일 없음')
+        errors.append(f'{os.path.relpath(PLAYER_SHEET, PUBLIC)}: 파일 없음')
         return
 
     im = Image.open(PLAYER_SHEET).convert('RGBA')
     w, h = im.size
     if (w, h) != (frame_w * frame_count, frame_h):
         errors.append(
-            f'gunblader.png: {w}x{h} (기준 {frame_w * frame_count}x{frame_h}, '
+            f'{os.path.relpath(PLAYER_SHEET, PUBLIC)}: {w}x{h} (기준 {frame_w * frame_count}x{frame_h}, '
             f'{frame_w}x{frame_h} × {frame_count}프레임)'
         )
         return
@@ -215,11 +221,11 @@ def check_player_sheet():
         if bottom < 0 or frame_h - 1 - bottom > FEET_TOL:
             bad_feet.append((frame, bottom))
     if bad_feet:
-        errors.append(f'gunblader.png: 발 기준선 이탈 프레임 {bad_feet}')
+        errors.append(f'{os.path.relpath(PLAYER_SHEET, PUBLIC)}: 발 기준선 이탈 프레임 {bad_feet}')
 
     bad = corner_alpha_ok(PLAYER_SHEET)
     if bad:
-        errors.append(f'gunblader.png: 모서리 불투명 {bad}')
+        errors.append(f'{os.path.relpath(PLAYER_SHEET, PUBLIC)}: 모서리 불투명 {bad}')
     print(f'player    sheet   {w}x{h}  cell {frame_w}x{frame_h}  frames {frame_count}  발 기준선 확인')
 
 

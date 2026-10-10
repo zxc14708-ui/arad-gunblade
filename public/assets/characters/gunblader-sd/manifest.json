@@ -1,0 +1,130 @@
+{
+  "version": 2,
+  "cell": {
+    "w": 112,
+    "h": 64
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 1
+  },
+  "facing": "right",
+  "paletteColors": 96,
+  "states": {
+    "idle": {
+      "file": "idle.png",
+      "frames": 4,
+      "fps": 5,
+      "loop": true
+    },
+    "walk": {
+      "file": "walk.png",
+      "frames": 8,
+      "fps": 14,
+      "loop": true
+    },
+    "run": {
+      "file": "run.png",
+      "frames": 6,
+      "fps": 16,
+      "loop": true
+    },
+    "dash": {
+      "file": "dash.png",
+      "frames": 4,
+      "fps": 20,
+      "loop": false
+    },
+    "attack": {
+      "file": "attack.png",
+      "frames": 8,
+      "fps": 26,
+      "loop": false
+    },
+    "shoot": {
+      "file": "shoot.png",
+      "frames": 8,
+      "fps": 26,
+      "loop": false
+    },
+    "wind": {
+      "file": "wind.png",
+      "frames": 6,
+      "fps": 26,
+      "loop": false
+    },
+    "attackX": {
+      "file": "attackX.png",
+      "frames": 12,
+      "fps": 26,
+      "loop": false
+    },
+    "windX": {
+      "file": "windX.png",
+      "frames": 8,
+      "fps": 26,
+      "loop": false
+    }
+  },
+  "compatibility": {
+    "file": "compat27.png",
+    "frames": 27,
+    "idle": [
+      0,
+      3
+    ],
+    "walk": [
+      4,
+      10
+    ],
+    "attack": [
+      11,
+      18
+    ],
+    "shoot": [
+      19,
+      26
+    ],
+    "walkSourceFrames": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      6,
+      7
+    ]
+  },
+  "wind": {
+    "separate": true,
+    "attackStartFrame": 2,
+    "anchor": "same bottom-center cell; place forward of sword hand"
+  },
+  "combo": {
+    "state": "attackX",
+    "effect": "windX",
+    "effectFrameByAttackFrame": [
+      null,
+      null,
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      null,
+      null
+    ],
+    "strikeFrames": [
+      3,
+      7
+    ],
+    "offset": {
+      "x": 28,
+      "y": -2
+    },
+    "note": "Art timing only; no damage events implemented"
+  }
+}

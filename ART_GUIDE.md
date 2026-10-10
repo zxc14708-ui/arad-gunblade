@@ -30,7 +30,9 @@
 
 ## 3. 캐릭터
 
-현재 확정 시트는 `public/gunblader.png`다.
+현재 확정 시트는 `public/assets/characters/gunblader-sd/compat27.png`다(2026-10-10 새 SD 시트,
+`docs/art/gunblader-sd.md`). 이전 시트 `public/gunblader.png`는 보관용으로 남아 있다.
+같은 폴더의 상태별 시트(대기·걷기·달리기·대시·공격·사격·X자 베기·검기)는 아직 게임에 연결되지 않았다.
 
 - 프레임 셀: **112×64px**
 - 총 프레임: **27**

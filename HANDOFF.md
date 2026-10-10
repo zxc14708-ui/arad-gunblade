@@ -19,7 +19,8 @@ task-specific document listed in `docs/INDEX.md`.
 - Normal combat rooms are a side-scrolling pilot (126×16, three locked
   sections, `GO ▶`, route cards after the last section) — see
   `docs/systems/belt-rooms.md`. Other room kinds are unchanged.
-- Every loadout currently uses the finished default character art. Per-weapon
+- Every loadout uses the new SD character sheet (`compat27.png`, 2026-10-10;
+  stage 2 — run/dash states and the X-slash — is not wired). Per-weapon
   visuals are paused until matching final motion sheets are delivered; see
   `docs/systems/weapon-visuals.md`.
 
