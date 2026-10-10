@@ -39,8 +39,10 @@ slower in the QC browser (game clock 0.14× vs 0.26×); pooled lights bring it t
 - The narrow 16-unit depth lines enemies up, which favours sword multi-hits and
   gun pierce. Issue-6 swing/pierce measurement (`aimed-density` QC) still runs
   in the 42×30 sandbox; belt-room measurement is future work.
-- Route cards open immediately when the last wave dies (same as before for
-  combat rooms), so a chest must be opened during the last wave.
+- Fixed 2026-10-10: leftover floor gold is auto-collected on room clear
+  (it used to vanish when the route overlay froze the world), and if an
+  unopened chest remains the room shows "다음 경로 보기" instead of opening the
+  route cards (QC `room-clear-leftovers`).
 
 ## QC
 

@@ -74,6 +74,9 @@ Last updated: 2026-10-09
   duplicate of that (P7 커밋2). In-dungeon recovery is the fountain in the
   depth-4 shop room and the depth-8 boss-prep room (first use per run free,
   then 60→96→154G).
+- Room clear auto-collects leftover floor gold (it used to be lost when the
+  reward/route overlay froze the world); a combat room with an unopened chest
+  shows "다음 경로 보기" instead of the route cards (2026-10-10).
 - Normal `combat` nodes pay kill gold ×1.5 (`CONFIG.economy.combatGoldMultiplier`,
   P9 commit 1) so they are the gold route against trait/elite sigil routes.
 - Fixed 1920 x 1080 presentation with aspect-safe browser scaling. Pixel

@@ -401,7 +401,8 @@ const STEPS = [
       // 전투/엘리트가 뽑혔다면 보상 카드를 먼저 고른 뒤 경로 카드가 떠야 한다.
       await p.evaluate(() => window.__game.debugClearEnemies())
       await p.waitForFunction(
-        () => ['route', 'reward', 'levelup'].includes(window.__game.state),
+        () => ['route', 'reward', 'levelup'].includes(window.__game.state)
+          || !document.querySelector('#routeContinue')?.hidden, // 상자가 남으면 진행 버튼
         null,
         { timeout: 10000 },
       )
@@ -3189,6 +3190,52 @@ const STEPS = [
     },
   },
   {
+    name: 'room-clear-leftovers',
+    needs: 'dungeon',
+    what: '방 클리어 시 바닥 골드 자동 회수, 열지 않은 상자가 있으면 경로 카드 대신 "다음 경로 보기" 버튼(2026-10-10 버그 수정)',
+    async run(p) {
+      await dismissLevelUp(p)
+      const r = await p.evaluate(() => {
+        const g = window.__game
+        g.debugClearEnemies()
+        const origPlan = g.curPlan
+        const goldBefore = g.run.gold
+        // 플레이어에게서 먼 곳(자석 범위 밖)에 골드를 떨어뜨린다
+        g.pickups.dropGold(g.player.pos.x + 15, g.player.pos.z, 30)
+        const dropped = g.pickups.items.reduce((s, it) => s + it.value, 0)
+        // 열지 않은 상자 흉내(판정은 kind/used만 본다)
+        const fakeChest = { kind: 'chest', used: false, pos: g.player.pos.clone().setX(g.player.pos.x + 40), update() {}, removeFrom() {} }
+        g.interactables.push(fakeChest)
+        g.curPlan = { ...origPlan, kind: 'combat' }
+        g.roomCleared = false
+        g.onRoomClear()
+        const out = {
+          dropped,
+          gained: g.run.gold - goldBefore,
+          left: g.pickups.items.length,
+          continueShown: !document.querySelector('#routeContinue').hidden,
+          routeShown: document.querySelector('#routeOv')?.classList.contains('show') ?? false,
+          state: g.state,
+        }
+        g.interactables.splice(g.interactables.indexOf(fakeChest), 1)
+        g.curPlan = origPlan
+        g.debugStabilizeRouteSandbox()
+        return out
+      })
+      await p.evaluate((v) => { window.__qcLeftovers = v }, r)
+    },
+    check: async (p) => p.evaluate(() => {
+      const r = window.__qcLeftovers
+      if (!r) return '결과 없음'
+      if (!(r.dropped > 0)) return '검사용 골드가 떨어지지 않음'
+      if (r.left !== 0) return `방 클리어 후에도 바닥 골드가 남음 (${r.left}개)`
+      if (r.gained !== r.dropped) return `바닥 골드가 회수되지 않음 (떨어진 ${r.dropped} / 회수 ${r.gained})`
+      if (!r.continueShown) return '열지 않은 상자가 있는데 "다음 경로 보기" 버튼이 없음'
+      if (r.routeShown || r.state !== 'play') return `열지 않은 상자가 있는데 경로 카드가 바로 뜸 (state ${r.state})`
+      return null
+    }),
+  },
+  {
     name: 'belt-room',
     needs: 'dungeon',
     what: '횡스크롤 전투방(시범) — 126×16 방, 왼쪽 입장, 구간 잠금(플레이어·카메라), 구간 안 웨이브 스폰, 정리 후 GO 표시, 다음 구간 진입 시 스크롤·재잠금, 마지막 구간 뒤 경로 카드',
@@ -3284,7 +3331,10 @@ const STEPS = [
         await p.evaluate(() => { for (const e of [...window.__game.enemies]) e.takeDamage(1e9, 'ranged') })
         await p.waitForFunction((i) => window.__game.enemies.length === 0 && (!window.__game.belt || window.__game.belt.active !== i), idx, { timeout: 90000 }).catch(() => {})
       }
-      await p.waitForFunction(() => window.__game.state === 'route', null, { timeout: 90000 }).catch(() => {})
+      // 상자가 남았으면 진행 버튼을 눌러 경로 카드를 연다.
+      await p.waitForFunction(() => window.__game.state === 'route' || !document.querySelector('#routeContinue')?.hidden, null, { timeout: 90000 }).catch(() => {})
+      if (await p.evaluate(() => !document.querySelector('#routeContinue')?.hidden)) await p.locator('#routeContinue').click()
+      await p.waitForFunction(() => window.__game.state === 'route', null, { timeout: 30000 }).catch(() => {})
       const end = await p.evaluate(() => ({ belt: window.__game.belt, state: window.__game.state, routeShown: document.querySelector('#routeOv')?.classList.contains('show') }))
       if (end.belt) return '세 구간을 모두 정리했는데 횡스크롤 상태가 남음'
       if (!(end.state === 'route' && end.routeShown)) return `마지막 구간 정리 뒤 경로 카드가 뜨지 않음 (state ${end.state})`
@@ -3696,6 +3746,12 @@ async function ensureRouteNotBlocking(p) {
 async function dismissRewardsUntilRoute(p) {
   for (let i = 0; i < 10; i++) {
     if (await routeVisible(p)) return
+    // 열지 않은 상자가 남은 전투방은 경로 카드 대신 "다음 경로 보기" 버튼이 뜬다(2026-10-10).
+    if (await p.evaluate(() => !document.querySelector('#routeContinue')?.hidden).catch(() => false)) {
+      await p.locator('#routeContinue').click()
+      await p.waitForTimeout(100)
+      continue
+    }
     const state = await p.evaluate(() => window.__game?.state).catch(() => null)
     if (!['levelup', 'reward'].includes(state)) {
       await p.waitForTimeout(100)

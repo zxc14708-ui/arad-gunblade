@@ -1295,6 +1295,10 @@ canvas.pixelated {
   gap: 28px;
   font-size: 20px;
   letter-spacing: 0.8px;
+  /* 밝은 배경(그림 마을의 하늘)에서도 읽히도록 반투명 어두운 판을 깐다(2026-10-10). */
+  padding: 4px 18px;
+  border-radius: 999px;
+  background: rgba(10, 10, 14, 0.55);
 }
 .room-track {
   gap: 6px;

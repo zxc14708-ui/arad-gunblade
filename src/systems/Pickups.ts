@@ -79,6 +79,18 @@ export class Pickups {
     return { gold }
   }
 
+  /** 남은 코인을 전부 회수한다(방 클리어 시 — 경로 카드가 뜨면 월드가 멈춰 바닥 골드를
+   * 더 주울 수 없고, 다음 방으로 넘어가면 clear()로 사라졌다). 반환: 회수한 골드 합계. */
+  collectAll() {
+    let gold = 0
+    for (const it of this.items) {
+      gold += it.value
+      this.scene.remove(it.sprite)
+    }
+    this.items = []
+    return gold
+  }
+
   clear() {
     for (const it of this.items) this.scene.remove(it.sprite)
     this.items = []

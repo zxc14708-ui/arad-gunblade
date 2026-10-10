@@ -33,7 +33,7 @@ fractions, and a camera-angle change keeps everything aligned.
 
 - Resolved by the v3 delivery (2026-10-10): pixel density now 2 screen px per
   art pixel, buildings rescaled to the characters (`docs/art/town-art-delivery.md`).
-- HUD top stats sit on the bright sky; contrast is lower than in dungeons.
+- HUD top stats sit on the bright sky — fixed 2026-10-10 with a translucent dark pill behind `.stat-row`.
 
 ## Picture spec (for replacements)
 
@@ -47,7 +47,7 @@ fractions, and a camera-angle change keeps everything aligned.
 
 ```
 [마을 NPC 스프라이트 요청]
-대상: 그림 마을 NPC 3명 (참조: assets/town/arad_village_bg.png 의 각 건물 앞)
+대상: 그림 마을 NPC 3명 (참조: assets/town/arad_village_v3.png 의 각 건물 앞)
   1. 대장장이 — 가죽 앞치마, 망치 (대장간 앞)
   2. 선술집 주인 — 앞치마, 맥주잔 (선술집 문 앞)
   3. 노점 상인 — 두건, 작은 저울 또는 보따리 (천막 노점 앞)

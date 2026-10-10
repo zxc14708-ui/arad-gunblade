@@ -604,6 +604,10 @@ export class Game {
     this.roomCleared = true
     this.run.markCurrentCleared()
     this.hud.setMinimap(this.run.minimap())
+    // 바닥에 남은 골드는 자동 회수한다 — 보상 카드·경로 카드가 뜨면 월드가 멈춰 못 줍고,
+    // 다음 방으로 넘어가면 지워졌다(마지막 처치 골드가 매번 사라지던 버그, 2026-10-10).
+    const leftover = this.pickups.collectAll()
+    if (leftover > 0) this.run.addGold(leftover)
     if (this.curPlan?.kind === 'boss') {
       this.grantBossStageReward()
     } else if (this.curPlan?.kind === 'elite') {
@@ -614,8 +618,15 @@ export class Game {
       this.grantHardCombatReward()
     } else {
       this.audio.pick()
-      this.hud.banner_('방 클리어! 다음 경로를 선택하세요')
-      this.presentNextRoutes()
+      // 열지 않은 상자가 남아 있으면 경로 카드를 바로 띄우지 않고 진행 버튼을 둔다 —
+      // 카드가 뜨면 월드가 멈춰 상자를 열 수 없었다(횡스크롤 방은 상자가 방 끝에 있다).
+      if (this.interactables.some((o) => o.kind === 'chest' && !o.used)) {
+        this.hud.banner_('방 클리어! 상자를 열고 다음 경로로')
+        this.hud.showRouteContinue('다음 경로 보기')
+      } else {
+        this.hud.banner_('방 클리어! 다음 경로를 선택하세요')
+        this.presentNextRoutes()
+      }
     }
   }
 

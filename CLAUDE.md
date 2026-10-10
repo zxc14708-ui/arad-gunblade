@@ -84,16 +84,19 @@ empty) whenever touching this mechanism.
 
 ## Assets from Gemini
 
-New prop art lands at these paths; update `src/rendering/assets.ts` to point at
-them and verify with `npm run qc`:
+Wire new art in `src/rendering/assets.ts` and verify with `npm run qc`. Current
+state (2026-10-10):
 
-- `public/assets/props/trait_altar.png` / `trait_altar_glow_4f.png`
-- `public/assets/props/trait_forge.png` / `trait_forge_glow_4f.png`
-
-`trait_altar` and `trait_forge` currently borrow
-`assets/stage1/stage1_forest_foreground/guardian_stone_a.png` and `_b.png` as
-placeholders. `ASPECT` for both is already `48/64`, which matches the incoming
-art, so `Interactable.ts` needs no change.
+- Town: picture map + animated NPCs (`docs/systems/picture-town.md`). The town
+  facilities no longer use the altar/forge props.
+- `traitForge` / `dungeonForge` still borrow
+  `assets/stage1/stage1_forest_foreground/guardian_stone_b.png`; a real
+  `public/assets/props/trait_forge.png` (48×64, `ASPECT` already `48/64`) can
+  replace it without touching `Interactable.ts`.
+- Player: new SD sheets in `public/assets/characters/gunblader-sd/`
+  (`docs/art/gunblader-sd.md`).
+- Dungeon belt-room backgrounds: request template in
+  `docs/systems/belt-rooms.md`.
 
 Fountain and portal art replaces existing files in place at unchanged
 dimensions — no path or `ASPECT` change.
