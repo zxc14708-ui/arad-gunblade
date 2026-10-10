@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "cell": {
     "w": 112,
     "h": 64
@@ -63,6 +63,12 @@
       "file": "windX.png",
       "frames": 8,
       "fps": 26,
+      "loop": false
+    },
+    "reload": {
+      "file": "reload.png",
+      "frames": 10,
+      "fps": 14,
       "loop": false
     }
   },
