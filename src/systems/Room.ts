@@ -14,7 +14,9 @@ const FOREGROUND_SAFE_INSET = 2.4
 // 장식·횃불 한 세트가 담당하는 방 폭 — 기존 단일 화면 전투방(42) 기준.
 const SEGMENT_WIDTH = 42
 
-export type RoomVisualKind = 'dungeon' | 'boss' | 'town'
+/** 'picture' — 그림 한 장이 화면 전체인 방(현재 마을). 바닥·벽·장식을 만들지
+ * 않고 걸을 수 있는 경계만 갖는다 — 배경은 Game이 scene.background로 깐다. */
+export type RoomVisualKind = 'dungeon' | 'boss' | 'town' | 'picture'
 
 export interface Bounds {
   minX: number
@@ -82,6 +84,10 @@ export class Room {
     const halfD = this.d / 2
     // 플레이 가능 영역(벽 두께 제외)
     this.bounds = { minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }
+    if (visual === 'picture') {
+      scene.add(this.group)
+      return
+    }
 
     const useForestBackdrop = visual !== 'town'
     const floorTex = useForestBackdrop ? loadTex(art!.floor) : townFloorTex()

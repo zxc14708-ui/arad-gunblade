@@ -353,7 +353,10 @@ export function installQcDebugHooks(game: Game) {
     // 논리 로비를 남긴 구현과 enterFirst()가 곧바로 깊이 1을 돌려주는 구현
     // 양쪽에서 스테이지 로스터 QC가 같은 실제 전투방에 들어가도록 분기한다.
     if (plan.depth === 0) {
-      const firstExit = g.run.exits.find((exit) => exit.plan.enemies.length > 0) ?? g.run.exits[0]
+      // 횡스크롤 전투방(combat)은 구간 웨이브라 stabilizeRouteSandbox()가 대기 중인
+      // 구간을 지우면 적이 안 나온다 — 적이 처음부터 대기열에 드는 방을 우선한다.
+      const exits = g.run.exits.filter((exit) => exit.plan.enemies.length > 0)
+      const firstExit = exits.find((exit) => exit.plan.kind !== 'combat') ?? exits[0] ?? g.run.exits[0]
       if (!firstExit) return false
       plan = g.run.enter(firstExit.plan.id)
     }

@@ -1418,6 +1418,7 @@ const STEPS = [
           playerStart: { x: g.player.pos.x, z: g.player.pos.z },
           enemyStart: { x: e.pos.x, z: e.pos.z },
           wallStart: performance.now(),
+          simStart: g.simClock,
         }
       })
       await p.keyboard.down('KeyW')
@@ -1440,6 +1441,8 @@ const STEPS = [
           : null
         return {
           wallElapsed,
+          // 이 구간에서 실제로 흐른 게임 시간(rawDt 합) — 플레이어 이동은 rawDt로 진행한다.
+          simElapsed: g.simClock - window.__qcHitstop.simStart,
           playerMoved,
           enemyMoved,
           moveSpeed: g.player.stats.moveSpeed,
@@ -1448,11 +1451,13 @@ const STEPS = [
       })
       // enemy.speed 기준값(baseSpeed*speedMul, debugSpawnEnemy는 speedMul=1) — imp의 speedMul.
       const enemyBaseSpeed = 4.2
-      const rate = clockRate ?? 1
+      // 기대 이동거리는 이 구간에서 직접 잰 게임 시간으로 계산한다. 예전엔 town-idle
+      // 프리플라이트의 배속(clockRate)을 곱했는데, 마을이 그림 한 장(렌더 부하 작음)이
+      // 되면서 마을 배속(0.9배)과 던전 배속(0.2배)이 크게 달라져 기대값이 4배 부풀었다.
       const result = {
         ...speedCheck,
-        expectedPlayerMoved: speedCheck.moveSpeed * speedCheck.wallElapsed * rate,
-        expectedEnemyMovedUnslowed: enemyBaseSpeed * speedCheck.wallElapsed * rate,
+        expectedPlayerMoved: speedCheck.moveSpeed * speedCheck.simElapsed,
+        expectedEnemyMovedUnslowed: enemyBaseSpeed * speedCheck.simElapsed,
       }
       await p.evaluate((data) => { window.__qcHitstopResult = data }, result)
 
@@ -1527,13 +1532,13 @@ const STEPS = [
       const r2 = window.__qcHitstopSurroundResult
       if (!r || !r2) return '결과를 수집하지 못함'
 
-      // 1. 히트스톱 중 플레이어 속도 — clockRate로 보정한 정상 이동 거리의 60%
-      // 이상이면 통과(clockRate 자체가 프리플라이트 1회 실측이라 여유를 넉넉히 둠).
+      // 1. 히트스톱 중 플레이어 속도 — 구간 게임 시간으로 계산한 정상 이동 거리의
+      // 60% 이상이면 통과(프레임 dt 뭉침 등 여유를 둠).
       if (!r.hitstopStillActive) return '히트스톱이 검증 도중 끝나버림 — 표본 무효'
       if (r.playerMoved < r.expectedPlayerMoved * 0.6) {
         return `히트스톱 중 플레이어 이동이 정상 속도보다 느림 (이동 ${r.playerMoved.toFixed(2)}, 기대 ${r.expectedPlayerMoved.toFixed(2)})`
       }
-      // 적은 hitstopScale(0.05)만큼 느려져야 한다 — clockRate 보정한 "안 느려졌을 때
+      // 적은 hitstopScale(0.05)만큼 느려져야 한다 — 구간 게임 시간 기준 "안 느려졌을 때
       // 기대 이동량"의 35% 미만이면 통과(참 목표는 5%대, 여유를 크게 둔 상한).
       if (r.enemyMoved == null) return '히트스톱 검증용 적이 사라짐'
       if (r.enemyMoved > r.expectedEnemyMovedUnslowed * 0.35) {

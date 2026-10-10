@@ -10,6 +10,7 @@ Read the smallest set that matches the task.
 | New character/enemy/prop art | plus `ART_GUIDE.md` |
 | Stage 2–7 gameplay or art | plus `docs/systems/stages-2-7.md`, `DESIGN_LOG.md` |
 | Room layout, camera, side-scrolling combat rooms, background art | plus `docs/systems/belt-rooms.md`, `ART_GUIDE.md` §7 |
+| Town (picture map, NPC spots, NPC art) | plus `docs/systems/picture-town.md`, `ART_GUIDE.md` §7 |
 | Historical investigation | `docs/archive/DESIGN_LOG_2026-07.md` only when needed |
 
 `DESIGN_LOG.md` contains open decisions. `docs/archive/` is read-only history.

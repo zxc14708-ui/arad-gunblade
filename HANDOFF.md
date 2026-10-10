@@ -32,6 +32,10 @@ task-specific document listed in `docs/INDEX.md`.
 
 ## Current open work
 
+The town is now a single illustration ("picture town", `TOWN_PICTURE` in
+`Game.ts`); its NPCs are placeholders awaiting NPC sprites (request in
+`docs/systems/picture-town.md`).
+
 Belt-room pilot (2026-10-09) awaits playtest; its open follow-ups are listed in
 `DESIGN_LOG.md` "횡스크롤 전환" and per-stage belt background art has a request
 template in `docs/systems/belt-rooms.md`.

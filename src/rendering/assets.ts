@@ -66,6 +66,7 @@ export function preloadAssets(): Promise<void> {
     ...Object.values(ASSET.fx).map((f) => f.path),
     ...Object.values(ASSET.monsters).flatMap((m) => Object.values(m)),
     ASSET.stage1.floor,
+    ASSET.town.village,
     ...Object.values(ASSET.stage1.foreground),
     ...Object.values(ASSET.stage1.effects),
   ]
@@ -93,6 +94,12 @@ export function preloadAssets(): Promise<void> {
 }
 
 export const ASSET = {
+  // 그림 한 장 마을(2026-10-10) — 이 그림이 마을 화면 전체이고, 흙길 구간만
+  // 걸을 수 있다(Game.enterTown, TOWN_PICTURE). 사용자 제공 임시 일러스트
+  // (1671×941, 원본 WebP를 무손실 PNG로 변환) — 최종 픽셀 밀도 버전으로 교체 예정.
+  town: {
+    village: 'assets/town/arad_village_bg.png',
+  },
   tiles: {
     dungeonFloor: 'assets/tiles/dungeon_floor_01.png',
     dungeonWall: 'assets/tiles/dungeon_wall_01.png',

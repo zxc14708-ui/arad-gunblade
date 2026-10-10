@@ -17,7 +17,7 @@ import { AudioManager } from '../systems/Audio'
 import { ELITE_AFFIX } from '../systems/EliteAffixes'
 import { MetaProgression } from '../systems/MetaProgression'
 import { weaponById } from '../systems/Weapons'
-import { preloadAssets } from '../rendering/assets'
+import { ASSET, loadTex, preloadAssets } from '../rendering/assets'
 import { noOutline } from '../rendering/toon'
 import { DISPLAY, fitStage } from '../rendering/viewport'
 import { HUD, type RouteChoice } from '../ui/HUD'
@@ -76,6 +76,9 @@ export class Game {
    * 플레이어·카메라가 그 구간 안에 잠긴다. */
   private belt: { sections: { minX: number; maxX: number; enemies: RoomEnemy[]; cleared: boolean }[]; active: number } | null = null
   private keyLight!: THREE.DirectionalLight
+  /** 그림 한 장 마을 — 카메라를 고정하고 scene.background로 그림을 깐다. */
+  private townPicture = false
+  private readonly sceneBg = new THREE.Color(0x05060a)
   private slowZones: { position: THREE.Vector3; radius: number; timer: number; multiplier: number; ring: THREE.Mesh }[] = []
   /** '잔재'(고유·레전더리, 작업 지시 P8c4) — 처치 지점에 남는 잔상 공격체.
    * 자체 스프라이트 없이 주기적으로 가장 가까운 적을 타격만 한다(간단한
@@ -143,7 +146,7 @@ export class Game {
     })
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x05060a)
+    this.scene.background = this.sceneBg
     this.scene.fog = new THREE.Fog(0x05060a, 45, 90)
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200)
@@ -294,6 +297,8 @@ export class Game {
     this.spawnQueue = []
     this.belt = null
     this.hud.setBeltGo(false)
+    this.townPicture = false
+    this.scene.background = this.sceneBg
     this.slowZones.forEach((z) => {
       this.scene.remove(z.ring)
       z.ring.geometry.dispose()
@@ -316,7 +321,11 @@ export class Game {
   private enterTown() {
     this.clearWorld()
     this.room?.dispose()
-    this.room = new Room(this.scene, DEFAULT_ROOM_SIZES.town, 'town')
+    // 그림 한 장 마을(2026-10-10 사용자 결정) — 마을 일러스트가 화면 전체이고,
+    // 그림 속 흙길만 걸을 수 있다. 바닥·벽·나무 같은 3D 장식은 만들지 않는다.
+    this.room = new Room(this.scene, DEFAULT_ROOM_SIZES.town, 'picture')
+    this.townPicture = true
+    this.scene.background = loadTex(ASSET.town.village)
     this.mode = 'town'
     this.state = 'play'
     this.roomCleared = true
@@ -325,26 +334,46 @@ export class Game {
     this.startRun()
     this.player.group.visible = true
 
-    // 던전 포탈 — 북쪽 문 라인 대신 마을 안쪽에 둬 상단 벽/HUD에 가리지 않게 한다.
-    const p = { x: 0, z: this.room.bounds.minZ + 8 }
-    this.interactables.push(
-      new Interactable('portal', p.x, p.z, `던전 입장 — ${this.run.cfg.name}`).addTo(this.scene),
-    )
-    // 마을 상인은 런 골드가 아닌 영구 재화로 무기를 해금한다.
-    this.interactables.push(new Interactable('merchant', -10, -2, '모험가 상점 — 무기 설계도').addTo(this.scene))
-    // 마을 분수는 작업 지시 P7 커밋2에서 제거됐다 — 마을 입장 시 이미
-    // heal(9999)로 완전 회복되므로(아래) 회복 수단이 중복이었다.
-    // 특성 시설 (런당 1회)
-    this.interactables.push(new Interactable('traitAltar', -6, 6, '시작 특성 선택').addTo(this.scene))
-    this.interactables.push(new Interactable('metaAltar', 6, 6, '힘의 제단 — 영구 강화').addTo(this.scene))
+    // 카메라를 고정한 뒤 화면 비율 좌표 → 지면 좌표로 걷는 영역과 시설 위치를 정한다.
+    // 그림이 바뀌어도 TOWN_PICTURE 비율만 고치면 된다(카메라 각도가 바뀌어도 그대로 맞는다).
+    this.snapCamera()
+    this.camera.updateMatrixWorld()
+    const tp = TOWN_PICTURE
+    const tl = this.groundAtScreen(tp.walk.left, tp.walk.top)
+    const br = this.groundAtScreen(tp.walk.right, tp.walk.bottom)
+    // Room.clamp은 남쪽 경계에서 전경 여백(2.4)을 더 뺀다 — 그만큼 미리 더해 둔다.
+    this.room.bounds = { minX: tl.x, maxX: br.x, minZ: tl.z, maxZ: br.z + 2.4 }
 
-    const e = this.room.entryPoint()
+    const at = (spot: { x: number; y: number }) => this.groundAtScreen(spot.x, spot.y)
+    // 대장간 앞 대장장이 = 무기 설계도 해금(영구 재화) · 선술집 앞 = 시작 특성 ·
+    // 노점 = 힘의 제단 · 오른쪽 아치 길 끝 = 던전 출발. NPC 그림이 오기 전까지는
+    // 기존 시설 그림에 이름표를 붙인 임시 표시다.
+    const smith = at(tp.spots.smith)
+    this.interactables.push(new Interactable('merchant', smith.x, smith.z, '대장간 — 무기 설계도').setNameTag('대장장이 · 무기').addTo(this.scene))
+    const tavern = at(tp.spots.tavern)
+    this.interactables.push(new Interactable('traitAltar', tavern.x, tavern.z, '선술집 — 시작 특성 선택').setNameTag('선술집 · 시작 특성').addTo(this.scene))
+    const stall = at(tp.spots.stall)
+    this.interactables.push(new Interactable('metaAltar', stall.x, stall.z, '노점 — 힘의 제단(영구 강화)').setNameTag('노점 · 힘의 제단').addTo(this.scene))
+    const gate = at(tp.spots.gate)
+    this.interactables.push(
+      new Interactable('portal', gate.x, gate.z, `던전 입장 — ${this.run.cfg.name}`).hideVisual().setNameTag('▶ 던전으로', '#9fd8ff').addTo(this.scene),
+    )
+
+    const e = at(tp.spots.entry)
     this.player.pos.set(e.x, 0, e.z)
     this.player.heal(9999) // 마을 복귀 시 완전 회복
     this.hud.setMinimap([])
     this.hud.banner_('아라드 마을')
     this.snapCamera()
     this.clock.getDelta()
+  }
+
+  /** 화면 비율 좌표(0~1, 왼쪽 위 기준) → 지면(y=0) 좌표. 카메라 행렬이 최신이어야 한다. */
+  private groundAtScreen(fx: number, fy: number) {
+    this.raycaster.setFromCamera(new THREE.Vector2(fx * 2 - 1, 1 - fy * 2), this.camera)
+    const hit = new THREE.Vector3()
+    if (!this.raycaster.ray.intersectPlane(this.aimPlane, hit)) hit.set(0, 0, 0)
+    return { x: hit.x, z: hit.z }
   }
 
   /** 던전 1스테이지 시작 */
@@ -719,6 +748,8 @@ export class Game {
    * 방이 화면보다 작으면 방 중앙에 고정한다.
    */
   private camTarget() {
+    // 그림 한 장 마을은 카메라를 고정한다(그림이 곧 화면이다).
+    if (this.townPicture) return { x: 0, z: 0 }
     const b = this.room.bounds
     // 화면이 덮는 지면 범위 (카메라 기울기 보정)
     const halfX = (this.camera.right - this.camera.left) / 2
@@ -2237,3 +2268,18 @@ export class Game {
 function isBeltPlan(plan: RoomPlan) {
   return plan.kind === 'combat' && plan.depth > 0
 }
+
+/**
+ * 그림 한 장 마을의 화면 비율 좌표(0~1, 왼쪽 위 기준) — 걷는 영역(그림 속 흙길)과
+ * 시설 자리. 현재 그림(assets/town/arad_village_bg.png)은 높이 약 60%가 땅선이다.
+ */
+const TOWN_PICTURE = {
+  walk: { left: 0.03, right: 0.97, top: 0.64, bottom: 0.92 },
+  spots: {
+    smith: { x: 0.18, y: 0.66 }, // 대장간(모루·화로) 앞
+    tavern: { x: 0.58, y: 0.66 }, // 선술집 문 앞
+    stall: { x: 0.73, y: 0.66 }, // 천막 노점 앞
+    gate: { x: 0.93, y: 0.66 }, // 오른쪽 돌 아치 길 끝
+    entry: { x: 0.4, y: 0.8 },
+  },
+} as const

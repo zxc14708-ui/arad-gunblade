@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { noOutline } from '../rendering/toon'
 import { ASSET, loadTex } from '../rendering/assets'
-import { makeBottomAnchoredSprite, setSpriteWorldHeight } from '../rendering/pixelArt'
+import { makeBottomAnchoredSprite, makePixelCanvasTexture, setSpriteWorldHeight } from '../rendering/pixelArt'
 
 export type InteractKind = 'chest' | 'fountain' | 'merchant' | 'portal' | 'traitAltar' | 'traitForge' | 'dungeonForge' | 'metaAltar'
 
@@ -74,6 +74,8 @@ export class Interactable {
   private mat: THREE.SpriteMaterial
   private glow: THREE.Sprite | null = null
   private bob = Math.random() * 6
+  /** 스프라이트 월드 높이 — 이름표를 그 위에 띄울 때 쓴다. */
+  private height: number
 
   constructor(kind: InteractKind, x: number, z: number, label: string) {
     this.kind = kind
@@ -90,6 +92,7 @@ export class Interactable {
     this.sprite = makeBottomAnchoredSprite(this.mat)
     this.sprite.renderOrder = kind === 'portal' ? 12 : 2
     const sc = SCALE[kind]
+    this.height = sc
     setSpriteWorldHeight(this.sprite, sc, ASPECT[kind])
     this.group.add(this.sprite)
 
@@ -153,6 +156,44 @@ export class Interactable {
       const m = this.glow.material as THREE.SpriteMaterial
       m.opacity = 0.2 + Math.sin(this.bob * 1.6) * 0.1
     }
+  }
+
+  /**
+   * 머리 위 이름표(그림 한 장 마을의 NPC 자리 표시, 2026-10-10). NPC 스프라이트가
+   * 오기 전까지 기존 시설 그림 위에 무엇을 하는 곳인지 글자로 띄운다.
+   */
+  setNameTag(text: string, color = '#ffe58a') {
+    const font = 'bold 30px sans-serif'
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+    ctx.font = font
+    const w = Math.ceil(ctx.measureText(text).width) + 28
+    const h = 46
+    canvas.width = w
+    canvas.height = h
+    ctx.font = font
+    ctx.fillStyle = 'rgba(12, 10, 8, 0.78)'
+    ctx.fillRect(0, 0, w, h)
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2
+    ctx.strokeRect(1, 1, w - 2, h - 2)
+    ctx.fillStyle = color
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, 14, h / 2 + 1)
+    const mat = new THREE.SpriteMaterial({ map: makePixelCanvasTexture(canvas), transparent: true, depthWrite: false, depthTest: false })
+    const tag = makeBottomAnchoredSprite(mat)
+    const worldH = 0.8
+    tag.scale.set(worldH * (w / h), worldH, 1)
+    tag.position.y = this.height + 0.35
+    tag.renderOrder = 20
+    this.group.add(tag)
+    return this
+  }
+
+  /** 그림(스프라이트·빛·바닥 고리)은 숨기고 상호작용과 이름표만 남긴다 — 그림 속 장소(예: 아치 길)를 시설로 쓸 때. */
+  hideVisual() {
+    for (const child of this.group.children) child.visible = false
+    return this
   }
 
   /** 상자 열기 등 상태 변경 */

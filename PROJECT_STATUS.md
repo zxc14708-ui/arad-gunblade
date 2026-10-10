@@ -62,6 +62,13 @@ Last updated: 2026-10-09
   multiplier, no stagger). See `docs/STATE_SNAPSHOT.md` for exact numbers.
 - Boss state machine (idle → telegraph → charge/slam → stagger → phase 2)
   plus boss break (HP 75%/25% stun windows) and 6 elite affixes.
+- **Picture town (2026-10-10).** The town is one illustration filling the
+  screen (`assets/town/arad_village_bg.png`, `scene.background`, fixed
+  camera). Only the dirt road (screen 3–97% × 64–92%) is walkable; facility
+  spots are screen-fraction coordinates projected to the ground
+  (`TOWN_PICTURE` in `Game.ts`): smith → weapon blueprints, tavern → starting
+  trait, stall → power altar, right stone arch → dungeon. NPCs are temporary
+  (existing facility sprites + name tags) until NPC sprites arrive.
 - Town fully heals on entry; the town fountain was removed as a redundant
   duplicate of that (P7 커밋2). In-dungeon recovery is the fountain in the
   depth-4 shop room and the depth-8 boss-prep room (first use per run free,
@@ -134,9 +141,10 @@ Last updated: 2026-10-09
   CPU/process load (stale `vite preview` servers from earlier runs are a
   known contributor — kill them, let load average settle, and retry before
   concluding a step actually regressed). Isolated `--only` runs skip the
-  `town-idle` preflight, so any step whose assertion depends on the
-  measured `clockRate` (e.g. `hitstop-surround-slowzone`) cannot be
-  meaningfully isolated this way — compare against a full run instead.
+  `town-idle` preflight. Since the picture town (2026-10-10) the preflight
+  measures a much cheaper scene (~0.9× vs ~0.2× in dungeons), so it is only a
+  sandbox-load indicator; `hitstop-surround-slowzone` now derives its expected
+  distances from the game time elapsed inside its own measurement window.
 
 ## Next approved implementation work
 

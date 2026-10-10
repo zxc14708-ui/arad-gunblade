@@ -55,7 +55,8 @@ committed snapshot doesn't match the code.
   side-scrolling belt rooms (`CONFIG.belt`, `docs/systems/belt-rooms.md`) that
   split the same enemy list into locked sections.
 - Right click is gameplay-only; keep the browser context menu disabled.
-- The camera must never reveal floor-edge black voids.
+- The camera must never reveal floor-edge black voids. The town is a fixed
+  camera over a full-screen illustration (`docs/systems/picture-town.md`).
 
 ## Asset invariants
 

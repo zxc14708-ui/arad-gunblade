@@ -294,7 +294,7 @@ def check_monster_sheets():
 
 # ── 2. assets.ts 경로 실존 ───────────────────────────────────────────────
 
-TILE_PREFIXES = ('assets/tiles/', 'assets/stage1/stage1_background/')  # 배경은 불투명이 정상 — 모서리 알파 검사 제외
+TILE_PREFIXES = ('assets/tiles/', 'assets/stage1/stage1_background/', 'assets/town/')  # 배경(타일·그림 맵)은 불투명이 정상 — 모서리 알파 검사 제외
 
 
 def check_all_paths_exist():
